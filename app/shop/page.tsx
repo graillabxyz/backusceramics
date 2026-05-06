@@ -1,17 +1,10 @@
-"use client"
-
 import { Navigation } from "@/components/navigation"
 import { Footer } from "@/components/footer"
-import { getAllProducts, categories, formatPrice, getProductsByCategory } from "@/lib/shop-data"
-import Link from "next/link"
-import { useState } from "react"
 import { Button } from "@/components/ui/button"
-import { Badge } from "@/components/ui/badge"
+import { Instagram, MessageCircle, ArrowRight, Video } from "lucide-react"
+import Link from "next/link"
 
 export default function ShopPage() {
-  const [selectedCategory, setSelectedCategory] = useState("All")
-  const products = getProductsByCategory(selectedCategory)
-
   return (
     <main className="min-h-screen">
       <Navigation />
@@ -24,95 +17,90 @@ export default function ShopPage() {
               The Wall of Cups
             </h1>
             <p className="mt-6 text-lg text-muted-foreground leading-relaxed">
-              Each piece is handcrafted in our Bali studio. Browse our collection 
-              of cups, bowls, and ceramic wares. Every item is unique with subtle 
-              variations that make it one of a kind.
+              Our inventory is alive and constantly evolving. Each day, new pieces emerge 
+              from the kiln, while others find their new homes. Because our collection 
+              changes so rapidly, we invite you to experience it dynamically.
             </p>
           </div>
         </div>
       </section>
 
-      {/* Category Filter */}
-      <section className="py-8 bg-background border-b border-border sticky top-20 z-40">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="flex flex-wrap gap-2">
-            {categories.map((category) => (
-              <Button
-                key={category}
-                variant={selectedCategory === category ? "default" : "outline"}
-                size="sm"
-                onClick={() => setSelectedCategory(category)}
-              >
-                {category}
-              </Button>
-            ))}
-          </div>
-        </div>
-      </section>
-
-      {/* Products Grid */}
+      {/* Main Content */}
       <section className="py-16 bg-background">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6">
-            {products.map((product) => (
-              <Link
-                key={product.id}
-                href={`/shop/${product.slug}`}
-                className="group"
-              >
-                <div className="aspect-square bg-muted rounded-lg overflow-hidden mb-4 relative">
-                  {/* Placeholder for product image */}
-                  <div className="absolute inset-0 flex items-center justify-center text-muted-foreground/50">
-                    <span className="text-xs text-center px-4">Product Image</span>
-                  </div>
-                  <div className="absolute inset-0 bg-foreground/0 group-hover:bg-foreground/5 transition-colors" />
-                  {!product.inStock && (
-                    <Badge variant="secondary" className="absolute top-3 left-3">
-                      Sold Out
-                    </Badge>
-                  )}
-                  {product.featured && product.inStock && (
-                    <Badge className="absolute top-3 left-3">
-                      Featured
-                    </Badge>
-                  )}
-                </div>
-                <div>
-                  <p className="text-xs text-muted-foreground mb-1">{product.category}</p>
-                  <h3 className="font-medium text-foreground group-hover:text-primary transition-colors text-sm sm:text-base">
-                    {product.name}
-                  </h3>
-                  <p className="text-sm text-muted-foreground mt-1">
-                    {formatPrice(product.price)}
-                  </p>
-                </div>
-              </Link>
-            ))}
-          </div>
-
-          {products.length === 0 && (
-            <div className="text-center py-16">
-              <p className="text-muted-foreground">No products found in this category.</p>
+          <div className="grid lg:grid-cols-2 gap-12 items-center">
+            <div className="order-2 lg:order-1">
+              <div className="relative aspect-[3/4] rounded-2xl overflow-hidden shadow-2xl">
+                <img 
+                  src="/wallofcups.jpeg" 
+                  alt="The Wall of Cups at Backus Ceramics" 
+                  className="w-full h-full object-cover"
+                />
+                <div className="absolute inset-0 bg-gradient-to-t from-black/40 to-transparent" />
+              </div>
             </div>
-          )}
+            
+            <div className="order-1 lg:order-2 space-y-8">
+              <div>
+                <h2 className="font-heading font-bold text-3xl mb-4">Take a Video Tour</h2>
+                <p className="text-lg text-muted-foreground mb-6">
+                  Want to see what's currently on the wall? Message us for a personalized 
+                  video tour. We'll show you exactly what's in stock today and help 
+                  you find the perfect piece.
+                </p>
+              </div>
+
+              <div className="grid gap-4">
+                <Button asChild size="lg" className="h-16 text-lg gap-3">
+                  <a href="https://wa.me/6282145890402" target="_blank" rel="noopener noreferrer">
+                    <MessageCircle className="h-6 w-6" />
+                    WhatsApp Video Tour
+                    <ArrowRight className="h-5 w-5 ml-auto" />
+                  </a>
+                </Button>
+                
+                <Button asChild variant="outline" size="lg" className="h-16 text-lg gap-3 bg-transparent border-2">
+                  <a href="https://instagram.com/backusceramics" target="_blank" rel="noopener noreferrer">
+                    <Instagram className="h-6 w-6" />
+                    DM on Instagram
+                    <ArrowRight className="h-5 w-5 ml-auto" />
+                  </a>
+                </Button>
+              </div>
+
+              <div className="p-8 bg-secondary/30 rounded-2xl border border-border">
+                <h3 className="font-heading font-bold text-xl mb-3 flex items-center gap-2">
+                  <Video className="h-5 w-5 text-primary" />
+                  How it works
+                </h3>
+                <p className="text-muted-foreground">
+                  Simply send us a message saying "I'd like a tour of the wall." 
+                  We'll send over a quick video of our current inventory and can 
+                  provide close-up photos and pricing for any pieces that catch your eye.
+                </p>
+              </div>
+            </div>
+          </div>
         </div>
       </section>
 
-      {/* Info Section */}
-      <section className="py-16 bg-secondary/30">
-        <div className="max-w-3xl mx-auto px-4 sm:px-6 lg:px-8 text-center">
-          <h2 className="font-heading font-bold text-2xl font-medium text-foreground mb-4">
-            Interested in a Piece?
+      {/* Visit Us Section */}
+      <section className="py-24 bg-secondary/20">
+        <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 text-center">
+          <h2 className="font-heading font-bold text-3xl sm:text-4xl mb-6">
+            Visit Our Bali Studio
           </h2>
-          <p className="text-muted-foreground mb-6">
-            Each piece is handmade and variations make every item unique. 
-            Contact us to check availability or discuss custom orders.
+          <p className="text-xl text-muted-foreground mb-10 leading-relaxed">
+            The best way to experience the Wall of Cups is in person. Come feel the 
+            textures, weight, and soul of each piece.
           </p>
-          <Button asChild size="lg">
-            <Link href="/contact">
-              Get in Touch
-            </Link>
-          </Button>
+          <div className="inline-flex flex-col items-center p-8 bg-background rounded-2xl shadow-sm border border-border">
+            <p className="font-medium text-foreground mb-1">Open Monday - Saturday</p>
+            <p className="text-muted-foreground mb-6">9:00 AM - 4:30 PM</p>
+            <Button asChild variant="link" className="text-primary h-auto p-0 text-lg">
+              <Link href="/contact">Get Directions <ArrowRight className="ml-2 h-5 w-5" /></Link>
+            </Button>
+          </div>
         </div>
       </section>
 
