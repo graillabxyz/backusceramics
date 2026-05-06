@@ -40,11 +40,23 @@ export function ResidencyPreview() {
 
         <div className="grid md:grid-cols-2 gap-8 max-w-4xl mx-auto">
           {residencyPrograms.map((program) => (
-            <Card key={program.id} className="bg-card border-border hover:shadow-lg transition-shadow">
-              <CardHeader>
-                <div className="aspect-video bg-muted rounded-lg mb-4 flex items-center justify-center">
-                  <span className="text-sm text-muted-foreground">Program Image</span>
+            <Card key={program.id} className="bg-card border-border hover:shadow-lg transition-all duration-300 overflow-hidden group">
+              <CardHeader className="p-0">
+                <div className="aspect-video relative overflow-hidden bg-muted">
+                  {program.image ? (
+                    <img 
+                      src={program.image} 
+                      alt={program.title}
+                      className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-110"
+                    />
+                  ) : (
+                    <div className="w-full h-full flex items-center justify-center">
+                      <Calendar className="h-12 w-12 text-muted-foreground/20" />
+                    </div>
+                  )}
                 </div>
+              </CardHeader>
+              <CardHeader>
                 <CardTitle className="font-heading font-bold text-2xl">{program.title}</CardTitle>
                 <CardDescription className="text-muted-foreground">
                   {program.description}
