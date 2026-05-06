@@ -136,8 +136,8 @@ export default function BirthdayPage() {
 
             <div className="relative aspect-square rounded-3xl overflow-hidden shadow-2xl">
               <img 
-                src="/ambiance.JPG" 
-                alt="Birthday Ambiance" 
+                src="/birthday.jpeg" 
+                alt="Birthday Atelier" 
                 className="w-full h-full object-cover"
               />
             </div>

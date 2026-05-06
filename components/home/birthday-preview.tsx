@@ -36,8 +36,8 @@ export function BirthdayPreview() {
           <div className="lg:w-1/2 relative">
             <div className="relative aspect-[4/3] rounded-3xl overflow-hidden shadow-2xl">
               <img 
-                src="/ambiance.JPG" 
-                alt="Birthday celebration ambiance" 
+                src="/birthday.jpeg" 
+                alt="Birthday celebration" 
                 className="w-full h-full object-cover hover:scale-105 transition-transform duration-700"
               />
               <div className="absolute inset-0 bg-gradient-to-t from-background/60 via-transparent to-transparent" />
