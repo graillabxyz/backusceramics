@@ -6,6 +6,7 @@ import { Badge } from "@/components/ui/badge"
 import { Clock, Users, Calendar, Palette, Hand, Baby } from "lucide-react"
 import Link from "next/link"
 import { workshops, studioInfo, formatPrice } from "@/lib/classes-data"
+import { BookingModal } from "@/components/classes/booking-modal"
 
 const categoryIcons = {
   workshop: Palette,
@@ -148,9 +149,9 @@ export default function ClassesPage() {
                           {formatPrice(workshop.price)}
                         </p>
                       </div>
-                      <Button asChild>
-                        <Link href="/contact">Book Now</Link>
-                      </Button>
+                      <BookingModal workshop={workshop}>
+                        <Button>Book Now</Button>
+                      </BookingModal>
                     </div>
                   </CardContent>
                 </Card>

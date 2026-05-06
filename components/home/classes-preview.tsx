@@ -4,6 +4,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Badge } from "@/components/ui/badge"
 import { ArrowRight, Palette, Hand, Baby } from "lucide-react"
 import { workshops, formatPrice } from "@/lib/classes-data"
+import { BookingModal } from "@/components/classes/booking-modal"
 
 const categoryIcons = {
   workshop: Palette,
@@ -88,9 +89,9 @@ export function ClassesPreview() {
                         {formatPrice(workshop.price)}
                       </p>
                     </div>
-                    <Button asChild size="sm">
-                      <Link href="/classes">Details</Link>
-                    </Button>
+                    <BookingModal workshop={workshop}>
+                      <Button size="sm">Book Now</Button>
+                    </BookingModal>
                   </div>
                 </CardContent>
               </Card>
@@ -107,9 +108,9 @@ export function ClassesPreview() {
                 Monday - Saturday: 9:00 AM - 4:30 PM | Sunday: Closed
               </p>
             </div>
-            <Button asChild>
-              <Link href="/contact">Book a Class</Link>
-            </Button>
+            <BookingModal workshop={workshops[0]}>
+              <Button>Book a Class</Button>
+            </BookingModal>
           </div>
         </div>
       </div>
