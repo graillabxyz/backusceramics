@@ -309,7 +309,7 @@ export default function CustomOrdersPage() {
             <div className="relative">
               <div className="aspect-[4/5] rounded-3xl overflow-hidden shadow-2xl">
                 <img 
-                  src="/customorder2.PNG" 
+                  src="/customorder2.jpeg" 
                   alt="Custom ceramic production" 
                   className="w-full h-full object-cover"
                 />

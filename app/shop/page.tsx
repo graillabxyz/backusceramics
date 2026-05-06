@@ -126,7 +126,7 @@ export default function ShopPage() {
               </div>
               <div className="relative aspect-square rounded-2xl overflow-hidden shadow-lg mt-12">
                 <img 
-                  src="/customorder2.PNG" 
+                  src="/customorder2.jpeg" 
                   alt="Custom ceramic order example" 
                   className="w-full h-full object-cover"
                 />
