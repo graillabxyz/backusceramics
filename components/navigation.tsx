@@ -2,9 +2,8 @@
 
 import Link from "next/link"
 import { useState } from "react"
-import { Menu, X, User } from "lucide-react"
+import { Menu, X } from "lucide-react"
 import { Button } from "@/components/ui/button"
-import { useAuth } from "@/lib/auth-context"
 
 const navLinks = [
   { href: "/classes", label: "Classes" },
@@ -15,7 +14,6 @@ const navLinks = [
 
 export function Navigation() {
   const [isOpen, setIsOpen] = useState(false)
-  const { isAuthenticated, user } = useAuth()
 
   return (
     <header className="fixed top-0 left-0 right-0 z-50 bg-background/95 backdrop-blur-sm border-b border-border">
@@ -41,21 +39,6 @@ export function Navigation() {
                 {link.label}
               </Link>
             ))}
-            
-            {isAuthenticated ? (
-              <Link href="/admin">
-                <Button variant="outline" size="sm" className="ml-2 bg-transparent">
-                  <User className="h-4 w-4 mr-2" />
-                  {user?.name}
-                </Button>
-              </Link>
-            ) : (
-              <Link href="/login">
-                <Button variant="outline" size="sm" className="ml-2 bg-transparent">
-                  Login
-                </Button>
-              </Link>
-            )}
           </div>
 
           {/* Mobile Menu Button */}
@@ -84,22 +67,6 @@ export function Navigation() {
                   {link.label}
                 </Link>
               ))}
-              <div className="pt-4 border-t border-border">
-                {isAuthenticated ? (
-                  <Link href="/admin" onClick={() => setIsOpen(false)}>
-                    <Button variant="outline" size="sm" className="w-full bg-transparent">
-                      <User className="h-4 w-4 mr-2" />
-                      Admin Panel
-                    </Button>
-                  </Link>
-                ) : (
-                  <Link href="/login" onClick={() => setIsOpen(false)}>
-                    <Button variant="outline" size="sm" className="w-full bg-transparent">
-                      Login
-                    </Button>
-                  </Link>
-                )}
-              </div>
             </div>
           </div>
         )}
