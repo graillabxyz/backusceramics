@@ -189,7 +189,8 @@ export const workshops: Workshop[] = [
       "Pieces fired and ready for pickup"
     ],
     available: true,
-    category: "kids"
+    category: "kids",
+    image: "/kidsclass.jpeg"
   }
 ]
 
