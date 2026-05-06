@@ -1,13 +1,13 @@
 "use client"
 
-import React, { useState, useRef } from "react"
+import React, { useState, useRef, useId } from "react"
 import { Navigation } from "@/components/navigation"
 import { Footer } from "@/components/footer"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Textarea } from "@/components/ui/textarea"
 import { Label } from "@/components/ui/label"
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
+import { Select, SelectContent, SelectGroup, SelectItem, SelectLabel, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Badge } from "@/components/ui/badge"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Lamp, Home, Palette, Info, CheckCircle2, Plus, Trash2, Upload, X, ImageIcon } from "lucide-react"
@@ -69,14 +69,14 @@ const colorOptions = [
   { value: "open", label: "Open to Suggestions" },
 ]
 
-function generateId() {
-  return Math.random().toString(36).substring(2, 9)
-}
+
 
 export default function CustomOrdersPage() {
+  const baseId = useId()
   const [submitted, setSubmitted] = useState(false)
   const [isSubmitting, setIsSubmitting] = useState(false)
   const fileInputRefs = useRef<{ [key: string]: HTMLInputElement | null }>({})
+  const pieceCounter = useRef(0)
   
   const [contactInfo, setContactInfo] = useState({
     name: "",
@@ -85,17 +85,15 @@ export default function CustomOrdersPage() {
     location: "",
   })
 
-  const [pieces, setPieces] = useState<OrderPiece[]>([
-    {
-      id: generateId(),
-      pieceType: "",
-      dimensions: "",
-      quantity: "1",
-      finishing: "",
-      images: [],
-      imageUrls: [],
-    }
-  ])
+  const [pieces, setPieces] = useState<OrderPiece[]>(() => [{
+    id: `${baseId}-piece-0`,
+    pieceType: "",
+    dimensions: "",
+    quantity: "1",
+    finishing: "",
+    images: [],
+    imageUrls: [],
+  }])
 
   const [preferences, setPreferences] = useState({
     colorPreference: "",
@@ -107,10 +105,11 @@ export default function CustomOrdersPage() {
   })
 
   const addPiece = () => {
-    setPieces([
-      ...pieces,
+    pieceCounter.current += 1
+    setPieces(prev => [
+      ...prev,
       {
-        id: generateId(),
+        id: `${baseId}-piece-${pieceCounter.current}`,
         pieceType: "",
         dimensions: "",
         quantity: "1",
@@ -429,22 +428,30 @@ PIECE ${index + 1}:
                           <SelectValue placeholder="Select piece type" />
                         </SelectTrigger>
                         <SelectContent>
-                          <SelectItem value="" disabled>-- Tableware --</SelectItem>
-                          {pieceTypes.slice(0, 10).map(type => (
-                            <SelectItem key={type.value} value={type.value}>{type.label}</SelectItem>
-                          ))}
-                          <SelectItem value="" disabled>-- Lighting --</SelectItem>
-                          {pieceTypes.slice(10, 13).map(type => (
-                            <SelectItem key={type.value} value={type.value}>{type.label}</SelectItem>
-                          ))}
-                          <SelectItem value="" disabled>-- Vases & Vessels --</SelectItem>
-                          {pieceTypes.slice(13, 18).map(type => (
-                            <SelectItem key={type.value} value={type.value}>{type.label}</SelectItem>
-                          ))}
-                          <SelectItem value="" disabled>-- Special --</SelectItem>
-                          {pieceTypes.slice(18).map(type => (
-                            <SelectItem key={type.value} value={type.value}>{type.label}</SelectItem>
-                          ))}
+                          <SelectGroup>
+                            <SelectLabel>Tableware</SelectLabel>
+                            {pieceTypes.slice(0, 10).map(type => (
+                              <SelectItem key={type.value} value={type.value}>{type.label}</SelectItem>
+                            ))}
+                          </SelectGroup>
+                          <SelectGroup>
+                            <SelectLabel>Lighting</SelectLabel>
+                            {pieceTypes.slice(10, 13).map(type => (
+                              <SelectItem key={type.value} value={type.value}>{type.label}</SelectItem>
+                            ))}
+                          </SelectGroup>
+                          <SelectGroup>
+                            <SelectLabel>Vases &amp; Vessels</SelectLabel>
+                            {pieceTypes.slice(13, 18).map(type => (
+                              <SelectItem key={type.value} value={type.value}>{type.label}</SelectItem>
+                            ))}
+                          </SelectGroup>
+                          <SelectGroup>
+                            <SelectLabel>Special</SelectLabel>
+                            {pieceTypes.slice(18).map(type => (
+                              <SelectItem key={type.value} value={type.value}>{type.label}</SelectItem>
+                            ))}
+                          </SelectGroup>
                         </SelectContent>
                       </Select>
                     </div>
