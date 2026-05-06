@@ -50,7 +50,7 @@ export default function RootLayout({
   children: React.ReactNode
 }>) {
   return (
-    <html lang="en">
+    <html lang="en" suppressHydrationWarning>
       <body className={`${montserrat.variable} ${figtree.variable} ${fredericka.variable} font-sans antialiased`}>
         <AuthProvider>
           {children}
