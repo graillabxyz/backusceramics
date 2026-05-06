@@ -66,6 +66,14 @@ export default function ShopPage() {
                     <ArrowRight className="h-5 w-5 ml-auto" />
                   </a>
                 </Button>
+
+                <Button asChild variant="outline" size="lg" className="h-16 text-lg gap-3 bg-transparent border-2">
+                  <a href="https://maps.app.goo.gl/d5FvjdfKAk6iSwrK8" target="_blank" rel="noopener noreferrer">
+                    <MapPin className="h-6 w-6" />
+                    Get Directions
+                    <ArrowRight className="h-5 w-5 ml-auto" />
+                  </a>
+                </Button>
               </div>
 
               <div className="p-8 bg-secondary/30 rounded-2xl border border-border">
@@ -98,7 +106,7 @@ export default function ShopPage() {
             <p className="font-medium text-foreground mb-1">Open Monday - Saturday</p>
             <p className="text-muted-foreground mb-6">9:00 AM - 4:30 PM</p>
             <Button asChild variant="link" className="text-primary h-auto p-0 text-lg">
-              <a href="https://share.google/3YeB9prlKVRu8Ccee" target="_blank" rel="noopener noreferrer">
+              <a href="https://maps.app.goo.gl/d5FvjdfKAk6iSwrK8" target="_blank" rel="noopener noreferrer">
                 Get Directions <ArrowRight className="ml-2 h-5 w-5" />
               </a>
             </Button>

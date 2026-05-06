@@ -79,7 +79,7 @@ export function ContactSection() {
                 <p className="font-medium">Bali, Indonesia</p>
                 <p className="text-sm text-muted-foreground mb-3">Jl. Raya Kerobokan, Kuta Utara, Bali</p>
                 <Button asChild variant="outline" size="sm" className="h-8">
-                  <a href="https://share.google/3YeB9prlKVRu8Ccee" target="_blank" rel="noopener noreferrer">
+                  <a href="https://maps.app.goo.gl/d5FvjdfKAk6iSwrK8" target="_blank" rel="noopener noreferrer">
                     Get Directions
                   </a>
                 </Button>
