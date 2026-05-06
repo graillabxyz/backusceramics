@@ -19,13 +19,33 @@ export default function ContactPage() {
     subject: "",
     message: "",
   })
+  const [isSubmitting, setIsSubmitting] = useState(false)
+  const [error, setError] = useState<string | null>(null)
   const [submitted, setSubmitted] = useState(false)
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
-    // In production, this would submit to an API
-    console.log("Form submitted:", formData)
-    setSubmitted(true)
+    setIsSubmitting(true)
+    setError(null)
+
+    try {
+      const response = await fetch("/api/contact", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(formData),
+      })
+
+      if (response.ok) {
+        setSubmitted(true)
+      } else {
+        const data = await response.json()
+        setError(data.error || "Something went wrong. Please try again.")
+      }
+    } catch (err) {
+      setError("Failed to send message. Please check your connection.")
+    } finally {
+      setIsSubmitting(false)
+    }
   }
 
   return (
@@ -123,8 +143,18 @@ export default function ContactPage() {
                     />
                   </div>
 
-                  <Button type="submit" size="lg" className="w-full sm:w-auto">
-                    Send Message
+                  {error && (
+                    <p className="text-sm font-medium text-destructive bg-destructive/10 p-3 rounded-md">
+                      {error}
+                    </p>
+                  )}
+
+                  <Button 
+                    type="submit" 
+                    className="w-full h-12 text-lg"
+                    disabled={isSubmitting}
+                  >
+                    {isSubmitting ? "Sending..." : "Send Message"}
                   </Button>
                 </form>
               )}
