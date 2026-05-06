@@ -28,15 +28,23 @@ export default function ShopPage() {
       {/* Main Content */}
       <section className="py-16 bg-background">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="grid lg:grid-cols-2 gap-12 items-center">
+          <div className="grid lg:grid-cols-2 gap-12 items-center mb-24">
             <div className="order-2 lg:order-1">
-              <div className="relative aspect-[3/4] rounded-2xl overflow-hidden shadow-2xl">
-                <img 
-                  src="/wallofcups.jpeg" 
-                  alt="The Wall of Cups at Backus Ceramics" 
-                  className="w-full h-full object-cover"
-                />
-                <div className="absolute inset-0 bg-gradient-to-t from-black/40 to-transparent" />
+              <div className="grid grid-cols-2 gap-4">
+                <div className="relative aspect-[3/4] rounded-2xl overflow-hidden shadow-lg">
+                  <img 
+                    src="/wallofcups.jpeg" 
+                    alt="The Wall of Cups at Backus Ceramics" 
+                    className="w-full h-full object-cover"
+                  />
+                </div>
+                <div className="relative aspect-[3/4] rounded-2xl overflow-hidden shadow-lg translate-y-8">
+                  <img 
+                    src="/wallofcups2.jpg" 
+                    alt="The Wall of Cups at Backus Ceramics" 
+                    className="w-full h-full object-cover"
+                  />
+                </div>
               </div>
             </div>
             
@@ -75,17 +83,53 @@ export default function ShopPage() {
                   </a>
                 </Button>
               </div>
+            </div>
+          </div>
 
-              <div className="p-8 bg-secondary/30 rounded-2xl border border-border">
-                <h3 className="font-heading font-bold text-xl mb-3 flex items-center gap-2">
-                  <Video className="h-5 w-5 text-primary" />
-                  How it works
-                </h3>
-                <p className="text-muted-foreground">
-                  Simply send us a message saying "I'd like a tour of the wall." 
-                  We'll send over a quick video of our current inventory and can 
-                  provide close-up photos and pricing for any pieces that catch your eye.
-                </p>
+          {/* Custom Orders Section */}
+          <div className="grid lg:grid-cols-2 gap-12 items-center">
+            <div className="space-y-8">
+              <h2 className="font-heading font-bold text-3xl">Custom Orders</h2>
+              <p className="text-lg text-muted-foreground">
+                Looking for something specific? We love creating custom pieces for 
+                homes, cafes, and collections. From a single unique vase to a 
+                complete dinnerware set, let's bring your vision to life.
+              </p>
+              <div className="flex flex-wrap gap-4">
+                <div className="flex items-center gap-2 px-4 py-2 bg-secondary/50 rounded-full text-sm">
+                  <span className="w-2 h-2 rounded-full bg-primary" />
+                  Restaurant Ware
+                </div>
+                <div className="flex items-center gap-2 px-4 py-2 bg-secondary/50 rounded-full text-sm">
+                  <span className="w-2 h-2 rounded-full bg-primary" />
+                  Home Decor
+                </div>
+                <div className="flex items-center gap-2 px-4 py-2 bg-secondary/50 rounded-full text-sm">
+                  <span className="w-2 h-2 rounded-full bg-primary" />
+                  Gifts & Sets
+                </div>
+              </div>
+              <Button asChild size="lg">
+                <a href="https://wa.me/6282145890402?text=I'm interested in a custom ceramic order" target="_blank" rel="noopener noreferrer">
+                  Inquire about Custom Orders
+                </a>
+              </Button>
+            </div>
+
+            <div className="grid grid-cols-2 gap-4">
+              <div className="relative aspect-square rounded-2xl overflow-hidden shadow-lg">
+                <img 
+                  src="/customorder1.JPG" 
+                  alt="Custom ceramic order example" 
+                  className="w-full h-full object-cover"
+                />
+              </div>
+              <div className="relative aspect-square rounded-2xl overflow-hidden shadow-lg mt-12">
+                <img 
+                  src="/customorder2.PNG" 
+                  alt="Custom ceramic order example" 
+                  className="w-full h-full object-cover"
+                />
               </div>
             </div>
           </div>

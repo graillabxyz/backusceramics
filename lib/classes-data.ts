@@ -65,7 +65,8 @@ export const workshops: Workshop[] = [
       "Pieces glazed and fired by studio"
     ],
     available: true,
-    category: "workshop"
+    category: "workshop",
+    image: "/handbuilding.JPG"
   },
   {
     id: "3-day-workshop",

@@ -5,6 +5,7 @@ import { ClassesPreview } from "@/components/home/classes-preview"
 import { ResidencyPreview } from "@/components/home/residency-preview"
 import { ShopPreview } from "@/components/home/shop-preview"
 import { CustomOrdersPreview } from "@/components/home/custom-orders-preview"
+import { AmbianceSection } from "@/components/home/ambiance-section"
 import { ContactSection } from "@/components/home/contact-section"
 
 export default function HomePage() {
@@ -15,6 +16,7 @@ export default function HomePage() {
       <ClassesPreview />
       <ResidencyPreview />
       <ShopPreview />
+      <AmbianceSection />
       <CustomOrdersPreview />
       <ContactSection />
       <Footer />
