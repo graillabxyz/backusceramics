@@ -46,7 +46,7 @@ export function ClassesPreview() {
           </div>
         </div>
 
-        <div className="grid md:grid-cols-2 gap-8">
+        <div className="grid md:grid-cols-3 gap-6">
           {previewClasses.map((workshop) => {
             if (!workshop) return null
             const Icon = workshop.id === "handbuilding" ? Hand : categoryIcons[workshop.category]
