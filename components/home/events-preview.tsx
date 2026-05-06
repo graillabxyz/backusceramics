@@ -1,8 +1,8 @@
 import Link from "next/link"
 import { Button } from "@/components/ui/button"
-import { ArrowRight, Cake, Sparkles } from "lucide-react"
+import { ArrowRight, Cake, Sparkles, Wine } from "lucide-react"
 
-export function BirthdayPreview() {
+export function EventsPreview() {
   return (
     <section className="py-24 bg-secondary/30 relative overflow-hidden">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 relative z-10">
@@ -10,23 +10,23 @@ export function BirthdayPreview() {
           <div className="lg:w-1/2 space-y-8">
             <div>
               <div className="flex items-center gap-2 text-primary mb-4">
-                <Cake className="h-6 w-6" />
-                <span className="text-sm font-bold uppercase tracking-widest">Celebrate with us</span>
+                <Sparkles className="h-6 w-6" />
+                <span className="text-sm font-bold uppercase tracking-widest">Private Gatherings</span>
               </div>
               <h2 className="text-4xl sm:text-5xl text-foreground tracking-tight font-heading font-bold leading-[1.1]">
-                Creative Birthday <br />Atelier
+                Curated Events & <br />Creative Ateliers
               </h2>
               <p className="mt-6 text-lg text-muted-foreground leading-relaxed">
-                A unique way to celebrate. Combine the joy of creating with a 
-                warm, curated atmosphere, fresh drinks, and homemade treats. 
-                Tailored for kids, duos, and adults.
+                From intimate birthdays to private creative retreats and aperitivo 
+                evenings. We host unique gatherings designed to slow down, create, 
+                and celebrate together.
               </p>
             </div>
 
             <div className="flex flex-wrap gap-4">
               <Button asChild size="lg" className="h-14 px-8 text-lg gap-2">
-                <Link href="/birthday">
-                  Explore Birthday Options
+                <Link href="/events">
+                  Explore Event Options
                   <ArrowRight className="h-5 w-5" />
                 </Link>
               </Button>
@@ -36,8 +36,8 @@ export function BirthdayPreview() {
           <div className="lg:w-1/2 relative">
             <div className="relative aspect-[4/3] rounded-3xl overflow-hidden shadow-2xl">
               <img 
-                src="/birthday.jpeg" 
-                alt="Birthday celebration" 
+                src="/ambiance.JPG" 
+                alt="Private event ambiance" 
                 className="w-full h-full object-cover hover:scale-105 transition-transform duration-700"
               />
               <div className="absolute inset-0 bg-gradient-to-t from-background/60 via-transparent to-transparent" />
@@ -45,11 +45,11 @@ export function BirthdayPreview() {
               <div className="absolute bottom-6 left-6 right-6 p-6 bg-background/90 backdrop-blur-md rounded-2xl border border-white/10 shadow-xl">
                 <div className="flex items-start gap-4">
                   <div className="w-12 h-12 rounded-full bg-primary/10 flex items-center justify-center shrink-0">
-                    <Sparkles className="h-6 w-6 text-primary" />
+                    <Wine className="h-6 w-6 text-primary" />
                   </div>
                   <div>
-                    <p className="font-heading font-bold text-lg">Curated Experience</p>
-                    <p className="text-sm text-muted-foreground">Natural decorations, refreshments, and guided workshops included.</p>
+                    <p className="font-heading font-bold text-lg">Bespoke Experiences</p>
+                    <p className="text-sm text-muted-foreground">Natural decorations, artisanal treats, and guided workshops tailored to your group.</p>
                   </div>
                 </div>
               </div>
