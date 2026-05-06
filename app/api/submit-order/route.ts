@@ -231,24 +231,40 @@ function buildEmailHTML(data: OrderPayload): string {
 export async function POST(req: NextRequest) {
   try {
     const data: OrderPayload = await req.json()
+    console.log('Received order data:', JSON.stringify(data, null, 2))
 
     if (!data.contact?.name || !data.contact?.email) {
       return NextResponse.json({ error: 'Missing required contact fields' }, { status: 400 })
     }
 
-    const csv = buildCSV(data)
-    const csvBuffer = Buffer.from(csv, 'utf-8')
+    let csv: string
+    let csvBuffer: Buffer
+    try {
+      csv = buildCSV(data)
+      csvBuffer = Buffer.from(csv, 'utf-8')
+    } catch (csvErr) {
+      console.error('CSV generation error:', csvErr)
+      return NextResponse.json({ error: 'Failed to generate order document' }, { status: 500 })
+    }
+
     const timestamp = new Date().toISOString().split('T')[0]
     const safeName = data.contact.name.replace(/[^a-z0-9]/gi, '-').toLowerCase()
     const filename = `order-inquiry-${safeName}-${timestamp}.csv`
 
     const fromEmail = process.env.RESEND_FROM_EMAIL || 'onboarding@resend.dev'
+    const apiKey = process.env.RESEND_API_KEY
 
+    if (!apiKey) {
+      console.error('RESEND_API_KEY is not set')
+      return NextResponse.json({ error: 'Email service not configured' }, { status: 500 })
+    }
+
+    console.log('Sending email via Resend...')
     const { error } = await resend.emails.send({
       from: fromEmail,
       to: 'backusceramics@gmail.com',
       reply_to: data.contact.email,
-      subject: 'NEW ORDER INQUIRY',
+      subject: `NEW ORDER INQUIRY: ${data.contact.name}`,
       html: buildEmailHTML(data),
       attachments: [
         {
@@ -259,13 +275,17 @@ export async function POST(req: NextRequest) {
     })
 
     if (error) {
-      console.error('Resend error:', error)
-      return NextResponse.json({ error: 'Failed to send email' }, { status: 500 })
+      console.error('Resend email error:', error)
+      return NextResponse.json({ error: 'Failed to send email', details: error }, { status: 500 })
     }
 
+    console.log('Order inquiry sent successfully')
     return NextResponse.json({ success: true })
   } catch (err) {
-    console.error('Submit order error:', err)
-    return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
+    console.error('Submit order overall error:', err)
+    return NextResponse.json({ 
+      error: 'Internal server error', 
+      message: err instanceof Error ? err.message : String(err) 
+    }, { status: 500 })
   }
 }
