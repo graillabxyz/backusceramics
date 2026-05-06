@@ -166,66 +166,37 @@ export default function CustomOrdersPage() {
     e.preventDefault()
     setIsSubmitting(true)
 
-    const formData = new FormData()
-    
-    // Contact info
-    formData.append("Name", contactInfo.name)
-    formData.append("Email", contactInfo.email)
-    formData.append("Phone", contactInfo.phone || "Not provided")
-    formData.append("Location", contactInfo.location)
-    
-    // Pieces summary
-    const piecesSummary = pieces.map((piece, index) => {
-      const pieceLabel = pieceTypes.find(t => t.value === piece.pieceType)?.label || piece.pieceType
-      const finishLabel = glazeFinishes.find(f => f.value === piece.finishing)?.label || piece.finishing
-      return `
-PIECE ${index + 1}:
-- Type: ${pieceLabel}
-- Dimensions/Volume: ${piece.dimensions || "Not specified"}
-- Quantity: ${piece.quantity}
-- Finishing: ${finishLabel || "Not specified"}
-- Reference Images: ${piece.images.length} attached`
-    }).join("\n")
-    
-    formData.append("Order Details", piecesSummary)
-    
-    // Preferences
-    const colorLabel = colorOptions.find(c => c.value === preferences.colorPreference)?.label || preferences.colorPreference
-    formData.append("Color Preference", colorLabel || "Not specified")
-    formData.append("Timeline", preferences.timeline || "Not specified")
-    formData.append("Budget (IDR)", preferences.budget || "Not specified")
-    formData.append("Inspiration & References", preferences.inspiration || "Not provided")
-    formData.append("Additional Notes", preferences.additionalNotes || "None")
-    formData.append("How They Heard About Us", preferences.howDidYouHear || "Not specified")
-    
-    // Attach images
-    pieces.forEach((piece, pieceIndex) => {
-      piece.images.forEach((image, imageIndex) => {
-        formData.append(`Piece${pieceIndex + 1}_Image${imageIndex + 1}`, image)
-      })
-    })
+    const payload = {
+      contact: contactInfo,
+      pieces: pieces.map(piece => ({
+        pieceType: piece.pieceType,
+        dimensions: piece.dimensions,
+        quantity: piece.quantity,
+        finishing: piece.finishing,
+        imageCount: piece.images.length,
+      })),
+      preferences,
+    }
 
-    // Submit to FormSubmit (replace with your email)
-    formData.append("_subject", `Custom Order Request from ${contactInfo.name}`)
-    formData.append("_template", "table")
-    
     try {
-      const response = await fetch("https://formsubmit.co/ajax/your-email@example.com", {
+      const response = await fetch("/api/submit-order", {
         method: "POST",
-        body: formData,
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
       })
-      
+
       if (response.ok) {
         setSubmitted(true)
       } else {
-        // Fallback: still show success since email services can be finicky
-        setSubmitted(true)
+        const data = await response.json().catch(() => ({}))
+        console.error("Order submission failed:", data)
+        alert("There was a problem submitting your order. Please try again or email us directly at backusceramics@gmail.com.")
       }
-    } catch {
-      // Show success anyway - the form data was collected
-      setSubmitted(true)
+    } catch (err) {
+      console.error("Network error:", err)
+      alert("There was a problem submitting your order. Please try again or email us directly at backusceramics@gmail.com.")
     }
-    
+
     setIsSubmitting(false)
   }
 
