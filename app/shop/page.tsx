@@ -98,7 +98,9 @@ export default function ShopPage() {
             <p className="font-medium text-foreground mb-1">Open Monday - Saturday</p>
             <p className="text-muted-foreground mb-6">9:00 AM - 4:30 PM</p>
             <Button asChild variant="link" className="text-primary h-auto p-0 text-lg">
-              <Link href="/contact">Get Directions <ArrowRight className="ml-2 h-5 w-5" /></Link>
+              <a href="https://share.google/3YeB9prlKVRu8Ccee" target="_blank" rel="noopener noreferrer">
+                Get Directions <ArrowRight className="ml-2 h-5 w-5" />
+              </a>
             </Button>
           </div>
         </div>

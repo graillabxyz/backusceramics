@@ -77,7 +77,12 @@ export function ContactSection() {
               <MapPin className="h-6 w-6 text-primary flex-shrink-0 mt-1" />
               <div>
                 <p className="font-medium">Bali, Indonesia</p>
-                <p className="text-sm text-muted-foreground">Jl. Raya Kerobokan, Kuta Utara, Bali</p>
+                <p className="text-sm text-muted-foreground mb-3">Jl. Raya Kerobokan, Kuta Utara, Bali</p>
+                <Button asChild variant="outline" size="sm" className="h-8">
+                  <a href="https://share.google/3YeB9prlKVRu8Ccee" target="_blank" rel="noopener noreferrer">
+                    Get Directions
+                  </a>
+                </Button>
               </div>
             </div>
             

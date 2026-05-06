@@ -146,9 +146,15 @@ export default function ContactPage() {
                     <p className="text-muted-foreground">
                       Bali, Indonesia
                     </p>
-                    <p className="text-sm text-muted-foreground mt-1">
-                      Exact location shared upon booking
+                    <p className="text-sm text-muted-foreground mt-1 mb-3">
+                      Jl. Raya Kerobokan, Kuta Utara, Bali
                     </p>
+                    <Button asChild variant="outline" size="sm" className="h-8">
+                      <a href="https://share.google/3YeB9prlKVRu8Ccee" target="_blank" rel="noopener noreferrer">
+                        <MapPin className="h-3 w-3 mr-2" />
+                        Get Directions
+                      </a>
+                    </Button>
                   </div>
                 </div>
 
