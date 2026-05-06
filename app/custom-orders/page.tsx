@@ -231,14 +231,23 @@ export default function CustomOrdersPage() {
       <Navigation />
       
       {/* Hero Section */}
-      <section className="pt-32 pb-16 bg-secondary/30">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+      <section className="relative pt-32 pb-24 overflow-hidden">
+        <div className="absolute inset-0 z-0">
+          <img 
+            src="/customorder1.JPG" 
+            alt="Custom Ceramics background" 
+            className="w-full h-full object-cover"
+          />
+          <div className="absolute inset-0 bg-gradient-to-r from-background via-background/90 to-background/20" />
+        </div>
+        
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 relative z-10">
           <div className="max-w-3xl">
             <Badge variant="secondary" className="mb-4">Made to Order</Badge>
             <h1 className="font-heading font-bold text-4xl sm:text-5xl lg:text-6xl text-foreground tracking-tight text-balance">
               Custom Order Worksheet
             </h1>
-            <p className="mt-6 text-lg text-muted-foreground leading-relaxed">
+            <p className="mt-6 text-lg text-muted-foreground leading-relaxed max-w-2xl">
               Tell us about your vision. Add each piece you need to your order, 
               specify dimensions and finishing preferences, and attach reference images 
               to help us understand exactly what you&apos;re looking for.
@@ -248,50 +257,68 @@ export default function CustomOrdersPage() {
       </section>
 
       {/* What We Offer */}
-      <section className="py-12 bg-background border-b border-border">
+      <section className="py-20 bg-background border-b border-border">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="grid md:grid-cols-3 gap-8">
-            <div className="flex items-start gap-4">
-              <div className="w-12 h-12 rounded-full bg-primary/10 flex items-center justify-center flex-shrink-0">
-                <Palette className="h-6 w-6 text-primary" />
+          <div className="grid lg:grid-cols-2 gap-16 items-center">
+            <div className="space-y-8">
+              <div className="grid gap-8">
+                <div className="flex items-start gap-4">
+                  <div className="w-12 h-12 rounded-full bg-primary/10 flex items-center justify-center flex-shrink-0">
+                    <Palette className="h-6 w-6 text-primary" />
+                  </div>
+                  <div>
+                    <h3 className="font-medium text-foreground text-xl">Tableware Sets</h3>
+                    <p className="text-muted-foreground mt-2">
+                      Dinner plates, bowls, cups, mugs, serving platters, and complete dining sets
+                    </p>
+                  </div>
+                </div>
+                <div className="flex items-start gap-4">
+                  <div className="w-12 h-12 rounded-full bg-primary/10 flex items-center justify-center flex-shrink-0">
+                    <Lamp className="h-6 w-6 text-primary" />
+                  </div>
+                  <div>
+                    <h3 className="font-medium text-foreground text-xl">Lighting & Home Decor</h3>
+                    <p className="text-muted-foreground mt-2">
+                      Ceramic hanging lamps, wall lamps, sconces, and decorative home accents
+                    </p>
+                  </div>
+                </div>
+                <div className="flex items-start gap-4">
+                  <div className="w-12 h-12 rounded-full bg-primary/10 flex items-center justify-center flex-shrink-0">
+                    <Home className="h-6 w-6 text-primary" />
+                  </div>
+                  <div>
+                    <h3 className="font-medium text-foreground text-xl">Vases & Vessels</h3>
+                    <p className="text-muted-foreground mt-2">
+                      Small, medium, and large vases, decorative bowls, and sculptural vessels
+                    </p>
+                  </div>
+                </div>
               </div>
-              <div>
-                <h3 className="font-medium text-foreground">Tableware Sets</h3>
-                <p className="text-sm text-muted-foreground mt-1">
-                  Dinner plates, bowls, cups, mugs, serving platters, and complete dining sets
+              
+              <div className="p-6 bg-muted/50 rounded-2xl flex items-start gap-3 border border-border">
+                <Info className="h-5 w-5 text-primary flex-shrink-0 mt-0.5" />
+                <p className="text-sm text-muted-foreground">
+                  <strong>Sculptural pieces and tiles</strong> are available for custom order by request and after consultation. 
+                  Please add them to your order below and we&apos;ll schedule a conversation to discuss your vision in detail.
                 </p>
               </div>
             </div>
-            <div className="flex items-start gap-4">
-              <div className="w-12 h-12 rounded-full bg-primary/10 flex items-center justify-center flex-shrink-0">
-                <Lamp className="h-6 w-6 text-primary" />
+
+            <div className="relative">
+              <div className="aspect-[4/5] rounded-3xl overflow-hidden shadow-2xl">
+                <img 
+                  src="/customorder2.PNG" 
+                  alt="Custom ceramic production" 
+                  className="w-full h-full object-cover"
+                />
               </div>
-              <div>
-                <h3 className="font-medium text-foreground">Lighting & Home Decor</h3>
-                <p className="text-sm text-muted-foreground mt-1">
-                  Ceramic hanging lamps, wall lamps, sconces, and decorative home accents
-                </p>
-              </div>
-            </div>
-            <div className="flex items-start gap-4">
-              <div className="w-12 h-12 rounded-full bg-primary/10 flex items-center justify-center flex-shrink-0">
-                <Home className="h-6 w-6 text-primary" />
-              </div>
-              <div>
-                <h3 className="font-medium text-foreground">Vases & Vessels</h3>
-                <p className="text-sm text-muted-foreground mt-1">
-                  Small, medium, and large vases, decorative bowls, and sculptural vessels
-                </p>
+              <div className="absolute -bottom-6 -left-6 bg-background p-6 rounded-2xl shadow-xl border border-border hidden sm:block">
+                <p className="font-heading font-bold text-2xl text-primary">4-8 Weeks</p>
+                <p className="text-sm text-muted-foreground">Average lead time</p>
               </div>
             </div>
-          </div>
-          
-          <div className="mt-8 p-4 bg-muted/50 rounded-lg flex items-start gap-3">
-            <Info className="h-5 w-5 text-primary flex-shrink-0 mt-0.5" />
-            <p className="text-sm text-muted-foreground">
-              <strong>Sculptural pieces and tiles</strong> are available for custom order by request and after consultation. 
-              Please add them to your order below and we&apos;ll schedule a conversation to discuss your vision in detail.
-            </p>
           </div>
         </div>
       </section>
