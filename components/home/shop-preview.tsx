@@ -1,66 +1,74 @@
 import Link from "next/link"
 import { Button } from "@/components/ui/button"
-import { ArrowRight } from "lucide-react"
-
-const featuredProducts = [
-  { id: 1, name: "Espresso Cup", price: 450000 },
-  { id: 2, name: "Tea Bowl", price: 380000 },
-  { id: 3, name: "Coffee Mug", price: 520000 },
-  { id: 4, name: "Matcha Bowl", price: 620000 },
-]
-
-function formatPrice(price: number) {
-  return new Intl.NumberFormat("id-ID", {
-    style: "currency",
-    currency: "IDR",
-    minimumFractionDigits: 0,
-  }).format(price)
-}
+import { ArrowRight, MessageCircle, Instagram, Video } from "lucide-react"
 
 export function ShopPreview() {
   return (
-    <section className="py-24 bg-background">
+    <section className="py-24 bg-background overflow-hidden">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-        <div className="text-center mb-16">
-          <h2 className="text-4xl sm:text-5xl text-foreground tracking-tight">
-            The Wall of Cups
-          </h2>
-          <p className="mt-4 text-lg text-muted-foreground max-w-2xl mx-auto">
-            Each piece is handcrafted with care. Browse our collection and find your perfect cup.
-          </p>
-        </div>
-
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-6">
-          {featuredProducts.map((product) => (
-            <Link
-              key={product.id}
-              href={`/shop/${product.id}`}
-              className="group"
-            >
-              <div className="aspect-square bg-muted rounded-lg overflow-hidden mb-4 relative">
-                {/* Placeholder for product image */}
-                <div className="absolute inset-0 flex items-center justify-center text-muted-foreground/50">
-                  <span className="text-sm">Product Image</span>
-                </div>
-                <div className="absolute inset-0 bg-foreground/0 group-hover:bg-foreground/5 transition-colors" />
+        <div className="grid lg:grid-cols-2 gap-16 items-center">
+          <div className="relative">
+            <div className="grid grid-cols-2 gap-4">
+              <div className="relative aspect-[3/4] rounded-2xl overflow-hidden shadow-2xl">
+                <img 
+                  src="/wallofcups.jpeg" 
+                  alt="Backus Ceramics Wall of Cups" 
+                  className="w-full h-full object-cover"
+                />
               </div>
-              <h3 className="font-heading font-bold text-foreground group-hover:text-primary transition-colors">
-                {product.name}
-              </h3>
-              <p className="text-sm text-muted-foreground mt-1">
-                {formatPrice(product.price)}
-              </p>
-            </Link>
-          ))}
-        </div>
+              <div className="relative aspect-[3/4] rounded-2xl overflow-hidden shadow-2xl translate-y-12">
+                <img 
+                  src="/wallofcups2.jpg" 
+                  alt="Backus Ceramics Wall of Cups" 
+                  className="w-full h-full object-cover"
+                />
+              </div>
+            </div>
+            {/* Decorative element */}
+            <div className="absolute -z-10 top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[120%] h-[120%] bg-primary/5 rounded-full blur-3xl" />
+          </div>
 
-        <div className="text-center mt-12">
-          <Button asChild variant="outline" size="lg">
-            <Link href="/shop">
-              View All Products
-              <ArrowRight className="ml-2 h-4 w-4" />
-            </Link>
-          </Button>
+          <div className="space-y-8">
+            <div>
+              <span className="text-sm font-medium text-primary uppercase tracking-wider">
+                Our Collection
+              </span>
+              <h2 className="mt-2 text-4xl sm:text-5xl text-foreground tracking-tight font-heading font-bold">
+                The Wall of Cups
+              </h2>
+              <p className="mt-6 text-lg text-muted-foreground leading-relaxed">
+                Our inventory changes daily as pieces are finished and find new homes. 
+                Instead of a static shop, we offer personalized video tours of our 
+                current collection.
+              </p>
+            </div>
+
+            <div className="p-8 bg-secondary/30 rounded-2xl border border-border">
+              <h3 className="font-heading font-bold text-xl mb-3 flex items-center gap-2">
+                <Video className="h-5 w-5 text-primary" />
+                Live Video Tours
+              </h3>
+              <p className="text-muted-foreground mb-6">
+                Message us and we'll send you a quick video of what's on the wall 
+                today. See the textures and colors in natural light before you choose.
+              </p>
+              
+              <div className="flex flex-col sm:flex-row gap-4">
+                <Button asChild className="gap-2">
+                  <a href="https://wa.me/6282145890402?text=I'd like a video tour of the Wall of Cups" target="_blank" rel="noopener noreferrer">
+                    <MessageCircle className="h-4 w-4" />
+                    WhatsApp Tour
+                  </a>
+                </Button>
+                <Button asChild variant="outline" className="gap-2 bg-transparent">
+                  <Link href="/shop">
+                    Learn More
+                    <ArrowRight className="h-4 w-4" />
+                  </Link>
+                </Button>
+              </div>
+            </div>
+          </div>
         </div>
       </div>
     </section>
