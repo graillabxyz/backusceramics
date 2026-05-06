@@ -101,9 +101,19 @@ export default function ClassesPage() {
             {workshopClasses.map((workshop) => {
               const Icon = categoryIcons[workshop.category]
               return (
-                <Card key={workshop.id} className="flex flex-col">
-                  <div className="aspect-[4/3] bg-muted flex items-center justify-center">
-                    <span className="text-sm text-muted-foreground">Workshop Image</span>
+                <Card key={workshop.id} className="flex flex-col hover:shadow-lg transition-all duration-300 overflow-hidden group">
+                  <div className="aspect-[4/3] relative overflow-hidden bg-muted">
+                    {workshop.image ? (
+                      <img 
+                        src={workshop.image} 
+                        alt={workshop.title}
+                        className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-110"
+                      />
+                    ) : (
+                      <div className="w-full h-full flex items-center justify-center">
+                        <Icon className="h-12 w-12 text-muted-foreground/20" />
+                      </div>
+                    )}
                   </div>
                   <CardHeader className="pb-3">
                     <div className="flex items-center gap-2 mb-2">

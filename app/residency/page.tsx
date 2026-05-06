@@ -73,9 +73,19 @@ export default function ResidencyPage() {
           {/* Programs Grid */}
           <div className="grid lg:grid-cols-2 gap-8">
             {residencyPrograms.map((program) => (
-              <Card key={program.id} id={program.id} className="bg-card border-border overflow-hidden">
-                <div className="aspect-video bg-muted flex items-center justify-center">
-                  <span className="text-sm text-muted-foreground">Residency Program Image</span>
+              <Card key={program.id} id={program.id} className="bg-card border-border overflow-hidden flex flex-col hover:shadow-lg transition-all duration-300 group">
+                <div className="aspect-video relative overflow-hidden bg-muted">
+                  {program.image ? (
+                    <img 
+                      src={program.image} 
+                      alt={program.title}
+                      className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-110"
+                    />
+                  ) : (
+                    <div className="w-full h-full flex items-center justify-center">
+                      <Calendar className="h-12 w-12 text-muted-foreground/20" />
+                    </div>
+                  )}
                 </div>
                 <CardHeader>
                   <div className="flex items-center justify-between">

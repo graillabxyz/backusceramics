@@ -5,10 +5,18 @@ import { ArrowRight } from "lucide-react"
 export function HeroSection() {
   return (
     <section className="relative min-h-screen flex items-center justify-center pt-20">
-      {/* Background Image */}
+      {/* Background Video/Image */}
       <div className="absolute inset-0">
-        <div className="absolute inset-0 bg-[url('/images/hero-ceramics.jpg')] bg-cover bg-center" />
-        <div className="absolute inset-0 bg-background/60" />
+        <video
+          autoPlay
+          muted
+          loop
+          playsInline
+          className="absolute inset-0 w-full h-full object-cover"
+        >
+          <source src="/herovideo01.mp4" type="video/mp4" />
+        </video>
+        <div className="absolute inset-0 bg-background/40" />
       </div>
       
       <div className="relative z-10 max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-24">

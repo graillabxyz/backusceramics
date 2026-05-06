@@ -40,7 +40,8 @@ export const workshops: Workshop[] = [
       "Ready in ~2 weeks"
     ],
     available: true,
-    category: "workshop"
+    category: "workshop",
+    image: "/beginner_single_day.jpg"
   },
   {
     id: "handbuilding",
@@ -88,7 +89,8 @@ export const workshops: Workshop[] = [
       "Pieces glazed and fired by studio"
     ],
     available: true,
-    category: "workshop"
+    category: "workshop",
+    image: "/3day.jpg"
   },
   {
     id: "6-day-workshop",
@@ -113,7 +115,8 @@ export const workshops: Workshop[] = [
       "Portfolio-worthy pieces"
     ],
     available: true,
-    category: "workshop"
+    category: "workshop",
+    image: "/6day.jpg"
   },
   {
     id: "3-week-residency",
@@ -135,7 +138,8 @@ export const workshops: Workshop[] = [
       "Help with accommodation setup"
     ],
     available: true,
-    category: "residency"
+    category: "residency",
+    image: "/3week.jpg"
   },
   {
     id: "6-week-residency",
@@ -158,7 +162,8 @@ export const workshops: Workshop[] = [
       "Help with accommodation setup"
     ],
     available: true,
-    category: "residency"
+    category: "residency",
+    image: "/6week.jpg"
   },
   {
     id: "kids-workshop",
