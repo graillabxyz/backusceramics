@@ -249,7 +249,7 @@ export function ClassesCalendar({ initialClass }: ClassesCalendarProps) {
         </div>
       </section>
 
-      <section className="mx-auto grid max-w-[1500px] gap-6 px-4 py-8 sm:px-6 xl:grid-cols-[minmax(0,1fr)_380px] lg:px-8">
+      <section className="mx-auto grid max-w-7xl gap-6 px-4 py-8 sm:px-6 xl:grid-cols-[minmax(0,1fr)_360px] lg:px-8">
         <div className="overflow-hidden rounded-lg border border-border bg-background shadow-sm">
           <div className="overflow-x-auto">
             <div className="min-w-[1020px]">
@@ -276,7 +276,7 @@ export function ClassesCalendar({ initialClass }: ClassesCalendarProps) {
                 {weekDays.map((date) => {
                   const daySessions = sessions.filter((session) => session.dateKey === formatDateKey(date))
                 return (
-                  <div key={date.toISOString()} className="min-h-[560px] border-r border-border bg-background p-2.5 last:border-r-0">
+                  <div key={date.toISOString()} className="min-h-[460px] border-r border-border bg-background p-2.5 last:border-r-0">
                     <div className="space-y-2.5">
                       {daySessions.length === 0 ? (
                         <div className="rounded-md border border-dashed border-border p-4 text-center text-sm text-muted-foreground">
