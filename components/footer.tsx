@@ -90,10 +90,21 @@ export function Footer() {
           </div>
         </div>
 
-        <div className="border-t border-background/20 mt-12 pt-8">
-          <p className="text-sm text-background/50 text-center">
+        <div className="border-t border-background/20 mt-12 pt-8 flex flex-col sm:flex-row items-center justify-between gap-4">
+          <p className="text-sm text-background/50">
             {new Date().getFullYear()} Backus Ceramics. All rights reserved.
           </p>
+          <div className="flex items-center gap-6">
+            <Link href="/privacy" className="text-xs text-background/40 hover:text-background/70 transition-colors">
+              Privacy
+            </Link>
+            <Link href="/terms" className="text-xs text-background/40 hover:text-background/70 transition-colors">
+              Terms
+            </Link>
+            <Link href="/data-deletion" className="text-xs text-background/40 hover:text-background/70 transition-colors">
+              Data Deletion
+            </Link>
+          </div>
         </div>
       </div>
     </footer>

@@ -1,87 +1,108 @@
 "use client"
 
-import React, { createContext, useContext, useState, useEffect, useCallback } from "react"
+import React, { createContext, useContext, useEffect, useState } from "react"
+import { createClient } from "@/lib/supabase/client"
+import type { User as SupabaseUser } from "@supabase/supabase-js"
 
-interface User {
+interface AppUser {
   id: string
   name: string
-  role: "admin" | "user"
+  email: string
+  role: "ADMIN" | "USER"
+  image?: string
 }
 
-interface AuthContextType {
-  user: User | null
+interface AuthContextValue {
+  user: AppUser | null
+  supabaseUser: SupabaseUser | null
   isLoading: boolean
-  login: (name: string, password: string) => Promise<{ success: boolean; error?: string }>
-  logout: () => void
   isAuthenticated: boolean
+  logout: () => Promise<void>
 }
 
-const AuthContext = createContext<AuthContextType | undefined>(undefined)
-
-// Simple user store - will be replaced with database later
-const USERS = [
-  { id: "1", name: "admin", password: "password", role: "admin" as const },
-]
+const AuthContext = createContext<AuthContextValue>({
+  user: null,
+  supabaseUser: null,
+  isLoading: true,
+  isAuthenticated: false,
+  logout: async () => {},
+})
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
-  const [user, setUser] = useState<User | null>(null)
+  const [supabaseUser, setSupabaseUser] = useState<SupabaseUser | null>(null)
+  const [appUser, setAppUser] = useState<AppUser | null>(null)
   const [isLoading, setIsLoading] = useState(true)
+  const supabase = createClient()
 
   useEffect(() => {
-    // Check for existing session
-    const storedUser = localStorage.getItem("backus_user")
-    if (storedUser) {
-      try {
-        setUser(JSON.parse(storedUser))
-      } catch {
-        localStorage.removeItem("backus_user")
-      }
-    }
-    setIsLoading(false)
-  }, [])
+    // Get initial session
+    const getSession = async () => {
+      const {
+        data: { user },
+      } = await supabase.auth.getUser()
+      setSupabaseUser(user)
 
-  const login = useCallback(async (name: string, password: string): Promise<{ success: boolean; error?: string }> => {
-    // Simulate network delay
-    await new Promise(resolve => setTimeout(resolve, 500))
-    
-    const foundUser = USERS.find(u => u.name === name && u.password === password)
-    
-    if (foundUser) {
-      const userData: User = {
-        id: foundUser.id,
-        name: foundUser.name,
-        role: foundUser.role,
+      if (user) {
+        // Fetch our app-level user data (with role) from our API
+        await fetchAppUser(user.email!)
       }
-      setUser(userData)
-      localStorage.setItem("backus_user", JSON.stringify(userData))
-      return { success: true }
+      setIsLoading(false)
     }
-    
-    return { success: false, error: "Invalid name or password" }
-  }, [])
 
-  const logout = useCallback(() => {
-    setUser(null)
-    localStorage.removeItem("backus_user")
-  }, [])
+    getSession()
+
+    // Listen for auth changes
+    const {
+      data: { subscription },
+    } = supabase.auth.onAuthStateChange(async (_event, session) => {
+      const user = session?.user ?? null
+      setSupabaseUser(user)
+
+      if (user) {
+        await fetchAppUser(user.email!)
+      } else {
+        setAppUser(null)
+      }
+      setIsLoading(false)
+    })
+
+    return () => subscription.unsubscribe()
+  }, []) // eslint-disable-line react-hooks/exhaustive-deps
+
+  const fetchAppUser = async (email: string) => {
+    try {
+      const res = await fetch("/api/me")
+      if (res.ok) {
+        const data = await res.json()
+        setAppUser(data.user)
+      }
+    } catch {
+      // Silently fail — user just hasn't been synced yet
+    }
+  }
+
+  const logout = async () => {
+    await supabase.auth.signOut()
+    setSupabaseUser(null)
+    setAppUser(null)
+    window.location.href = "/"
+  }
 
   return (
-    <AuthContext.Provider value={{ 
-      user, 
-      isLoading, 
-      login, 
-      logout, 
-      isAuthenticated: !!user 
-    }}>
+    <AuthContext.Provider
+      value={{
+        user: appUser,
+        supabaseUser,
+        isLoading,
+        isAuthenticated: !!supabaseUser,
+        logout,
+      }}
+    >
       {children}
     </AuthContext.Provider>
   )
 }
 
 export function useAuth() {
-  const context = useContext(AuthContext)
-  if (context === undefined) {
-    throw new Error("useAuth must be used within an AuthProvider")
-  }
-  return context
+  return useContext(AuthContext)
 }

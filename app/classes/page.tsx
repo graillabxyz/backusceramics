@@ -176,8 +176,12 @@ export default function ClassesPage() {
           {kidsClasses.map((workshop) => (
             <Card key={workshop.id} className="overflow-hidden">
               <div className="grid md:grid-cols-2">
-                <div className="aspect-[4/3] md:aspect-auto bg-muted flex items-center justify-center">
-                  <span className="text-sm text-muted-foreground">Kids Workshop Image</span>
+                <div className="aspect-[4/3] md:aspect-auto relative bg-muted overflow-hidden">
+                  <img 
+                    src="/kidsclass.jpeg" 
+                    alt={workshop.title}
+                    className="w-full h-full object-cover absolute inset-0"
+                  />
                 </div>
                 <div className="p-6 lg:p-8 flex flex-col justify-center">
                   <Badge variant="secondary" className="w-fit mb-4">{workshop.level}</Badge>

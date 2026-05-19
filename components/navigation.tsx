@@ -2,7 +2,8 @@
 
 import Link from "next/link"
 import { useState } from "react"
-import { Menu, X } from "lucide-react"
+import { useAuth } from "@/lib/auth-context"
+import { Menu, X, User, LogOut, LayoutDashboard, ShoppingBag } from "lucide-react"
 import { Button } from "@/components/ui/button"
 
 const navLinks = [
@@ -16,6 +17,11 @@ const navLinks = [
 
 export function Navigation() {
   const [isOpen, setIsOpen] = useState(false)
+  const [userMenuOpen, setUserMenuOpen] = useState(false)
+  const { user, isLoading, isAuthenticated, logout } = useAuth()
+
+  const isLoggedIn = isAuthenticated && user
+  const isAdmin = user?.role === "ADMIN"
 
   return (
     <header className="fixed top-0 left-0 right-0 z-50 bg-background/95 backdrop-blur-sm border-b border-border">
@@ -41,18 +47,135 @@ export function Navigation() {
                 {link.label}
               </Link>
             ))}
+
+            {/* Auth Button */}
+            {isLoading ? (
+              <div className="w-8 h-8 rounded-full bg-muted animate-pulse" />
+            ) : isLoggedIn ? (
+              <div className="relative">
+                <button
+                  onClick={() => setUserMenuOpen(!userMenuOpen)}
+                  onBlur={() => setTimeout(() => setUserMenuOpen(false), 150)}
+                  className="flex items-center gap-2 pl-3 pr-1 py-1 rounded-full border border-border hover:border-foreground/30 transition-colors bg-background"
+                  aria-label="User menu"
+                >
+                  <span className="text-sm font-medium text-foreground max-w-[100px] truncate hidden lg:block">
+                    {user.name || user.email?.split("@")[0]}
+                  </span>
+                  {user.image ? (
+                    <img
+                      src={user.image}
+                      alt=""
+                      className="w-7 h-7 rounded-full object-cover"
+                    />
+                  ) : (
+                    <div className="w-7 h-7 rounded-full bg-primary flex items-center justify-center">
+                      <span className="text-xs font-bold text-primary-foreground">
+                        {(user.name || user.email || "U").charAt(0).toUpperCase()}
+                      </span>
+                    </div>
+                  )}
+                </button>
+
+                {/* Dropdown Menu */}
+                {userMenuOpen && (
+                  <div className="absolute right-0 top-full mt-2 w-52 bg-background rounded-xl border border-border shadow-lg py-1.5 z-50 animate-in fade-in slide-in-from-top-2 duration-200">
+                    <div className="px-4 py-2.5 border-b border-border">
+                      <p className="text-sm font-semibold text-foreground truncate">
+                        {user.name || "User"}
+                      </p>
+                      <p className="text-xs text-muted-foreground truncate">
+                        {user.email}
+                      </p>
+                    </div>
+
+                    <div className="py-1">
+                      <Link
+                        href="/account"
+                        className="flex items-center gap-3 px-4 py-2 text-sm text-foreground hover:bg-muted transition-colors"
+                        onClick={() => setUserMenuOpen(false)}
+                      >
+                        <ShoppingBag className="w-4 h-4 text-muted-foreground" />
+                        My Orders
+                      </Link>
+
+                      <Link
+                        href="/account/profile"
+                        className="flex items-center gap-3 px-4 py-2 text-sm text-foreground hover:bg-muted transition-colors"
+                        onClick={() => setUserMenuOpen(false)}
+                      >
+                        <User className="w-4 h-4 text-muted-foreground" />
+                        Profile
+                      </Link>
+
+                      {isAdmin && (
+                        <Link
+                          href="/admin"
+                          className="flex items-center gap-3 px-4 py-2 text-sm text-foreground hover:bg-muted transition-colors"
+                          onClick={() => setUserMenuOpen(false)}
+                        >
+                          <LayoutDashboard className="w-4 h-4 text-muted-foreground" />
+                          Admin Dashboard
+                        </Link>
+                      )}
+                    </div>
+
+                    <div className="border-t border-border pt-1">
+                      <button
+                        onClick={() => logout()}
+                        className="flex items-center gap-3 px-4 py-2 text-sm text-destructive hover:bg-muted transition-colors w-full text-left"
+                      >
+                        <LogOut className="w-4 h-4" />
+                        Sign Out
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </div>
+            ) : (
+              <Link href="/login">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="rounded-full px-5 border-foreground/20 hover:bg-foreground hover:text-background transition-all duration-300"
+                >
+                  Sign In
+                </Button>
+              </Link>
+            )}
           </div>
 
-          {/* Mobile Menu Button */}
-          <Button
-            variant="ghost"
-            size="icon"
-            className="md:hidden"
-            onClick={() => setIsOpen(!isOpen)}
-            aria-label="Toggle menu"
-          >
-            {isOpen ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}
-          </Button>
+          {/* Mobile: Auth + Menu */}
+          <div className="flex items-center gap-2 md:hidden">
+            {!isLoading && !isLoggedIn && (
+              <Link href="/login">
+                <Button variant="outline" size="sm" className="rounded-full px-4 text-xs">
+                  Sign In
+                </Button>
+              </Link>
+            )}
+            {isLoggedIn && (
+              <Link href="/account" className="flex items-center">
+                {user.image ? (
+                  <img src={user.image} alt="" className="w-7 h-7 rounded-full object-cover" />
+                ) : (
+                  <div className="w-7 h-7 rounded-full bg-primary flex items-center justify-center">
+                    <span className="text-xs font-bold text-primary-foreground">
+                      {(user.name || user.email || "U").charAt(0).toUpperCase()}
+                    </span>
+                  </div>
+                )}
+              </Link>
+            )}
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={() => setIsOpen(!isOpen)}
+              aria-label="Toggle menu"
+            >
+              {isOpen ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}
+            </Button>
+          </div>
         </div>
 
         {/* Mobile Navigation */}
@@ -69,6 +192,47 @@ export function Navigation() {
                   {link.label}
                 </Link>
               ))}
+
+              {/* Mobile auth links */}
+              {isLoggedIn && (
+                <>
+                  <div className="border-t border-border pt-4 mt-2">
+                    <Link
+                      href="/account"
+                      className="flex items-center gap-3 text-sm font-medium text-muted-foreground hover:text-foreground transition-colors py-2"
+                      onClick={() => setIsOpen(false)}
+                    >
+                      <ShoppingBag className="w-4 h-4" />
+                      My Orders
+                    </Link>
+                    <Link
+                      href="/account/profile"
+                      className="flex items-center gap-3 text-sm font-medium text-muted-foreground hover:text-foreground transition-colors py-2"
+                      onClick={() => setIsOpen(false)}
+                    >
+                      <User className="w-4 h-4" />
+                      Profile
+                    </Link>
+                    {isAdmin && (
+                      <Link
+                        href="/admin"
+                        className="flex items-center gap-3 text-sm font-medium text-muted-foreground hover:text-foreground transition-colors py-2"
+                        onClick={() => setIsOpen(false)}
+                      >
+                        <LayoutDashboard className="w-4 h-4" />
+                        Admin Dashboard
+                      </Link>
+                    )}
+                    <button
+                      onClick={() => { logout(); setIsOpen(false) }}
+                      className="flex items-center gap-3 text-sm font-medium text-destructive hover:text-destructive/80 transition-colors py-2 w-full text-left"
+                    >
+                      <LogOut className="w-4 h-4" />
+                      Sign Out
+                    </button>
+                  </div>
+                </>
+              )}
             </div>
           </div>
         )}

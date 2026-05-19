@@ -1,8 +1,55 @@
+"use client"
+
+import { useState, useEffect } from "react"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
-import { GraduationCap, ShoppingBag, ClipboardList, TrendingUp, Users, DollarSign } from "lucide-react"
+import { GraduationCap, ShoppingBag, ClipboardList, TrendingUp, Users, Calendar, Loader2, BarChart3 } from "lucide-react"
 import Link from "next/link"
 
+interface DashboardStats {
+  totalOrders: number
+  ordersByStatus: Record<string, number>
+  totalBookings: number
+  bookingsByStatus: Record<string, number>
+  totalApplications: number
+  applicationsByStatus: Record<string, number>
+  totalUsers: number
+  recentOrders: Array<{ id: string; contactName: string; status: string; createdAt: string }>
+  ordersThisMonth: number
+  ordersLastMonth: number
+}
+
+const statusLabels: Record<string, string> = {
+  INQUIRY: "New Inquiry", REVIEWING: "Reviewing", QUOTED: "Quoted",
+  ACCEPTED: "Accepted", IN_PROGRESS: "In Progress", GLAZING: "Glazing",
+  FIRING: "Firing", COMPLETED: "Completed", SHIPPED: "Shipped", CANCELLED: "Cancelled",
+}
+
 export default function AdminDashboard() {
+  const [stats, setStats] = useState<DashboardStats | null>(null)
+  const [loading, setLoading] = useState(true)
+
+  useEffect(() => {
+    fetch("/api/analytics")
+      .then((res) => res.ok ? res.json() : null)
+      .then(setStats)
+      .catch(() => null)
+      .finally(() => setLoading(false))
+  }, [])
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center py-16">
+        <Loader2 className="h-8 w-8 animate-spin text-primary" />
+      </div>
+    )
+  }
+
+  const pendingOrders = stats?.ordersByStatus?.INQUIRY || 0
+  const activeOrders = (stats?.ordersByStatus?.IN_PROGRESS || 0) +
+    (stats?.ordersByStatus?.GLAZING || 0) + (stats?.ordersByStatus?.FIRING || 0)
+  const pendingBookings = stats?.bookingsByStatus?.PENDING || 0
+  const newApplications = stats?.applicationsByStatus?.SUBMITTED || 0
+
   return (
     <div className="space-y-8">
       <div>
@@ -17,44 +64,14 @@ export default function AdminDashboard() {
         <Card>
           <CardHeader className="flex flex-row items-center justify-between pb-2">
             <CardTitle className="text-sm font-medium text-muted-foreground">
-              Active Residencies
-            </CardTitle>
-            <GraduationCap className="h-4 w-4 text-muted-foreground" />
-          </CardHeader>
-          <CardContent>
-            <p className="text-2xl font-bold text-foreground">2</p>
-            <p className="text-xs text-muted-foreground mt-1">
-              4 spots available
-            </p>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between pb-2">
-            <CardTitle className="text-sm font-medium text-muted-foreground">
-              Products Listed
-            </CardTitle>
-            <ShoppingBag className="h-4 w-4 text-muted-foreground" />
-          </CardHeader>
-          <CardContent>
-            <p className="text-2xl font-bold text-foreground">12</p>
-            <p className="text-xs text-muted-foreground mt-1">
-              10 in stock
-            </p>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between pb-2">
-            <CardTitle className="text-sm font-medium text-muted-foreground">
-              Custom Orders
+              Total Orders
             </CardTitle>
             <ClipboardList className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <p className="text-2xl font-bold text-foreground">5</p>
+            <p className="text-2xl font-bold text-foreground">{stats?.totalOrders || 0}</p>
             <p className="text-xs text-muted-foreground mt-1">
-              3 pending review
+              {pendingOrders} pending review · {activeOrders} in progress
             </p>
           </CardContent>
         </Card>
@@ -62,15 +79,44 @@ export default function AdminDashboard() {
         <Card>
           <CardHeader className="flex flex-row items-center justify-between pb-2">
             <CardTitle className="text-sm font-medium text-muted-foreground">
-              Total Revenue
+              Class Bookings
             </CardTitle>
-            <DollarSign className="h-4 w-4 text-muted-foreground" />
+            <GraduationCap className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <p className="text-2xl font-bold text-foreground">IDR 84M</p>
-            <p className="text-xs text-green-600 mt-1 flex items-center gap-1">
-              <TrendingUp className="h-3 w-3" />
-              +12% from last month
+            <p className="text-2xl font-bold text-foreground">{stats?.totalBookings || 0}</p>
+            <p className="text-xs text-muted-foreground mt-1">
+              {pendingBookings} pending confirmation
+            </p>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between pb-2">
+            <CardTitle className="text-sm font-medium text-muted-foreground">
+              Residency Apps
+            </CardTitle>
+            <Calendar className="h-4 w-4 text-muted-foreground" />
+          </CardHeader>
+          <CardContent>
+            <p className="text-2xl font-bold text-foreground">{stats?.totalApplications || 0}</p>
+            <p className="text-xs text-muted-foreground mt-1">
+              {newApplications} awaiting review
+            </p>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between pb-2">
+            <CardTitle className="text-sm font-medium text-muted-foreground">
+              Registered Users
+            </CardTitle>
+            <Users className="h-4 w-4 text-muted-foreground" />
+          </CardHeader>
+          <CardContent>
+            <p className="text-2xl font-bold text-foreground">{stats?.totalUsers || 0}</p>
+            <p className="text-xs text-muted-foreground mt-1">
+              {stats?.ordersThisMonth || 0} orders this month
             </p>
           </CardContent>
         </Card>
@@ -78,43 +124,43 @@ export default function AdminDashboard() {
 
       {/* Quick Actions */}
       <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
-        <Link href="/admin/classes">
-          <Card className="hover:shadow-md transition-shadow cursor-pointer h-full">
-            <CardHeader>
-              <div className="w-12 h-12 rounded-full bg-primary/10 flex items-center justify-center mb-2">
-                <GraduationCap className="h-6 w-6 text-primary" />
-              </div>
-              <CardTitle className="font-heading font-bold text-xl">Manage Classes</CardTitle>
-              <CardDescription>
-                Update workshop and residency programs, pricing, and availability
-              </CardDescription>
-            </CardHeader>
-          </Card>
-        </Link>
-
-        <Link href="/admin/products">
-          <Card className="hover:shadow-md transition-shadow cursor-pointer h-full">
-            <CardHeader>
-              <div className="w-12 h-12 rounded-full bg-primary/10 flex items-center justify-center mb-2">
-                <ShoppingBag className="h-6 w-6 text-primary" />
-              </div>
-              <CardTitle className="font-heading font-bold text-xl">Manage Products</CardTitle>
-              <CardDescription>
-                Add, edit, or remove products from your shop
-              </CardDescription>
-            </CardHeader>
-          </Card>
-        </Link>
-
-        <Link href="/admin/settings">
+        <Link href="/admin/orders">
           <Card className="hover:shadow-md transition-shadow cursor-pointer h-full">
             <CardHeader>
               <div className="w-12 h-12 rounded-full bg-primary/10 flex items-center justify-center mb-2">
                 <ClipboardList className="h-6 w-6 text-primary" />
               </div>
-              <CardTitle className="font-heading font-bold text-xl">Settings & Orders</CardTitle>
+              <CardTitle className="font-heading font-bold text-xl">Manage Orders</CardTitle>
               <CardDescription>
-                View custom order requests and manage studio settings
+                View inquiries, update statuses, and add progress updates
+              </CardDescription>
+            </CardHeader>
+          </Card>
+        </Link>
+
+        <Link href="/admin/bookings">
+          <Card className="hover:shadow-md transition-shadow cursor-pointer h-full">
+            <CardHeader>
+              <div className="w-12 h-12 rounded-full bg-primary/10 flex items-center justify-center mb-2">
+                <GraduationCap className="h-6 w-6 text-primary" />
+              </div>
+              <CardTitle className="font-heading font-bold text-xl">Class Bookings</CardTitle>
+              <CardDescription>
+                Confirm workshop bookings and manage the class schedule
+              </CardDescription>
+            </CardHeader>
+          </Card>
+        </Link>
+
+        <Link href="/admin/analytics">
+          <Card className="hover:shadow-md transition-shadow cursor-pointer h-full">
+            <CardHeader>
+              <div className="w-12 h-12 rounded-full bg-primary/10 flex items-center justify-center mb-2">
+                <BarChart3 className="h-6 w-6 text-primary" />
+              </div>
+              <CardTitle className="font-heading font-bold text-xl">Analytics</CardTitle>
+              <CardDescription>
+                View trends, status breakdowns, and activity metrics
               </CardDescription>
             </CardHeader>
           </Card>
@@ -124,26 +170,33 @@ export default function AdminDashboard() {
       {/* Recent Activity */}
       <Card>
         <CardHeader>
-          <CardTitle className="font-heading font-bold text-xl">Recent Activity</CardTitle>
-          <CardDescription>Latest updates across your studio</CardDescription>
+          <CardTitle className="font-heading font-bold text-xl">Recent Orders</CardTitle>
+          <CardDescription>Latest order inquiries</CardDescription>
         </CardHeader>
         <CardContent>
-          <div className="space-y-4">
-            {[
-              { action: "New residency inquiry", detail: "3 Week Program", time: "2 hours ago" },
-              { action: "Product sold", detail: "Espresso Cup - Ocean Blue", time: "5 hours ago" },
-              { action: "Custom order request", detail: "Tableware set for 6", time: "1 day ago" },
-              { action: "Price updated", detail: "6 Week Resident Program", time: "1 week ago" },
-            ].map((item, index) => (
-              <div key={index} className="flex items-center justify-between py-2 border-b border-border last:border-0">
-                <div>
-                  <p className="font-medium text-foreground text-sm">{item.action}</p>
-                  <p className="text-muted-foreground text-sm">{item.detail}</p>
-                </div>
-                <span className="text-xs text-muted-foreground">{item.time}</span>
-              </div>
-            ))}
-          </div>
+          {!stats?.recentOrders?.length ? (
+            <p className="text-sm text-muted-foreground text-center py-8">
+              No orders yet. They&apos;ll appear here when customers submit inquiries.
+            </p>
+          ) : (
+            <div className="space-y-4">
+              {stats.recentOrders.map((order) => (
+                <Link key={order.id} href={`/admin/orders/${order.id}`}>
+                  <div className="flex items-center justify-between py-2 border-b border-border last:border-0 hover:bg-muted/50 rounded px-2 transition-colors">
+                    <div>
+                      <p className="font-medium text-foreground text-sm">{order.contactName}</p>
+                      <p className="text-muted-foreground text-sm capitalize">
+                        {(statusLabels[order.status] || order.status).toLowerCase()}
+                      </p>
+                    </div>
+                    <span className="text-xs text-muted-foreground">
+                      {new Date(order.createdAt).toLocaleDateString()}
+                    </span>
+                  </div>
+                </Link>
+              ))}
+            </div>
+          )}
         </CardContent>
       </Card>
     </div>

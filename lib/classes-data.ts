@@ -73,7 +73,7 @@ export const workshops: Workshop[] = [
     slug: "3-day-workshop",
     title: "3 Days Workshop",
     subtitle: "Exploring Time and Clay",
-    price: 2000000,
+    price: 2500000,
     currency: "IDR",
     description: "For beginners to intermediate. Each workshop focuses on one theme (bowls, sets, teapots, forms, etc.) Designed as a series you can return to and grow with over time. Develop your skills across multiple sessions.",
     level: "Beginner to Intermediate",

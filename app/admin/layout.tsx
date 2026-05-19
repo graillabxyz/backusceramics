@@ -14,15 +14,23 @@ import {
   LogOut,
   Menu,
   X,
-  Loader2
+  Loader2,
+  ClipboardList,
+  Calendar,
+  Users,
+  BarChart3,
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
-import { useState, useEffect } from "react"
+import { useState } from "react"
 
 const navItems = [
-  { href: "/admin", label: "Dashboard", icon: LayoutDashboard },
-  { href: "/admin/classes", label: "Classes & Workshops", icon: GraduationCap },
+  { href: "/admin", label: "Dashboard", icon: LayoutDashboard, exact: true },
+  { href: "/admin/orders", label: "Orders", icon: ClipboardList },
+  { href: "/admin/bookings", label: "Class Bookings", icon: GraduationCap },
+  { href: "/admin/applications", label: "Residency Apps", icon: Calendar },
   { href: "/admin/products", label: "Products", icon: ShoppingBag },
+  { href: "/admin/users", label: "Users", icon: Users },
+  { href: "/admin/analytics", label: "Analytics", icon: BarChart3 },
   { href: "/admin/settings", label: "Settings", icon: Settings },
 ]
 
@@ -36,17 +44,6 @@ export default function AdminLayout({
   const { user, isLoading, isAuthenticated, logout } = useAuth()
   const [sidebarOpen, setSidebarOpen] = useState(false)
 
-  useEffect(() => {
-    if (!isLoading && !isAuthenticated) {
-      router.push("/login")
-    }
-  }, [isLoading, isAuthenticated, router])
-
-  const handleLogout = () => {
-    logout()
-    router.push("/login")
-  }
-
   if (isLoading) {
     return (
       <div className="min-h-screen bg-muted/30 flex items-center justify-center">
@@ -58,8 +55,8 @@ export default function AdminLayout({
     )
   }
 
-  if (!isAuthenticated) {
-    return null
+  if (!isAuthenticated || user?.role !== "ADMIN") {
+    return null // Middleware handles the redirect
   }
 
   return (
@@ -99,8 +96,9 @@ export default function AdminLayout({
 
           <nav className="space-y-1">
             {navItems.map((item) => {
-              const isActive = pathname === item.href || 
-                (item.href !== "/admin" && pathname.startsWith(item.href))
+              const isActive = item.exact
+                ? pathname === item.href
+                : pathname === item.href || pathname.startsWith(item.href + "/")
               return (
                 <Link
                   key={item.href}
@@ -122,9 +120,18 @@ export default function AdminLayout({
         </div>
 
         <div className="absolute bottom-0 left-0 right-0 p-6 border-t border-border">
-          <div className="mb-4 px-3 py-2">
-            <p className="text-sm font-medium text-foreground">{user?.name}</p>
-            <p className="text-xs text-muted-foreground capitalize">{user?.role}</p>
+          <div className="mb-4 px-3 py-2 flex items-center gap-3">
+            {user?.image && (
+              <img
+                src={user.image}
+                alt=""
+                className="w-8 h-8 rounded-full"
+              />
+            )}
+            <div className="min-w-0">
+              <p className="text-sm font-medium text-foreground truncate">{user?.name}</p>
+              <p className="text-xs text-muted-foreground truncate">{user?.email}</p>
+            </div>
           </div>
           <Link
             href="/"
@@ -134,7 +141,7 @@ export default function AdminLayout({
             View Site
           </Link>
           <button
-            onClick={handleLogout}
+            onClick={() => logout()}
             className="flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium text-muted-foreground hover:text-foreground hover:bg-muted transition-colors w-full"
           >
             <LogOut className="h-5 w-5" />
