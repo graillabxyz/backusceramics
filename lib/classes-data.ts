@@ -13,6 +13,7 @@ export interface Workshop {
   features: string[]
   available: boolean
   category: "workshop" | "residency" | "kids"
+  maxParticipants?: number
   image?: string
 }
 
@@ -41,6 +42,7 @@ export const workshops: Workshop[] = [
     ],
     available: true,
     category: "workshop",
+    maxParticipants: 3,
     image: "/beginner_single_day.jpg"
   },
   {
@@ -66,6 +68,7 @@ export const workshops: Workshop[] = [
     ],
     available: true,
     category: "workshop",
+    maxParticipants: 8,
     image: "/handbuilding.JPG"
   },
   {
@@ -91,6 +94,7 @@ export const workshops: Workshop[] = [
     ],
     available: true,
     category: "workshop",
+    maxParticipants: 3,
     image: "/3day.jpg"
   },
   {
@@ -117,6 +121,7 @@ export const workshops: Workshop[] = [
     ],
     available: true,
     category: "workshop",
+    maxParticipants: 3,
     image: "/6day.jpg"
   },
   {
@@ -140,6 +145,7 @@ export const workshops: Workshop[] = [
     ],
     available: true,
     category: "residency",
+    maxParticipants: 1,
     image: "/3week.jpg"
   },
   {
@@ -164,6 +170,7 @@ export const workshops: Workshop[] = [
     ],
     available: true,
     category: "residency",
+    maxParticipants: 1,
     image: "/6week.jpg"
   },
   {
@@ -190,6 +197,7 @@ export const workshops: Workshop[] = [
     ],
     available: true,
     category: "kids",
+    maxParticipants: 8,
     image: "/kidsclass.jpeg"
   }
 ]

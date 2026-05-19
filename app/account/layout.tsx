@@ -15,7 +15,7 @@ import {
 } from "lucide-react"
 
 const accountNav = [
-  { href: "/account", label: "My Orders", icon: ClipboardList, exact: true },
+  { href: "/account", label: "Dashboard", icon: ClipboardList, exact: true },
   { href: "/account/bookings", label: "My Bookings", icon: GraduationCap },
   { href: "/account/profile", label: "Profile", icon: User },
 ]

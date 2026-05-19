@@ -13,7 +13,7 @@ const birthdayOptions = [
     title: "Option 1 — Kids Only",
     price: 3000000,
     includes: "Up to 5 children",
-    max: "7 children max",
+    max: "8 children max",
     additional: "400k per additional child",
     features: [
       "1.5h ceramic workshop",
@@ -28,7 +28,7 @@ const birthdayOptions = [
     title: "Option 2 — Parent & Child",
     price: 3800000,
     includes: "Up to 4 duos (8 people)",
-    max: "5 duos (10 people) max",
+    max: "4 duos (8 people) max",
     additional: "500k per additional duo",
     features: [
       "1.5h ceramic workshop",
@@ -44,7 +44,7 @@ const birthdayOptions = [
     title: "Option 3 — Adults Only",
     price: 4500000,
     includes: "Up to 5 adults",
-    max: "7 adults max",
+    max: "8 adults max",
     additional: "600k per person",
     features: [
       "1.5h ceramic workshop",

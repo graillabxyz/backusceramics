@@ -12,6 +12,7 @@ import {
 } from "@/components/ui/dialog"
 import { Button } from "@/components/ui/button"
 import { Label } from "@/components/ui/label"
+import { Calendar } from "@/components/ui/calendar"
 import {
   Select,
   SelectContent,
@@ -19,9 +20,9 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select"
-import { Input } from "@/components/ui/input"
 import { Workshop } from "@/lib/classes-data"
 import { MessageCircle, Users, Calendar as CalendarIcon, Clock } from "lucide-react"
+import { useAuth } from "@/lib/auth-context"
 
 interface BookingModalProps {
   workshop: Workshop
@@ -31,15 +32,74 @@ interface BookingModalProps {
 export function BookingModal({ workshop, children }: BookingModalProps) {
   const [people, setPeople] = useState("1")
   const [time, setTime] = useState(workshop.schedule?.[0] || "")
-  const [date, setDate] = useState("")
+  const [date, setDate] = useState<Date | undefined>()
   const [isOpen, setIsOpen] = useState(false)
+  const [isSubmitting, setIsSubmitting] = useState(false)
+  const [error, setError] = useState("")
+  const { isAuthenticated, openAuthModal } = useAuth()
+  const maxParticipants = workshop.maxParticipants ?? 8
+  const participantOptions = Array.from({ length: maxParticipants }, (_, index) => index + 1)
 
-  const handleWhatsAppBooking = () => {
-    const message = `Hi Backus Ceramics! I'd like to book the "${workshop.title}" for ${people} ${parseInt(people) === 1 ? 'person' : 'people'}.${date ? ` Requested date: ${date}.` : ''}${time ? ` Preferred time: ${time}.` : ''}`
+  const today = new Date()
+  today.setHours(0, 0, 0, 0)
+
+  const selectedDateLabel = date
+    ? date.toLocaleDateString("en-US", {
+        weekday: "long",
+        month: "long",
+        day: "numeric",
+        year: "numeric",
+      })
+    : ""
+
+  const selectedDateValue = date
+    ? date.toLocaleDateString("en-CA")
+    : ""
+
+  const handleBooking = async () => {
+    setError("")
+
+    if (!date) {
+      setError("Choose a class date from the calendar.")
+      return
+    }
+
+    if (!isAuthenticated) {
+      setIsOpen(false)
+      openAuthModal()
+      return
+    }
+
+    setIsSubmitting(true)
+
+    try {
+      const participants = parseInt(people)
+      const res = await fetch("/api/bookings", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          workshopId: workshop.id,
+          preferredDate: `${selectedDateValue}${time ? ` · ${time}` : ""}`,
+          participants,
+        }),
+      })
+
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}))
+        throw new Error(data.error || "Could not create booking request")
+      }
+    } catch (bookingError) {
+      setError(bookingError instanceof Error ? bookingError.message : "Could not create booking request")
+      setIsSubmitting(false)
+      return
+    }
+
+    const message = `Hi Backus Ceramics! I'd like to book the "${workshop.title}" for ${people} ${parseInt(people) === 1 ? 'person' : 'people'}. Requested date: ${selectedDateLabel}.${time ? ` Preferred time: ${time}.` : ''}`
     const encodedMessage = encodeURIComponent(message)
     const whatsappUrl = `https://wa.me/6282145890402?text=${encodedMessage}`
     
     window.open(whatsappUrl, "_blank")
+    setIsSubmitting(false)
     setIsOpen(false)
   }
 
@@ -67,28 +127,35 @@ export function BookingModal({ workshop, children }: BookingModalProps) {
                 <SelectValue placeholder="Select count" />
               </SelectTrigger>
               <SelectContent>
-                {[1, 2, 3, 4, 5, 6].map((num) => (
+                {participantOptions.map((num) => (
                   <SelectItem key={num} value={num.toString()}>
                     {num} {num === 1 ? 'Person' : 'People'}
                   </SelectItem>
                 ))}
-                <SelectItem value="7+">7+ People (Group Inquiry)</SelectItem>
               </SelectContent>
             </Select>
+            <p className="text-xs text-muted-foreground">
+              Maximum {maxParticipants} {maxParticipants === 1 ? "person" : "people"} for this session.
+            </p>
           </div>
 
           <div className="grid gap-2">
-            <Label htmlFor="date" className="flex items-center gap-2">
+            <Label className="flex items-center gap-2">
               <CalendarIcon className="h-4 w-4 text-muted-foreground" />
-              Preferred Date
+              Choose a Class Date
             </Label>
-            <Input 
-              id="date" 
-              type="date" 
-              className="w-full"
-              value={date}
-              onChange={(e) => setDate(e.target.value)}
+            <Calendar
+              mode="single"
+              selected={date}
+              onSelect={setDate}
+              disabled={{ before: today }}
+              className="w-full rounded-md border"
             />
+            {selectedDateLabel && (
+              <p className="text-sm text-muted-foreground">
+                Selected: {selectedDateLabel}
+              </p>
+            )}
           </div>
 
           {workshop.schedule && workshop.schedule.length > 0 && (
@@ -111,15 +178,20 @@ export function BookingModal({ workshop, children }: BookingModalProps) {
               </Select>
             </div>
           )}
+
+          {error && (
+            <p className="text-sm text-destructive">{error}</p>
+          )}
         </div>
 
         <DialogFooter>
           <Button 
-            onClick={handleWhatsAppBooking} 
+            onClick={handleBooking}
             className="w-full h-12 text-lg gap-2 bg-[#25D366] hover:bg-[#128C7E] text-white border-none"
+            disabled={isSubmitting}
           >
             <MessageCircle className="h-5 w-5" />
-            Book via WhatsApp
+            {isSubmitting ? "Creating Booking..." : isAuthenticated ? "Book via WhatsApp" : "Sign in to Book"}
           </Button>
         </DialogFooter>
       </DialogContent>
