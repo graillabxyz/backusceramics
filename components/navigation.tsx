@@ -12,7 +12,6 @@ const navLinks = [
   { href: "/residency", label: "Residency" },
   { href: "/shop", label: "Shop" },
   { href: "/custom-orders", label: "Custom Orders" },
-  { href: "/contact", label: "Contact" },
 ]
 
 export function Navigation() {
