@@ -3,6 +3,7 @@ import type { Metadata } from 'next'
 import { Montserrat, Figtree, Fredericka_the_Great } from 'next/font/google'
 import { Analytics } from '@vercel/analytics/next'
 import { AuthProvider } from "@/lib/auth-context"
+import { AuthModal } from "@/components/auth-modal"
 import './globals.css'
 
 const montserrat = Montserrat({ 
@@ -44,6 +45,7 @@ export default function RootLayout({
       <body className={`${montserrat.variable} ${figtree.variable} ${fredericka.variable} font-sans antialiased`}>
         <AuthProvider>
           {children}
+          <AuthModal />
         </AuthProvider>
         <Analytics />
       </body>

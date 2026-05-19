@@ -17,7 +17,7 @@ const navLinks = [
 export function Navigation() {
   const [isOpen, setIsOpen] = useState(false)
   const [userMenuOpen, setUserMenuOpen] = useState(false)
-  const { user, isLoading, isAuthenticated, logout } = useAuth()
+  const { user, isLoading, isAuthenticated, logout, openAuthModal } = useAuth()
 
   const isLoggedIn = isAuthenticated && user
   const isAdmin = user?.role === "ADMIN"
@@ -132,26 +132,23 @@ export function Navigation() {
                 )}
               </div>
             ) : (
-              <Link href="/login">
-                <Button
-                  variant="outline"
-                  size="sm"
-                  className="rounded-full px-5 border-foreground/20 hover:bg-foreground hover:text-background transition-all duration-300"
-                >
-                  Sign In
-                </Button>
-              </Link>
+              <Button
+                variant="outline"
+                size="sm"
+                className="rounded-full px-5 border-foreground/20 hover:bg-foreground hover:text-background transition-all duration-300"
+                onClick={openAuthModal}
+              >
+                Sign In
+              </Button>
             )}
           </div>
 
           {/* Mobile: Auth + Menu */}
           <div className="flex items-center gap-2 md:hidden">
             {!isLoading && !isLoggedIn && (
-              <Link href="/login">
-                <Button variant="outline" size="sm" className="rounded-full px-4 text-xs">
-                  Sign In
-                </Button>
-              </Link>
+              <Button variant="outline" size="sm" className="rounded-full px-4 text-xs" onClick={openAuthModal}>
+                Sign In
+              </Button>
             )}
             {isLoggedIn && (
               <Link href="/account" className="flex items-center">

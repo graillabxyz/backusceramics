@@ -18,6 +18,9 @@ interface AuthContextValue {
   isLoading: boolean
   isAuthenticated: boolean
   logout: () => Promise<void>
+  isAuthModalOpen: boolean
+  openAuthModal: () => void
+  closeAuthModal: () => void
 }
 
 const AuthContext = createContext<AuthContextValue>({
@@ -26,12 +29,16 @@ const AuthContext = createContext<AuthContextValue>({
   isLoading: true,
   isAuthenticated: false,
   logout: async () => {},
+  isAuthModalOpen: false,
+  openAuthModal: () => {},
+  closeAuthModal: () => {},
 })
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [supabaseUser, setSupabaseUser] = useState<SupabaseUser | null>(null)
   const [appUser, setAppUser] = useState<AppUser | null>(null)
   const [isLoading, setIsLoading] = useState(true)
+  const [isAuthModalOpen, setIsAuthModalOpen] = useState(false)
   const supabase = createClient()
 
   useEffect(() => {
@@ -60,6 +67,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
       if (user) {
         await fetchAppUser(user.email!)
+        setIsAuthModalOpen(false) // Close modal upon successful sign-in
       } else {
         setAppUser(null)
       }
@@ -88,6 +96,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     window.location.href = "/"
   }
 
+  const openAuthModal = () => setIsAuthModalOpen(true)
+  const closeAuthModal = () => setIsAuthModalOpen(false)
+
   return (
     <AuthContext.Provider
       value={{
@@ -96,6 +107,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         isLoading,
         isAuthenticated: !!supabaseUser,
         logout,
+        isAuthModalOpen,
+        openAuthModal,
+        closeAuthModal,
       }}
     >
       {children}
