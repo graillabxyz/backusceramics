@@ -399,7 +399,7 @@ export function ClassesCalendar({ initialClass }: ClassesCalendarProps) {
                 Book by week.
               </h1>
               <p className="mt-3 max-w-xl text-sm leading-relaxed text-muted-foreground sm:text-base">
-                Choose a class type, select a time, then complete checkout from the details panel.
+                Pick the kind of session, choose a time on the week view, then book it.
               </p>
             </div>
             <div className="flex flex-wrap items-center gap-2 rounded-md border border-border bg-background p-1">
