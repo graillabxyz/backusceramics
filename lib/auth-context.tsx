@@ -6,10 +6,10 @@ import type { User as SupabaseUser } from "@supabase/supabase-js"
 
 interface AppUser {
   id: string
-  name: string
+  name: string | null
   email: string
   role: "ADMIN" | "USER"
-  image?: string
+  image?: string | null
 }
 
 interface AuthContextValue {
@@ -77,15 +77,32 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     return () => subscription.unsubscribe()
   }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
+  const getFallbackUser = (user: SupabaseUser): AppUser => ({
+    id: user.id,
+    email: user.email ?? "",
+    name: user.user_metadata?.full_name || user.user_metadata?.name || null,
+    image: user.user_metadata?.avatar_url || user.user_metadata?.picture || null,
+    role: "USER",
+  })
+
   const fetchAppUser = async (email: string) => {
     try {
       const res = await fetch("/api/me")
       if (res.ok) {
         const data = await res.json()
         setAppUser(data.user)
+        return
       }
-    } catch {
-      // Silently fail — user just hasn't been synced yet
+    } catch (error) {
+      console.error("Failed to load app user", error)
+    }
+
+    const {
+      data: { user },
+    } = await supabase.auth.getUser()
+
+    if (user?.email === email) {
+      setAppUser(getFallbackUser(user))
     }
   }
 
