@@ -77,23 +77,23 @@ export function AuthModal() {
 
   return (
     <Dialog open={isAuthModalOpen} onOpenChange={(open) => !open && closeAuthModal()}>
-      <DialogContent className="sm:max-w-[400px] border-border shadow-xl rounded-2xl overflow-hidden p-6 gap-0 bg-background">
-        <DialogHeader className="text-center pb-6">
-          <div className="mx-auto w-12 h-12 bg-primary rounded-full flex items-center justify-center shadow-sm mb-4">
-            <span className="text-primary-foreground font-heading font-black text-xl">B</span>
+      <DialogContent className="sm:max-w-[420px] border border-border/40 shadow-2xl rounded-3xl overflow-hidden p-8 gap-0 bg-background/95 backdrop-blur-xl">
+        <DialogHeader className="text-center pb-8">
+          <div className="mx-auto w-14 h-14 bg-foreground rounded-2xl flex items-center justify-center shadow-md mb-6">
+            <span className="text-background font-heading font-black text-2xl tracking-tighter">B</span>
           </div>
-          <DialogTitle className="font-heading font-bold text-2xl text-foreground">
+          <DialogTitle className="font-heading font-bold text-3xl text-foreground tracking-tight">
             Welcome
           </DialogTitle>
-          <DialogDescription className="text-muted-foreground text-sm mt-1.5 leading-relaxed">
-            Sign in to access classes, track orders, and view your residency profile
+          <DialogDescription className="text-muted-foreground text-[15px] mt-2 leading-relaxed">
+            Sign in to access classes, track orders, and view your residency profile.
           </DialogDescription>
         </DialogHeader>
 
-        <div className="space-y-4">
+        <div className="space-y-3">
           {error && (
-            <Alert variant="destructive" className="rounded-xl py-2.5">
-              <AlertDescription className="text-xs">{error}</AlertDescription>
+            <Alert variant="destructive" className="rounded-xl py-3 border-destructive/20 bg-destructive/5 text-destructive">
+              <AlertDescription className="text-sm font-medium text-center">{error}</AlertDescription>
             </Alert>
           )}
 
@@ -101,14 +101,14 @@ export function AuthModal() {
           <Button
             type="button"
             variant="outline"
-            className="w-full h-12 text-sm font-medium gap-3 border-border hover:bg-muted/50 rounded-xl transition-all duration-200"
+            className="w-full h-12 text-[15px] font-medium gap-3 border-border/60 hover:bg-foreground hover:text-background rounded-xl transition-all duration-300"
             onClick={() => handleOAuthLogin("google")}
             disabled={isGoogleLoading || isFacebookLoading}
           >
             {isGoogleLoading ? (
-              <Loader2 className="h-4 w-4 animate-spin" />
+              <Loader2 className="h-5 w-5 animate-spin" />
             ) : (
-              <GoogleIcon className="h-4 w-4" />
+              <GoogleIcon className="h-5 w-5" />
             )}
             Continue with Google
           </Button>
@@ -117,25 +117,25 @@ export function AuthModal() {
           <Button
             type="button"
             variant="outline"
-            className="w-full h-12 text-sm font-medium gap-3 border-border hover:bg-muted/50 rounded-xl transition-all duration-200"
+            className="w-full h-12 text-[15px] font-medium gap-3 border-border/60 hover:bg-foreground hover:text-background rounded-xl transition-all duration-300"
             onClick={() => handleOAuthLogin("facebook")}
             disabled={isGoogleLoading || isFacebookLoading}
           >
             {isFacebookLoading ? (
-              <Loader2 className="h-4 w-4 animate-spin" />
+              <Loader2 className="h-5 w-5 animate-spin" />
             ) : (
-              <FacebookIcon className="h-4 w-4" />
+              <FacebookIcon className="h-5 w-5" />
             )}
             Continue with Facebook
           </Button>
 
-          <p className="text-[11px] text-center text-muted-foreground leading-relaxed pt-3">
+          <p className="text-[12px] text-center text-muted-foreground leading-relaxed pt-5">
             By signing in, you agree to our{" "}
-            <Link href="/terms" className="underline hover:text-foreground" onClick={closeAuthModal}>
+            <Link href="/terms" className="underline underline-offset-2 hover:text-foreground transition-colors" onClick={closeAuthModal}>
               Terms of Service
             </Link>{" "}
             and{" "}
-            <Link href="/privacy" className="underline hover:text-foreground" onClick={closeAuthModal}>
+            <Link href="/privacy" className="underline underline-offset-2 hover:text-foreground transition-colors" onClick={closeAuthModal}>
               Privacy Policy
             </Link>
             .
