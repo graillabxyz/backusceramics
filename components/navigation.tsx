@@ -5,6 +5,7 @@ import { useState } from "react"
 import { useAuth } from "@/lib/auth-context"
 import { Menu, X, User, LogOut, LayoutDashboard, ShoppingBag } from "lucide-react"
 import { Button } from "@/components/ui/button"
+import { ThemeToggle } from "@/components/theme-toggle"
 
 const navLinks = [
   { href: "/classes", label: "Classes" },
@@ -46,6 +47,8 @@ export function Navigation() {
                 {link.label}
               </Link>
             ))}
+
+            <ThemeToggle />
 
             {/* Auth Button */}
             {isLoading ? (
@@ -145,6 +148,7 @@ export function Navigation() {
 
           {/* Mobile: Auth + Menu */}
           <div className="flex items-center gap-2 md:hidden">
+            <ThemeToggle />
             {!isLoading && !isLoggedIn && (
               <Button variant="outline" size="sm" className="rounded-full px-4 text-xs" onClick={openAuthModal}>
                 Sign In
