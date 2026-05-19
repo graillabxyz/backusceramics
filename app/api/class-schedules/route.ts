@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server"
 import { auth } from "@/lib/auth"
 import { prisma } from "@/lib/prisma"
 import { getScheduleOffering, parseDateKey } from "@/lib/class-schedule"
+import { isFullAdminRole } from "@/lib/permissions"
 
 function parseWeekdays(value: unknown) {
   if (!Array.isArray(value)) return null
@@ -11,7 +12,7 @@ function parseWeekdays(value: unknown) {
 
 export async function GET() {
   const session = await auth()
-  if (!session || session.user.role !== "ADMIN") {
+  if (!session || !isFullAdminRole(session.user.role)) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
   }
 
@@ -24,7 +25,7 @@ export async function GET() {
 
 export async function POST(req: NextRequest) {
   const session = await auth()
-  if (!session || session.user.role !== "ADMIN") {
+  if (!session || !isFullAdminRole(session.user.role)) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
   }
 

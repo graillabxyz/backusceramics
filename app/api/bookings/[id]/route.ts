@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server"
 import { auth } from "@/lib/auth"
 import { prisma } from "@/lib/prisma"
+import { isFullAdminRole } from "@/lib/permissions"
 
 export async function PATCH(
   req: NextRequest,
@@ -8,7 +9,7 @@ export async function PATCH(
 ) {
   const { id } = await params
   const session = await auth()
-  if (!session || session.user.role !== "ADMIN") {
+  if (!session || !isFullAdminRole(session.user.role)) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
   }
 

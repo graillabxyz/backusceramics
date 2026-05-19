@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server"
 import { auth } from "@/lib/auth"
 import { prisma } from "@/lib/prisma"
 import { getScheduleOffering, parseDateKey, parsePreferredDate, parseWeekdays, sessionKey } from "@/lib/class-schedule"
+import { isFullAdminRole } from "@/lib/permissions"
 
 export async function GET() {
   const session = await auth()
@@ -9,7 +10,7 @@ export async function GET() {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
   }
 
-  if (session.user.role === "ADMIN") {
+  if (isFullAdminRole(session.user.role)) {
     const bookings = await prisma.classBooking.findMany({
       orderBy: { createdAt: "desc" },
     })

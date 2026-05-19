@@ -2,13 +2,14 @@
 
 import React, { createContext, useContext, useEffect, useState } from "react"
 import { createClient } from "@/lib/supabase/client"
+import type { AppRole } from "@/lib/permissions"
 import type { User as SupabaseUser } from "@supabase/supabase-js"
 
 interface AppUser {
   id: string
   name: string | null
   email: string
-  role: "ADMIN" | "USER"
+  role: AppRole
   image?: string | null
 }
 

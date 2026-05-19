@@ -1,5 +1,6 @@
 import { createClient } from "@/lib/supabase/server"
 import { prisma } from "@/lib/prisma"
+import { getDefaultRole } from "@/lib/permissions"
 
 /**
  * Server-side auth helper — returns a session-like object compatible with
@@ -15,10 +16,19 @@ export async function auth() {
 
   if (!user) return null
 
+  const defaultRole = getDefaultRole(user.email)
+
   // Look up the user in our Prisma database to get their role
   let dbUser = await prisma.user.findUnique({
     where: { email: user.email! },
   })
+
+  if (dbUser && defaultRole === "OWNER" && dbUser.role !== "OWNER") {
+    dbUser = await prisma.user.update({
+      where: { id: dbUser.id },
+      data: { role: "OWNER" },
+    })
+  }
 
   // Auto-create the user in our DB if they don't exist yet (first Google sign-in)
   if (!dbUser) {
@@ -27,7 +37,7 @@ export async function auth() {
         email: user.email!,
         name: user.user_metadata?.full_name || user.user_metadata?.name || null,
         image: user.user_metadata?.avatar_url || user.user_metadata?.picture || null,
-        role: "USER",
+        role: defaultRole,
       },
     })
   }

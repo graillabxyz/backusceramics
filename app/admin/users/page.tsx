@@ -5,6 +5,8 @@ import { Card, CardContent, CardDescription, CardTitle } from "@/components/ui/c
 import { Badge } from "@/components/ui/badge"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Users as UsersIcon, Loader2, Shield } from "lucide-react"
+import { useAuth } from "@/lib/auth-context"
+import { appRoles, canManageAdmins, roleLabels, type AppRole } from "@/lib/permissions"
 
 interface UserData {
   id: string
@@ -21,8 +23,10 @@ interface UserData {
 }
 
 export default function AdminUsersPage() {
+  const { user: currentUser } = useAuth()
   const [users, setUsers] = useState<UserData[]>([])
   const [loading, setLoading] = useState(true)
+  const canEditRoles = canManageAdmins(currentUser?.role)
 
   useEffect(() => {
     fetchUsers()
@@ -39,7 +43,8 @@ export default function AdminUsersPage() {
     }
   }
 
-  const updateRole = async (id: string, role: string) => {
+  const updateRole = async (id: string, role: AppRole) => {
+    if (!canEditRoles) return
     try {
       const res = await fetch(`/api/users/${id}`, {
         method: "PATCH",
@@ -69,7 +74,7 @@ export default function AdminUsersPage() {
       <div>
         <h1 className="font-heading font-bold text-3xl text-foreground">Users</h1>
         <p className="text-muted-foreground mt-1">
-          Manage user accounts and roles
+          Manage user accounts{canEditRoles ? " and roles" : ". Owner admin controls role changes."}
         </p>
       </div>
 
@@ -104,7 +109,7 @@ export default function AdminUsersPage() {
                         <h3 className="font-medium text-foreground truncate">
                           {user.name || "Unnamed"}
                         </h3>
-                        {user.role === "ADMIN" && (
+                        {user.role !== "USER" && (
                           <Shield className="h-4 w-4 text-primary" />
                         )}
                       </div>
@@ -119,14 +124,18 @@ export default function AdminUsersPage() {
                   </div>
                   <Select
                     value={user.role}
-                    onValueChange={(val) => updateRole(user.id, val)}
+                    onValueChange={(val) => updateRole(user.id, val as AppRole)}
+                    disabled={!canEditRoles}
                   >
-                    <SelectTrigger className="w-32">
+                    <SelectTrigger className="w-44">
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="USER">User</SelectItem>
-                      <SelectItem value="ADMIN">Admin</SelectItem>
+                      {appRoles.map((role) => (
+                        <SelectItem key={role} value={role}>
+                          {roleLabels[role]}
+                        </SelectItem>
+                      ))}
                     </SelectContent>
                   </Select>
                 </div>

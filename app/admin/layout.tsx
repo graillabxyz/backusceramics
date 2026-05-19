@@ -5,6 +5,7 @@ import Link from "next/link"
 import { usePathname, useRouter } from "next/navigation"
 import { cn } from "@/lib/utils"
 import { useAuth } from "@/lib/auth-context"
+import { canAccessAdmin, canUsePos, isFullAdminRole, roleLabels } from "@/lib/permissions"
 import { 
   LayoutDashboard, 
   GraduationCap, 
@@ -19,19 +20,21 @@ import {
   Calendar,
   Users,
   BarChart3,
+  Store,
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { useState } from "react"
 
 const navItems = [
-  { href: "/admin", label: "Dashboard", icon: LayoutDashboard, exact: true },
-  { href: "/admin/orders", label: "Orders", icon: ClipboardList },
-  { href: "/admin/bookings", label: "Class Bookings", icon: GraduationCap },
-  { href: "/admin/applications", label: "Residency Apps", icon: Calendar },
-  { href: "/admin/products", label: "Products", icon: ShoppingBag },
-  { href: "/admin/users", label: "Users", icon: Users },
-  { href: "/admin/analytics", label: "Analytics", icon: BarChart3 },
-  { href: "/admin/settings", label: "Settings", icon: Settings },
+  { href: "/admin", label: "Dashboard", icon: LayoutDashboard, exact: true, access: "admin" },
+  { href: "/admin/orders", label: "Orders", icon: ClipboardList, access: "admin" },
+  { href: "/admin/bookings", label: "Class Bookings", icon: GraduationCap, access: "admin" },
+  { href: "/admin/applications", label: "Residency Apps", icon: Calendar, access: "admin" },
+  { href: "/admin/pos", label: "Point of Sale", icon: Store, access: "pos" },
+  { href: "/admin/products", label: "Products", icon: ShoppingBag, access: "admin" },
+  { href: "/admin/users", label: "Users", icon: Users, access: "admin" },
+  { href: "/admin/analytics", label: "Analytics", icon: BarChart3, access: "admin" },
+  { href: "/admin/settings", label: "Settings", icon: Settings, access: "admin" },
 ]
 
 export default function AdminLayout({
@@ -44,6 +47,12 @@ export default function AdminLayout({
   const { user, isLoading, isAuthenticated, logout } = useAuth()
   const [sidebarOpen, setSidebarOpen] = useState(false)
 
+  React.useEffect(() => {
+    if (!isLoading && isAuthenticated && user?.role === "POS_OPERATOR" && pathname !== "/admin/pos") {
+      router.replace("/admin/pos")
+    }
+  }, [isAuthenticated, isLoading, pathname, router, user?.role])
+
   if (isLoading) {
     return (
       <div className="min-h-screen bg-muted/30 flex items-center justify-center">
@@ -55,9 +64,22 @@ export default function AdminLayout({
     )
   }
 
-  if (!isAuthenticated || user?.role !== "ADMIN") {
+  if (!isAuthenticated || !canAccessAdmin(user?.role)) {
     return null // Middleware handles the redirect
   }
+
+  if (user?.role === "POS_OPERATOR" && pathname !== "/admin/pos") {
+    return (
+      <div className="min-h-screen bg-muted/30 flex items-center justify-center">
+        <Loader2 className="h-8 w-8 animate-spin text-primary" />
+      </div>
+    )
+  }
+
+  const visibleNavItems = navItems.filter((item) => {
+    if (item.access === "pos") return canUsePos(user?.role)
+    return isFullAdminRole(user?.role)
+  })
 
   return (
     <div className="min-h-screen bg-muted/30">
@@ -95,7 +117,7 @@ export default function AdminLayout({
           </div>
 
           <nav className="space-y-1">
-            {navItems.map((item) => {
+            {visibleNavItems.map((item) => {
               const isActive = item.exact
                 ? pathname === item.href
                 : pathname === item.href || pathname.startsWith(item.href + "/")
@@ -131,6 +153,9 @@ export default function AdminLayout({
             <div className="min-w-0">
               <p className="text-sm font-medium text-foreground truncate">{user?.name}</p>
               <p className="text-xs text-muted-foreground truncate">{user?.email}</p>
+              <p className="text-xs text-muted-foreground truncate">
+                {roleLabels[user?.role || "USER"]}
+              </p>
             </div>
           </div>
           <Link

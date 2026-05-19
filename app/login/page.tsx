@@ -4,6 +4,7 @@ import React, { useState, useEffect, Suspense } from "react"
 import { useRouter, useSearchParams } from "next/navigation"
 import { createClient } from "@/lib/supabase/client"
 import { useAuth } from "@/lib/auth-context"
+import { canAccessAdmin } from "@/lib/permissions"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Alert, AlertDescription } from "@/components/ui/alert"
@@ -54,7 +55,7 @@ function LoginForm() {
   // Redirect if already authenticated
   useEffect(() => {
     if (!authLoading && isAuthenticated) {
-      if (user?.role === "ADMIN") {
+      if (canAccessAdmin(user?.role)) {
         router.push("/admin")
       } else {
         router.push(callbackUrl)

@@ -3,6 +3,7 @@
 import Link from "next/link"
 import { useState } from "react"
 import { useAuth } from "@/lib/auth-context"
+import { canAccessAdmin } from "@/lib/permissions"
 import { Menu, X, User, LogOut, LayoutDashboard, ShoppingBag } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { ThemeToggle } from "@/components/theme-toggle"
@@ -21,7 +22,7 @@ export function Navigation() {
   const { user, isLoading, isAuthenticated, logout, openAuthModal } = useAuth()
 
   const isLoggedIn = isAuthenticated && user
-  const isAdmin = user?.role === "ADMIN"
+  const isAdmin = canAccessAdmin(user?.role)
 
   return (
     <header className="fixed top-0 left-0 right-0 z-50 bg-background/95 backdrop-blur-sm border-b border-border">

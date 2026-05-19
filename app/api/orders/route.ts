@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server"
 import { auth } from "@/lib/auth"
 import { prisma } from "@/lib/prisma"
+import { isFullAdminRole } from "@/lib/permissions"
 import { Resend } from "resend"
 
 const resend = new Resend(process.env.RESEND_API_KEY || "re_placeholder")
@@ -12,7 +13,7 @@ export async function GET() {
   }
 
   // Admin gets all orders, regular users get only their own
-  if (session.user.role === "ADMIN") {
+  if (isFullAdminRole(session.user.role)) {
     const orders = await prisma.order.findMany({
       orderBy: { createdAt: "desc" },
       include: { updates: { orderBy: { createdAt: "desc" } } },

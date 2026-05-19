@@ -19,7 +19,7 @@ model User {
   email         String    @unique
   emailVerified DateTime?
   image         String?
-  role          String    @default("USER") // "USER" | "ADMIN"
+  role          String    @default("USER") // "USER" | "ADMIN" | "OWNER" | "POS_OPERATOR"
 
   accounts      Account[]
   sessions      Session[]
@@ -27,6 +27,7 @@ model User {
   classBookings ClassBooking[]
   classHolds    ClassHold[]
   classSchedules ClassSchedule[]
+  posProducts    PosProduct[] @relation("PosProductCreator")
   residencyApps ResidencyApplication[]
 
   createdAt DateTime @default(now())
@@ -183,6 +184,31 @@ model ClassHold {
 
   @@index([workshopId, startDate, endDate])
   @@index([status])
+}
+
+model PosProduct {
+  id        String @id @default(cuid())
+  createdBy String?
+  creator   User?  @relation("PosProductCreator", fields: [createdBy], references: [id])
+
+  name        String
+  slug        String  @unique
+  sku         String?
+  description String?
+  price       Int
+  currency    String  @default("IDR")
+  category    String
+  quantity    Int     @default(1)
+  status      String  @default("AVAILABLE")
+  // Status values: AVAILABLE, SOLD, DRAFT, ARCHIVED
+  showInShop  Boolean @default(false)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([status])
+  @@index([showInShop])
+  @@index([category])
 }
 
 model ResidencyApplication {

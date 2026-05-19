@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server"
 import { auth } from "@/lib/auth"
 import { prisma } from "@/lib/prisma"
+import { isFullAdminRole } from "@/lib/permissions"
 
 export async function GET(
   req: NextRequest,
@@ -25,7 +26,7 @@ export async function GET(
   }
 
   // Regular users can only see their own orders
-  if (session.user.role !== "ADMIN" && order.userId !== session.user.id) {
+  if (!isFullAdminRole(session.user.role) && order.userId !== session.user.id) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 })
   }
 
@@ -38,7 +39,7 @@ export async function PATCH(
 ) {
   const { id } = await params
   const session = await auth()
-  if (!session || session.user.role !== "ADMIN") {
+  if (!session || !isFullAdminRole(session.user.role)) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
   }
 

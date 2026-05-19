@@ -1,9 +1,11 @@
 "use client"
 
 import { useState, useEffect } from "react"
+import { useRouter } from "next/navigation"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { GraduationCap, ShoppingBag, ClipboardList, TrendingUp, Users, Calendar, Loader2, BarChart3 } from "lucide-react"
 import Link from "next/link"
+import { useAuth } from "@/lib/auth-context"
 
 interface DashboardStats {
   totalOrders: number
@@ -25,16 +27,23 @@ const statusLabels: Record<string, string> = {
 }
 
 export default function AdminDashboard() {
+  const router = useRouter()
+  const { user } = useAuth()
   const [stats, setStats] = useState<DashboardStats | null>(null)
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
+    if (user?.role === "POS_OPERATOR") {
+      router.replace("/admin/pos")
+      return
+    }
+
     fetch("/api/analytics")
       .then((res) => res.ok ? res.json() : null)
       .then(setStats)
       .catch(() => null)
       .finally(() => setLoading(false))
-  }, [])
+  }, [router, user?.role])
 
   if (loading) {
     return (
