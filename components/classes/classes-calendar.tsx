@@ -100,7 +100,6 @@ export function ClassesCalendar({ initialClass }: ClassesCalendarProps) {
   const [sessions, setSessions] = useState<CalendarSession[]>([])
   const [selectedSessionId, setSelectedSessionId] = useState("")
   const [activeFilter, setActiveFilter] = useState<CalendarFilter>("all")
-  const selectedSession = sessions.find((session) => session.id === selectedSessionId) || sessions[0]
   const [people, setPeople] = useState("1")
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [availability, setAvailability] = useState<Record<string, CalendarAvailability>>({})
@@ -108,9 +107,7 @@ export function ClassesCalendar({ initialClass }: ClassesCalendarProps) {
   const [error, setError] = useState("")
   const { isAuthenticated, openAuthModal } = useAuth()
 
-  const weekDays = useMemo(() => Array.from({ length: 7 }, (_, index) => addDays(weekStart, index)), [weekStart])
-  const studioDays = useMemo(() => weekDays.slice(0, 6), [weekDays])
-  const sunday = weekDays[6]
+  const studioDays = useMemo(() => Array.from({ length: 6 }, (_, index) => addDays(weekStart, index)), [weekStart])
   const weekLabel = `${weekStart.toLocaleDateString("en-US", { month: "short", day: "numeric" })} - ${addDays(weekStart, 6).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}`
   const visibleSessions = useMemo(() => {
     return activeFilter === "all"
@@ -118,7 +115,7 @@ export function ClassesCalendar({ initialClass }: ClassesCalendarProps) {
       : sessions.filter((session) => getSessionFilter(session) === activeFilter)
   }, [activeFilter, sessions])
   const selectedVisibleSession = visibleSessions.find((session) => session.id === selectedSessionId) || visibleSessions[0]
-  const activeSession = selectedVisibleSession || selectedSession
+  const activeSession = selectedVisibleSession
   const activeMaxParticipants = activeSession?.maxParticipants ?? activeSession?.workshop.maxParticipants ?? 8
   const selectedAvailability = activeSession ? availability[activeSession.id] : undefined
   const activeAvailableSeats = selectedAvailability?.availableSeats ?? activeMaxParticipants
@@ -380,7 +377,7 @@ export function ClassesCalendar({ initialClass }: ClassesCalendarProps) {
           <div className="mb-4 flex flex-col gap-3 rounded-lg border border-border bg-background p-3 shadow-sm sm:flex-row sm:items-center sm:justify-between">
             <div className="flex items-center gap-2 text-sm font-medium text-foreground">
               <Filter className="h-4 w-4 text-primary" />
-              What would you like to book?
+              Choose a class type
             </div>
             <div className="flex gap-2 overflow-x-auto pb-1 sm:pb-0">
               {(Object.keys(filterLabels) as CalendarFilter[]).map((filter) => (
@@ -412,59 +409,12 @@ export function ClassesCalendar({ initialClass }: ClassesCalendarProps) {
               ))}
             </div>
           </div>
-          <p className="mb-4 text-sm text-muted-foreground">{filterHelp[activeFilter]}</p>
-          {visibleSessions.length > 0 && (
-            <div className="mb-4 grid gap-2 md:grid-cols-2 xl:grid-cols-4">
-              {visibleSessions.slice(0, 4).map((session) => {
-                const seats = availability[session.id]
-                const seatsAvailable = seats?.availableSeats ?? session.workshop.maxParticipants ?? 8
-                return (
-                  <button
-                    key={session.id}
-                    type="button"
-                    onClick={() => handleSelectSession(session)}
-                    className={cn(
-                      "rounded-md border border-border bg-background p-3 text-left transition hover:border-primary/60 hover:bg-muted/40",
-                      activeSession?.id === session.id && "border-primary bg-primary/5"
-                    )}
-                  >
-                    <p className="text-xs font-medium text-muted-foreground">
-                      {session.date.toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" })} · {session.timeLabel}
-                    </p>
-                    <p className="mt-1 text-sm font-semibold text-foreground">{session.scheduleTitle || session.workshop.title}</p>
-                    <p className="mt-1 text-xs text-muted-foreground">{seatsAvailable} seat{seatsAvailable === 1 ? "" : "s"} left</p>
-                  </button>
-                )
-              })}
-            </div>
-          )}
+          <p className="mb-4 text-sm text-muted-foreground">{filterHelp[activeFilter]} Select an available session from the calendar.</p>
         </div>
-        <div className="hidden lg:block">
-          <div className="grid grid-cols-3 gap-4">
+        <div>
+          <div className="grid gap-4 lg:grid-cols-3">
             {studioDays.map(renderDayCard)}
           </div>
-          {sunday && (
-            <div className="mt-4 rounded-lg border border-dashed border-border bg-muted/25 p-4">
-              <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-                <div>
-                  <p className="text-xs font-medium uppercase text-muted-foreground">Sun {sunday.getDate()}</p>
-                  <p className="mt-1 text-sm font-semibold text-foreground">Sunday studio time</p>
-                </div>
-                <p className="text-sm text-muted-foreground">
-                  {visibleSessions.some((session) => session.dateKey === formatDateKey(sunday))
-                    ? "Sunday sessions are listed here when the studio opens special dates."
-                    : "Studio closed unless a special event is scheduled."}
-                </p>
-              </div>
-              {visibleSessions.some((session) => session.dateKey === formatDateKey(sunday)) && (
-                <div className="mt-3 grid gap-2 sm:grid-cols-2">
-                  {visibleSessions
-                    .filter((session) => session.dateKey === formatDateKey(sunday))
-                    .map(renderSessionButton)}
-                </div>
-              )}
-            </div>
-          )}
         </div>
 
         <aside className="lg:sticky lg:top-24 lg:self-start">
