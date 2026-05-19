@@ -10,12 +10,13 @@ import {
   Clock,
   Filter,
   Loader2,
-  MessageCircle,
   Users,
 } from "lucide-react"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
+import { Checkbox } from "@/components/ui/checkbox"
+import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import {
   Select,
@@ -105,6 +106,9 @@ export function ClassesCalendar({ initialClass }: ClassesCalendarProps) {
   const [availability, setAvailability] = useState<Record<string, CalendarAvailability>>({})
   const [availabilityLoading, setAvailabilityLoading] = useState(true)
   const [error, setError] = useState("")
+  const [success, setSuccess] = useState("")
+  const [whatsappPhone, setWhatsappPhone] = useState("")
+  const [payOnArrivalConfirmed, setPayOnArrivalConfirmed] = useState(false)
   const { isAuthenticated, openAuthModal } = useAuth()
 
   const studioDays = useMemo(() => Array.from({ length: 6 }, (_, index) => addDays(weekStart, index)), [weekStart])
@@ -120,6 +124,8 @@ export function ClassesCalendar({ initialClass }: ClassesCalendarProps) {
   const selectedAvailability = activeSession ? availability[activeSession.id] : undefined
   const activeAvailableSeats = selectedAvailability?.availableSeats ?? activeMaxParticipants
   const participantOptions = Array.from({ length: Math.max(activeAvailableSeats, 0) }, (_, index) => index + 1)
+  const selectedSeatCount = parseInt(people || "1")
+  const checkoutTotal = activeSession ? activeSession.workshop.price * selectedSeatCount : 0
   const filterCounts = useMemo(() => {
     return sessions.reduce<Record<CalendarFilter, number>>(
       (counts, session) => {
@@ -214,6 +220,8 @@ export function ClassesCalendar({ initialClass }: ClassesCalendarProps) {
     setWeekStart(nextWeek)
     setPeople("1")
     setError("")
+    setSuccess("")
+    setPayOnArrivalConfirmed(false)
   }
 
   const goToThisWeek = () => {
@@ -221,33 +229,40 @@ export function ClassesCalendar({ initialClass }: ClassesCalendarProps) {
     setWeekStart(nextWeek)
     setPeople("1")
     setError("")
+    setSuccess("")
+    setPayOnArrivalConfirmed(false)
   }
 
   const handleSelectSession = (session: CalendarSession) => {
     setSelectedSessionId(session.id)
     setPeople("1")
     setError("")
+    setSuccess("")
+    setPayOnArrivalConfirmed(false)
   }
 
   const handleBooking = async () => {
     const selectedSession = activeSession
     if (!selectedSession) return
     setError("")
+    setSuccess("")
 
     if (!isAuthenticated) {
       openAuthModal()
       return
     }
 
-    const participants = parseInt(people)
-    const message = `Hi Backus Ceramics! I'd like to book the "${selectedSession.scheduleTitle || selectedSession.workshop.title}" for ${people} ${participants === 1 ? "person" : "people"}. Requested date: ${formatLongDate(selectedSession.date)}. Preferred time: ${selectedSession.timeLabel}.`
-    const whatsappUrl = `https://wa.me/6282145890402?text=${encodeURIComponent(message)}`
-    const whatsappWindow = window.open(whatsappUrl, "_blank")
-    if (!whatsappWindow) {
-      window.location.href = whatsappUrl
+    const trimmedPhone = whatsappPhone.trim()
+    if (!trimmedPhone) {
+      setError("Enter your WhatsApp phone number to book this class.")
       return
     }
-    whatsappWindow.opener = null
+
+    const participants = parseInt(people)
+    if (!payOnArrivalConfirmed) {
+      setError("Confirm that you will pay the class total when you arrive.")
+      return
+    }
 
     setIsSubmitting(true)
     try {
@@ -260,6 +275,8 @@ export function ClassesCalendar({ initialClass }: ClassesCalendarProps) {
           preferredDate,
           participants,
           scheduleId: selectedSession.scheduleId,
+          contactPhone: trimmedPhone,
+          notes: `Pay on arrival confirmed. Total due on arrival: ${formatPrice(selectedSession.workshop.price * participants)}.`,
         }),
       })
 
@@ -267,6 +284,21 @@ export function ClassesCalendar({ initialClass }: ClassesCalendarProps) {
         const data = await res.json().catch(() => ({}))
         throw new Error(data.error || "Could not create booking request")
       }
+      setAvailability((current) => {
+        const currentAvailability = current[selectedSession.id]
+        if (!currentAvailability) return current
+
+        return {
+          ...current,
+          [selectedSession.id]: {
+            ...currentAvailability,
+            bookedSeats: currentAvailability.bookedSeats + participants,
+            availableSeats: Math.max(currentAvailability.availableSeats - participants, 0),
+          },
+        }
+      })
+      setPayOnArrivalConfirmed(false)
+      setSuccess("Booking request sent. Backus Ceramics will confirm your spot by WhatsApp.")
     } catch (bookingError) {
       setError(bookingError instanceof Error ? bookingError.message : "Could not create booking request")
     } finally {
@@ -475,7 +507,16 @@ export function ClassesCalendar({ initialClass }: ClassesCalendarProps) {
 
                 <div className="space-y-2">
                   <Label htmlFor="calendar-people">Seats</Label>
-                  <Select value={people} onValueChange={setPeople} disabled={activeAvailableSeats <= 0}>
+                  <Select
+                    value={people}
+                    onValueChange={(value) => {
+                      setPeople(value)
+                      setError("")
+                      setSuccess("")
+                      setPayOnArrivalConfirmed(false)
+                    }}
+                    disabled={activeAvailableSeats <= 0}
+                  >
                     <SelectTrigger id="calendar-people">
                       <SelectValue placeholder={activeAvailableSeats <= 0 ? "No seats available" : "Select seats"} />
                     </SelectTrigger>
@@ -489,20 +530,66 @@ export function ClassesCalendar({ initialClass }: ClassesCalendarProps) {
                   </Select>
                 </div>
 
+                <div className="space-y-2">
+                  <Label htmlFor="calendar-whatsapp">WhatsApp phone number</Label>
+                  <Input
+                    id="calendar-whatsapp"
+                    type="tel"
+                    value={whatsappPhone}
+                    onChange={(event) => {
+                      setWhatsappPhone(event.target.value)
+                      setError("")
+                      setSuccess("")
+                    }}
+                    placeholder="+62 812 3456 7890"
+                    autoComplete="tel"
+                  />
+                </div>
+
+                <div className="rounded-lg border border-border bg-muted/35 p-4">
+                  <p className="text-sm font-semibold text-foreground">Checkout</p>
+                  <div className="mt-3 space-y-2 text-sm">
+                    <div className="flex items-center justify-between gap-4 text-muted-foreground">
+                      <span>{activeSession.scheduleTitle || activeSession.workshop.title}</span>
+                      <span>{formatPrice(activeSession.workshop.price)}</span>
+                    </div>
+                    <div className="flex items-center justify-between gap-4 text-muted-foreground">
+                      <span>Seats</span>
+                      <span>x {selectedSeatCount}</span>
+                    </div>
+                    <div className="flex items-center justify-between gap-4 border-t border-border pt-2 font-semibold text-foreground">
+                      <span>Total due on arrival</span>
+                      <span>{formatPrice(checkoutTotal)}</span>
+                    </div>
+                  </div>
+                  <label className="mt-4 flex items-start gap-3 text-sm leading-relaxed text-muted-foreground">
+                    <Checkbox
+                      checked={payOnArrivalConfirmed}
+                      onCheckedChange={(checked) => {
+                        setPayOnArrivalConfirmed(checked === true)
+                        setError("")
+                      }}
+                      className="mt-0.5"
+                    />
+                    <span>I understand this booking is held for me and I will pay {formatPrice(checkoutTotal)} when I arrive to class.</span>
+                  </label>
+                </div>
+
                 {error && <p className="text-sm text-destructive">{error}</p>}
+                {success && <p className="text-sm font-medium text-emerald-600 dark:text-emerald-400">{success}</p>}
 
                 <Button
                   onClick={handleBooking}
-                  className="h-12 w-full gap-2 bg-[#25D366] text-base text-white hover:bg-[#128C7E]"
+                  className="h-12 w-full gap-2 text-base"
                   disabled={isSubmitting || activeAvailableSeats <= 0 || availabilityLoading}
                 >
-                  {isSubmitting ? <Loader2 className="h-4 w-4 animate-spin" /> : <MessageCircle className="h-4 w-4" />}
+                  {isSubmitting ? <Loader2 className="h-4 w-4 animate-spin" /> : <CalendarDays className="h-4 w-4" />}
                   {isSubmitting
-                    ? "Creating Booking..."
+                    ? "Booking..."
                     : activeAvailableSeats <= 0
                       ? "Session Full"
                       : isAuthenticated
-                        ? "Book via WhatsApp"
+                        ? "Book Now"
                         : "Sign in to Book"}
                 </Button>
               </CardContent>
