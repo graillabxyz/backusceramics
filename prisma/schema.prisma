@@ -25,6 +25,8 @@ model User {
   sessions      Session[]
   orders        Order[]
   classBookings ClassBooking[]
+  classHolds    ClassHold[]
+  classSchedules ClassSchedule[]
   residencyApps ResidencyApplication[]
 
   createdAt DateTime @default(now())
@@ -114,6 +116,8 @@ model ClassBooking {
   user   User?  @relation(fields: [userId], references: [id])
 
   workshopId String // References classes-data.ts workshop ID
+  scheduleId  String?
+  schedule    ClassSchedule? @relation(fields: [scheduleId], references: [id])
   status     String @default("PENDING")
   // Status values: PENDING, CONFIRMED, COMPLETED, CANCELLED
 
@@ -129,6 +133,56 @@ model ClassBooking {
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+}
+
+model ClassSchedule {
+  id        String @id @default(cuid())
+  createdBy String?
+  creator   User?  @relation(fields: [createdBy], references: [id])
+
+  offeringId      String
+  title           String
+  category        String @default("class")
+  status          String @default("ACTIVE")
+  // Status values: ACTIVE, PAUSED, CANCELLED
+  timeLabel       String
+  startDate       DateTime
+  endDate         DateTime?
+  weekdays        String? // JSON array of day indexes for recurring schedules
+  maxParticipants Int
+  notes           String?
+
+  bookings ClassBooking[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([offeringId, startDate, endDate])
+  @@index([status])
+}
+
+model ClassHold {
+  id        String @id @default(cuid())
+  createdBy String?
+  creator   User?  @relation(fields: [createdBy], references: [id])
+
+  studentName  String
+  studentEmail String?
+  workshopId   String
+  timeLabel    String
+  seats        Int    @default(1)
+  weekdays     String // JSON array of day indexes, 0 = Sunday
+  startDate    DateTime
+  endDate      DateTime?
+  notes        String?
+  status       String @default("ACTIVE")
+  // Status values: ACTIVE, PAUSED, CANCELLED
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([workshopId, startDate, endDate])
+  @@index([status])
 }
 
 model ResidencyApplication {

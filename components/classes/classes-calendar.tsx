@@ -1,6 +1,6 @@
 "use client"
 
-import { useMemo, useState } from "react"
+import { useEffect, useMemo, useState } from "react"
 import Link from "next/link"
 import {
   ArrowLeft,
@@ -24,11 +24,18 @@ import {
   SelectValue,
 } from "@/components/ui/select"
 import { useAuth } from "@/lib/auth-context"
-import { formatPrice, Workshop, workshops } from "@/lib/classes-data"
+import { formatPrice } from "@/lib/classes-data"
+import {
+  addDays,
+  CalendarAvailability,
+  CalendarSession,
+  formatDateKey,
+  getScheduleOffering,
+  parseDateKey,
+  shortDayNames,
+  startOfWeek,
+} from "@/lib/class-schedule"
 import { cn } from "@/lib/utils"
-
-const dayNames = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"]
-const shortDayNames = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"]
 
 const classColors: Record<string, string> = {
   "beginner-wheel": "border-l-amber-500 bg-amber-50 text-amber-950 dark:bg-amber-950/30 dark:text-amber-100",
@@ -38,96 +45,8 @@ const classColors: Record<string, string> = {
   "kids-workshop": "border-l-violet-500 bg-violet-50 text-violet-950 dark:bg-violet-950/30 dark:text-violet-100",
 }
 
-interface CalendarSession {
-  id: string
-  workshop: Workshop
-  date: Date
-  dateKey: string
-  timeLabel: string
-  scheduleLabel: string
-  sortHour: number
-}
-
 interface ClassesCalendarProps {
   initialClass?: string
-}
-
-function startOfWeek(date: Date) {
-  const copy = new Date(date)
-  copy.setHours(0, 0, 0, 0)
-  const mondayOffset = (copy.getDay() + 6) % 7
-  copy.setDate(copy.getDate() - mondayOffset)
-  return copy
-}
-
-function addDays(date: Date, days: number) {
-  const copy = new Date(date)
-  copy.setDate(copy.getDate() + days)
-  return copy
-}
-
-function formatDateKey(date: Date) {
-  return date.toLocaleDateString("en-CA")
-}
-
-function parseTimeHour(timeLabel: string) {
-  const match = timeLabel.match(/(\d{1,2})(?::(\d{2}))?/)
-  return match ? Number(match[1]) : 12
-}
-
-function parseScheduleDays(schedule: string) {
-  const [dayPart = ""] = schedule.split(":")
-  const normalized = dayPart.trim()
-
-  if (normalized.includes("-")) {
-    const [start, end] = normalized.split("-").map((item) => item.trim())
-    const startIndex = dayNames.indexOf(start)
-    const endIndex = dayNames.indexOf(end)
-
-    if (startIndex >= 0 && endIndex >= 0) {
-      const days = []
-      for (let index = startIndex; index <= endIndex; index += 1) {
-        days.push(index)
-      }
-      return days
-    }
-  }
-
-  const singleDay = dayNames.indexOf(normalized)
-  return singleDay >= 0 ? [singleDay] : []
-}
-
-function parseTimeLabel(schedule: string) {
-  const [, ...rest] = schedule.split(":")
-  return rest.join(":").trim()
-}
-
-function buildWeekSessions(weekStart: Date) {
-  const classWorkshops = workshops.filter((workshop) => workshop.available && workshop.category !== "residency")
-
-  return classWorkshops
-    .flatMap((workshop) =>
-      (workshop.schedule || []).flatMap((schedule) => {
-        const days = parseScheduleDays(schedule)
-        const timeLabel = parseTimeLabel(schedule)
-
-        return days.map((dayIndex) => {
-          const weekDayOffset = (dayIndex + 6) % 7
-          const date = addDays(weekStart, weekDayOffset)
-
-          return {
-            id: `${workshop.id}-${formatDateKey(date)}-${timeLabel}`,
-            workshop,
-            date,
-            dateKey: formatDateKey(date),
-            timeLabel,
-            scheduleLabel: schedule,
-            sortHour: parseTimeHour(timeLabel),
-          }
-        })
-      })
-    )
-    .sort((a, b) => a.date.getTime() - b.date.getTime() || a.sortHour - b.sortHour)
 }
 
 function formatLongDate(date: Date) {
@@ -146,29 +65,105 @@ export function ClassesCalendar({ initialClass }: ClassesCalendarProps) {
     return date
   }, [])
   const [weekStart, setWeekStart] = useState(() => startOfWeek(today))
-  const sessions = useMemo(() => buildWeekSessions(weekStart), [weekStart])
-  const initialSession = useMemo(() => {
-    return sessions.find((session) => session.workshop.slug === initialClass || session.workshop.id === initialClass) || sessions[0]
-  }, [initialClass, sessions])
-  const [selectedSessionId, setSelectedSessionId] = useState(initialSession?.id || "")
-  const selectedSession = sessions.find((session) => session.id === selectedSessionId) || initialSession
+  const [sessions, setSessions] = useState<CalendarSession[]>([])
+  const [selectedSessionId, setSelectedSessionId] = useState("")
+  const selectedSession = sessions.find((session) => session.id === selectedSessionId) || sessions[0]
   const [people, setPeople] = useState("1")
   const [isSubmitting, setIsSubmitting] = useState(false)
+  const [availability, setAvailability] = useState<Record<string, CalendarAvailability>>({})
+  const [availabilityLoading, setAvailabilityLoading] = useState(true)
   const [error, setError] = useState("")
   const { isAuthenticated, openAuthModal } = useAuth()
 
   const weekDays = useMemo(() => Array.from({ length: 7 }, (_, index) => addDays(weekStart, index)), [weekStart])
   const weekLabel = `${weekStart.toLocaleDateString("en-US", { month: "short", day: "numeric" })} - ${addDays(weekStart, 6).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}`
-  const activeMaxParticipants = selectedSession?.workshop.maxParticipants ?? 8
-  const participantOptions = Array.from({ length: activeMaxParticipants }, (_, index) => index + 1)
+  const activeMaxParticipants = selectedSession?.maxParticipants ?? selectedSession?.workshop.maxParticipants ?? 8
+  const selectedAvailability = selectedSession ? availability[selectedSession.id] : undefined
+  const activeAvailableSeats = selectedAvailability?.availableSeats ?? activeMaxParticipants
+  const participantOptions = Array.from({ length: Math.max(activeAvailableSeats, 0) }, (_, index) => index + 1)
+
+  useEffect(() => {
+    let ignore = false
+
+    async function loadAvailability() {
+      setAvailabilityLoading(true)
+      try {
+        const res = await fetch(`/api/classes/availability?weekStart=${formatDateKey(weekStart)}`)
+        if (!res.ok) throw new Error("Could not load availability")
+        const data = await res.json()
+        if (ignore) return
+
+        const nextAvailability = Object.fromEntries(
+          (data.availability as CalendarAvailability[]).map((item) => [item.sessionId, item])
+        )
+        const nextSessions = (data.sessions || [])
+          .map((session: {
+            id: string
+            scheduleId?: string
+            workshopId: string
+            title: string
+            category: string
+            dateKey: string
+            timeLabel: string
+            maxParticipants: number
+          }) => {
+            const offering = getScheduleOffering(session.workshopId)
+            if (!offering) return null
+            const date = parseDateKey(session.dateKey)
+            return {
+              id: session.id,
+              scheduleId: session.scheduleId,
+              workshop: offering,
+              date,
+              dateKey: session.dateKey,
+              timeLabel: session.timeLabel,
+              scheduleLabel: session.category,
+              sortHour: 0,
+              maxParticipants: session.maxParticipants,
+              scheduleTitle: session.title,
+              scheduleCategory: session.category,
+            }
+          })
+          .filter(Boolean) as CalendarSession[]
+
+        setSessions(nextSessions)
+        setAvailability(nextAvailability)
+        setSelectedSessionId((current) => {
+          if (nextSessions.some((session) => session.id === current)) return current
+          return nextSessions.find((session) => session.workshop.slug === initialClass || session.workshop.id === initialClass)?.id || nextSessions[0]?.id || ""
+        })
+      } catch {
+        if (!ignore) {
+          setSessions([])
+          setAvailability({})
+        }
+      } finally {
+        if (!ignore) setAvailabilityLoading(false)
+      }
+    }
+
+    loadAvailability()
+    return () => {
+      ignore = true
+    }
+  }, [initialClass, weekStart])
+
+  useEffect(() => {
+    if (activeAvailableSeats > 0 && parseInt(people) > activeAvailableSeats) {
+      setPeople(activeAvailableSeats.toString())
+    }
+  }, [activeAvailableSeats, people])
 
   const moveWeek = (weeks: number) => {
     const nextWeek = addDays(weekStart, weeks * 7)
     setWeekStart(nextWeek)
-    const nextSessions = buildWeekSessions(nextWeek)
-    const nextSelected =
-      nextSessions.find((session) => session.workshop.id === selectedSession?.workshop.id) || nextSessions[0]
-    setSelectedSessionId(nextSelected?.id || "")
+    setPeople("1")
+    setError("")
+  }
+
+  const goToThisWeek = () => {
+    const nextWeek = startOfWeek(today)
+    setWeekStart(nextWeek)
     setPeople("1")
     setError("")
   }
@@ -200,6 +195,7 @@ export function ClassesCalendar({ initialClass }: ClassesCalendarProps) {
           workshopId: selectedSession.workshop.id,
           preferredDate,
           participants,
+          scheduleId: selectedSession.scheduleId,
         }),
       })
 
@@ -208,7 +204,7 @@ export function ClassesCalendar({ initialClass }: ClassesCalendarProps) {
         throw new Error(data.error || "Could not create booking request")
       }
 
-      const message = `Hi Backus Ceramics! I'd like to book the "${selectedSession.workshop.title}" for ${people} ${participants === 1 ? "person" : "people"}. Requested date: ${formatLongDate(selectedSession.date)}. Preferred time: ${selectedSession.timeLabel}.`
+      const message = `Hi Backus Ceramics! I'd like to book the "${selectedSession.scheduleTitle || selectedSession.workshop.title}" for ${people} ${participants === 1 ? "person" : "people"}. Requested date: ${formatLongDate(selectedSession.date)}. Preferred time: ${selectedSession.timeLabel}.`
       window.open(`https://wa.me/6282145890402?text=${encodeURIComponent(message)}`, "_blank")
     } catch (bookingError) {
       setError(bookingError instanceof Error ? bookingError.message : "Could not create booking request")
@@ -231,13 +227,13 @@ export function ClassesCalendar({ initialClass }: ClassesCalendarProps) {
             <div className="max-w-3xl">
               <Badge variant="secondary" className="mb-4">Class Calendar</Badge>
               <h1 className="font-heading text-4xl font-bold tracking-tight text-foreground sm:text-5xl">
-                Choose a day that fits.
+                Book by week.
               </h1>
               <p className="mt-4 text-lg leading-relaxed text-muted-foreground">
-                Browse the studio week, compare class times at a glance, and select a session to see details before booking.
+                Move week by week, select a class, and see live seat counts before sending your request.
               </p>
             </div>
-            <div className="flex items-center gap-2 rounded-md border border-border bg-background p-1">
+            <div className="flex flex-wrap items-center gap-2 rounded-md border border-border bg-background p-1">
               <Button variant="ghost" size="icon" onClick={() => moveWeek(-1)} aria-label="Previous week">
                 <ChevronLeft className="h-4 w-4" />
               </Button>
@@ -245,15 +241,18 @@ export function ClassesCalendar({ initialClass }: ClassesCalendarProps) {
               <Button variant="ghost" size="icon" onClick={() => moveWeek(1)} aria-label="Next week">
                 <ChevronRight className="h-4 w-4" />
               </Button>
+              <Button variant="outline" size="sm" onClick={goToThisWeek}>
+                This Week
+              </Button>
             </div>
           </div>
         </div>
       </section>
 
-      <section className="mx-auto grid max-w-7xl gap-6 px-4 py-8 sm:px-6 lg:grid-cols-[minmax(0,1fr)_380px] lg:px-8">
+      <section className="mx-auto grid max-w-[1500px] gap-6 px-4 py-8 sm:px-6 xl:grid-cols-[minmax(0,1fr)_380px] lg:px-8">
         <div className="overflow-hidden rounded-lg border border-border bg-background shadow-sm">
           <div className="overflow-x-auto">
-            <div className="min-w-[860px]">
+            <div className="min-w-[1020px]">
               <div className="grid grid-cols-7 border-b border-border bg-muted/35">
                 {weekDays.map((date) => {
                   const isToday = formatDateKey(date) === formatDateKey(today)
@@ -277,32 +276,42 @@ export function ClassesCalendar({ initialClass }: ClassesCalendarProps) {
                 {weekDays.map((date) => {
                   const daySessions = sessions.filter((session) => session.dateKey === formatDateKey(date))
                 return (
-                  <div key={date.toISOString()} className="min-h-[520px] border-r border-border bg-background p-3 last:border-r-0">
-                    <div className="space-y-3">
+                  <div key={date.toISOString()} className="min-h-[560px] border-r border-border bg-background p-2.5 last:border-r-0">
+                    <div className="space-y-2.5">
                       {daySessions.length === 0 ? (
-                        <div className="rounded-md border border-dashed border-border p-4 text-sm text-muted-foreground">
-                          Studio closed
+                        <div className="rounded-md border border-dashed border-border p-4 text-center text-sm text-muted-foreground">
+                          No sessions
                         </div>
                       ) : (
-                        daySessions.map((session) => (
+                        daySessions.map((session) => {
+                          const seats = availability[session.id]
+                          const seatsAvailable = seats?.availableSeats ?? session.workshop.maxParticipants ?? 8
+                          const isFull = seatsAvailable <= 0
+                          return (
                           <button
                             key={session.id}
                             type="button"
                             onClick={() => handleSelectSession(session)}
                             className={cn(
                               "w-full rounded-md border border-border border-l-4 p-3 text-left shadow-sm transition hover:-translate-y-0.5 hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
-                              classColors[session.workshop.id],
-                              selectedSession?.id === session.id && "ring-2 ring-primary"
+                              classColors[session.workshop.id] || "border-l-primary bg-muted text-foreground",
+                              selectedSession?.id === session.id && "ring-2 ring-primary",
+                              isFull && "opacity-60"
                             )}
                           >
                             <span className="block text-xs font-semibold">{session.timeLabel}</span>
-                            <span className="mt-1 block text-sm font-semibold leading-tight">{session.workshop.title}</span>
-                            <span className="mt-2 flex items-center gap-1 text-xs opacity-80">
-                              <Users className="h-3 w-3" />
-                              Max {session.workshop.maxParticipants ?? 8}
+                            <span className="mt-1 block text-sm font-semibold leading-tight">{session.scheduleTitle || session.workshop.title}</span>
+                            <span className="mt-2 flex items-center justify-between gap-2 text-xs opacity-80">
+                              <span className="flex items-center gap-1">
+                                <Users className="h-3 w-3" />
+                                {availabilityLoading ? "Checking" : isFull ? "Full" : `${seatsAvailable} left`}
+                              </span>
+                              {seats && seats.heldSeats > 0 && (
+                                <span>{seats.heldSeats} held</span>
+                              )}
                             </span>
                           </button>
-                        ))
+                        )})
                       )}
                     </div>
                   </div>
@@ -314,7 +323,7 @@ export function ClassesCalendar({ initialClass }: ClassesCalendarProps) {
         </div>
 
         <aside className="lg:sticky lg:top-24 lg:self-start">
-          {selectedSession && (
+          {selectedSession ? (
             <Card className="overflow-hidden border-border shadow-sm">
               {selectedSession.workshop.image && (
                 <div className="aspect-[16/10] overflow-hidden bg-muted">
@@ -328,7 +337,7 @@ export function ClassesCalendar({ initialClass }: ClassesCalendarProps) {
               <CardContent className="space-y-5 p-6">
                 <div>
                   <Badge variant="outline">{selectedSession.workshop.level}</Badge>
-                  <h2 className="mt-3 font-heading text-2xl font-bold text-foreground">{selectedSession.workshop.title}</h2>
+                  <h2 className="mt-3 font-heading text-2xl font-bold text-foreground">{selectedSession.scheduleTitle || selectedSession.workshop.title}</h2>
                   <p className="mt-1 text-sm font-medium uppercase tracking-wide text-primary">{selectedSession.workshop.subtitle}</p>
                 </div>
 
@@ -357,16 +366,25 @@ export function ClassesCalendar({ initialClass }: ClassesCalendarProps) {
                     <p className="font-semibold text-foreground">{formatPrice(selectedSession.workshop.price)}</p>
                   </div>
                   <div>
-                    <p className="text-muted-foreground">Class size</p>
-                    <p className="font-semibold text-foreground">Up to {activeMaxParticipants}</p>
+                    <p className="text-muted-foreground">Seats</p>
+                    <p className="font-semibold text-foreground">
+                      {availabilityLoading
+                        ? "Checking..."
+                        : `${activeAvailableSeats} of ${activeMaxParticipants} available`}
+                    </p>
+                    {selectedAvailability && selectedAvailability.heldSeats > 0 && (
+                      <p className="mt-1 text-xs text-muted-foreground">
+                        {selectedAvailability.heldSeats} held for resident schedule
+                      </p>
+                    )}
                   </div>
                 </div>
 
                 <div className="space-y-2">
                   <Label htmlFor="calendar-people">Seats</Label>
-                  <Select value={people} onValueChange={setPeople}>
+                  <Select value={people} onValueChange={setPeople} disabled={activeAvailableSeats <= 0}>
                     <SelectTrigger id="calendar-people">
-                      <SelectValue placeholder="Select seats" />
+                      <SelectValue placeholder={activeAvailableSeats <= 0 ? "No seats available" : "Select seats"} />
                     </SelectTrigger>
                     <SelectContent>
                       {participantOptions.map((num) => (
@@ -383,11 +401,27 @@ export function ClassesCalendar({ initialClass }: ClassesCalendarProps) {
                 <Button
                   onClick={handleBooking}
                   className="h-12 w-full gap-2 bg-[#25D366] text-base text-white hover:bg-[#128C7E]"
-                  disabled={isSubmitting}
+                  disabled={isSubmitting || activeAvailableSeats <= 0 || availabilityLoading}
                 >
                   {isSubmitting ? <Loader2 className="h-4 w-4 animate-spin" /> : <MessageCircle className="h-4 w-4" />}
-                  {isSubmitting ? "Creating Booking..." : isAuthenticated ? "Book via WhatsApp" : "Sign in to Book"}
+                  {isSubmitting
+                    ? "Creating Booking..."
+                    : activeAvailableSeats <= 0
+                      ? "Session Full"
+                      : isAuthenticated
+                        ? "Book via WhatsApp"
+                        : "Sign in to Book"}
                 </Button>
+              </CardContent>
+            </Card>
+          ) : (
+            <Card className="border-border shadow-sm">
+              <CardContent className="p-6">
+                <Badge variant="outline">No sessions</Badge>
+                <h2 className="mt-3 font-heading text-2xl font-bold text-foreground">Nothing scheduled this week</h2>
+                <p className="mt-3 text-sm leading-relaxed text-muted-foreground">
+                  Check another week, or come back once the studio has added new class and event dates.
+                </p>
               </CardContent>
             </Card>
           )}
