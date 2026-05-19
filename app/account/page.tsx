@@ -16,7 +16,6 @@ import {
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
-import { BookingModal } from "@/components/classes/booking-modal"
 import { useAuth } from "@/lib/auth-context"
 import { formatPrice, workshops } from "@/lib/classes-data"
 
@@ -244,7 +243,7 @@ export default function AccountDashboardPage() {
             <p className="text-muted-foreground mt-1">Browse recurring sessions, choose a date, and send the studio your request.</p>
           </div>
           <Button variant="outline" asChild>
-            <Link href="/classes">View full class guide</Link>
+            <Link href="/classes/calendar">View calendar</Link>
           </Button>
         </div>
 
@@ -273,9 +272,9 @@ export default function AccountDashboardPage() {
                     </p>
                   ))}
                 </div>
-                <BookingModal workshop={workshop}>
-                  <Button className="w-full" size="sm">Choose Date</Button>
-                </BookingModal>
+                <Button className="w-full" size="sm" asChild>
+                  <Link href={`/classes/calendar?class=${workshop.slug}`}>Choose Date</Link>
+                </Button>
               </CardContent>
             </Card>
           ))}

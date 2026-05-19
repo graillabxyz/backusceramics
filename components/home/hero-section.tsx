@@ -30,7 +30,7 @@ export function HeroSection() {
           </p>
           <div className="mt-10 flex flex-col sm:flex-row items-center justify-center gap-4">
             <Button asChild size="lg" className="px-8">
-              <Link href="/classes">
+              <Link href="/classes/calendar">
                 View Classes
                 <ArrowRight className="ml-2 h-4 w-4" />
               </Link>

@@ -6,7 +6,6 @@ import { CalendarDays, GraduationCap, Loader2 } from "lucide-react"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
-import { BookingModal } from "@/components/classes/booking-modal"
 import { formatPrice, workshops } from "@/lib/classes-data"
 
 interface Booking {
@@ -65,7 +64,7 @@ export default function MyBookingsPage() {
           <p className="text-muted-foreground mt-1">Your class bookings and upcoming workshop options</p>
         </div>
         <Button variant="outline" asChild>
-          <Link href="/classes">View class page</Link>
+          <Link href="/classes/calendar">View calendar</Link>
         </Button>
       </div>
 
@@ -136,9 +135,9 @@ export default function MyBookingsPage() {
                       ))}
                     </div>
                   </div>
-                  <BookingModal workshop={workshop}>
-                    <Button size="sm">Book</Button>
-                  </BookingModal>
+                  <Button size="sm" asChild>
+                    <Link href={`/classes/calendar?class=${workshop.slug}`}>Book</Link>
+                  </Button>
                 </div>
               </CardContent>
             </Card>
