@@ -49,6 +49,9 @@ function buildAvailabilityResponse(weekStart: Date, sessions: ReturnType<typeof 
     dateKey: session.dateKey,
     timeLabel: session.timeLabel,
     maxParticipants: session.maxParticipants ?? session.workshop.maxParticipants ?? 8,
+    scheduleStartDate: session.scheduleStartDate ? formatDateKey(session.scheduleStartDate) : undefined,
+    scheduleEndDate: session.scheduleEndDate ? formatDateKey(session.scheduleEndDate) : undefined,
+    scheduleWeekdays: session.scheduleWeekdays ?? undefined,
   }))
 
   return NextResponse.json({ weekStart: formatDateKey(weekStart), sessions: serializedSessions, availability })

@@ -6,7 +6,6 @@ import { Badge } from "@/components/ui/badge"
 import { Check, Calendar, Users, Palette, Flame, Home } from "lucide-react"
 import Link from "next/link"
 import { workshops, formatPrice } from "@/lib/classes-data"
-import { BookingModal } from "@/components/classes/booking-modal"
 
 export default function ResidencyPage() {
   const residencyPrograms = workshops.filter(w => w.category === "residency")
@@ -131,9 +130,9 @@ export default function ResidencyPage() {
                           {formatPrice(program.price)}
                         </p>
                       </div>
-                      <BookingModal workshop={program}>
-                        <Button size="lg">Apply Now</Button>
-                      </BookingModal>
+                      <Button size="lg" asChild>
+                        <Link href="/contact">Inquire</Link>
+                      </Button>
                     </div>
                   </div>
                 </CardContent>

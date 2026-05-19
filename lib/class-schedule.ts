@@ -15,6 +15,9 @@ export interface CalendarSession {
   maxParticipants?: number
   scheduleTitle?: string
   scheduleCategory?: string
+  scheduleStartDate?: Date
+  scheduleEndDate?: Date | null
+  scheduleWeekdays?: number[] | null
 }
 
 export interface CalendarAvailability {
@@ -230,6 +233,9 @@ export function buildWeekSessionsFromSchedules(weekStart: Date, schedules: Class
         maxParticipants: schedule.maxParticipants,
         scheduleTitle: schedule.title,
         scheduleCategory: schedule.category,
+        scheduleStartDate: schedule.startDate,
+        scheduleEndDate: schedule.endDate,
+        scheduleWeekdays: schedule.weekdays ? parseWeekdays(schedule.weekdays) : null,
       }))
     })
     .sort((a, b) => a.date.getTime() - b.date.getTime() || a.sortHour - b.sortHour)

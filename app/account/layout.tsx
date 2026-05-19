@@ -51,21 +51,22 @@ export default function AccountLayout({
     <main className="min-h-screen flex flex-col">
       <Navigation />
 
-      <div className="flex-1 pt-24 pb-16">
+      <div className="flex-1 pt-24 pb-12">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           {/* Header */}
-          <div className="mb-8">
-            <h1 className="font-heading font-bold text-3xl text-foreground">
+          <div className="mb-6 rounded-lg border border-border bg-card p-5 sm:p-6">
+            <p className="text-xs font-semibold uppercase tracking-wide text-primary">Account</p>
+            <h1 className="mt-2 font-heading font-bold text-2xl text-foreground sm:text-3xl">
               Welcome back, {user?.name?.split(" ")[0] || "there"}
             </h1>
-            <p className="text-muted-foreground mt-1">
-              Manage your orders and bookings
+            <p className="mt-1 text-sm text-muted-foreground">
+              Manage bookings, profile details, and custom order progress.
             </p>
           </div>
 
-          <div className="grid lg:grid-cols-[240px_1fr] gap-8">
+          <div className="grid gap-6 lg:grid-cols-[220px_1fr]">
             {/* Account Nav */}
-            <nav className="space-y-1">
+            <nav className="flex gap-2 overflow-x-auto rounded-lg border border-border bg-card p-2 lg:sticky lg:top-24 lg:block lg:h-fit lg:space-y-1 lg:overflow-visible">
               {accountNav.map((item) => {
                 const isActive = item.exact
                   ? pathname === item.href
@@ -75,13 +76,13 @@ export default function AccountLayout({
                     key={item.href}
                     href={item.href}
                     className={cn(
-                      "flex items-center gap-3 px-4 py-3 rounded-lg text-sm font-medium transition-colors",
+                      "flex shrink-0 items-center gap-2 rounded-md px-3 py-2 text-sm font-medium transition-colors lg:w-full lg:gap-3 lg:px-4 lg:py-3",
                       isActive
                         ? "bg-primary text-primary-foreground"
                         : "text-muted-foreground hover:text-foreground hover:bg-muted"
                     )}
                   >
-                    <item.icon className="h-5 w-5" />
+                    <item.icon className="h-4 w-4 lg:h-5 lg:w-5" />
                     {item.label}
                   </Link>
                 )

@@ -8,23 +8,11 @@ import {
   ChevronLeft,
   ChevronRight,
   Clock,
-  Filter,
-  Loader2,
   Users,
 } from "lucide-react"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
-import { Checkbox } from "@/components/ui/checkbox"
-import { Input } from "@/components/ui/input"
-import { Label } from "@/components/ui/label"
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select"
 import { useAuth } from "@/lib/auth-context"
 import { formatPrice } from "@/lib/classes-data"
 import {
@@ -53,6 +41,13 @@ interface ClassesCalendarProps {
 
 type CalendarFilter = "all" | "wheel" | "handbuilding" | "kids" | "multi-day" | "events"
 
+interface ProgramMeeting {
+  key: string
+  dateKey: string
+  date: Date
+  timeLabel: string
+}
+
 function formatLongDate(date: Date) {
   return date.toLocaleDateString("en-US", {
     weekday: "long",
@@ -64,6 +59,7 @@ function formatLongDate(date: Date) {
 
 function getSessionFilter(session: CalendarSession): CalendarFilter {
   if (session.scheduleCategory === "event") return "events"
+  if (session.scheduleCategory === "multi-week" || session.scheduleCategory === "multi_week") return "multi-day"
   if (session.scheduleCategory === "multi-day") return "multi-day"
   if (session.workshop.id === "beginner-wheel") return "wheel"
   if (session.workshop.id === "handbuilding") return "handbuilding"
@@ -82,13 +78,58 @@ const filterLabels: Record<CalendarFilter, string> = {
   events: "Events",
 }
 
-const filterHelp: Record<CalendarFilter, string> = {
-  all: "Every bookable studio session this week.",
-  wheel: "Single-day wheel classes with up to 3 students.",
-  handbuilding: "Single-day handbuilding classes and clay sessions.",
-  kids: "Kids and family workshops.",
-  "multi-day": "Scheduled 3-day and 6-day workshop runs.",
-  events: "Private birthdays, atelier sessions, and special events.",
+const bookingTypeCards: Array<{
+  filter: CalendarFilter
+  title: string
+  eyebrow: string
+  description: string
+}> = [
+  {
+    filter: "all",
+    title: "All Classes",
+    eyebrow: "Studio calendar",
+    description: "Browse every available class, workshop, and event.",
+  },
+  {
+    filter: "wheel",
+    title: "Beginner Wheel Single Day",
+    eyebrow: "Wheel class",
+    description: "A two-hour wheel session with up to 3 students.",
+  },
+  {
+    filter: "handbuilding",
+    title: "Handbuilding Single Day",
+    eyebrow: "Handbuilding",
+    description: "A guided handbuilding class with up to 8 students.",
+  },
+  {
+    filter: "kids",
+    title: "Kids & Family Workshop",
+    eyebrow: "Family session",
+    description: "Playful clay sessions for children and families.",
+  },
+  {
+    filter: "multi-day",
+    title: "3 & 6 Day / Week Programs",
+    eyebrow: "Programs",
+    description: "Choose the exact meetings and pay online to confirm.",
+  },
+  {
+    filter: "events",
+    title: "Private Events",
+    eyebrow: "Events",
+    description: "Birthday ateliers, private groups, and special sessions.",
+  },
+]
+
+function isPrepaidProgram(session?: CalendarSession) {
+  if (!session) return false
+  return (
+    getSessionFilter(session) === "multi-day" ||
+    session.scheduleCategory === "multi-week" ||
+    session.scheduleCategory === "multi_week" ||
+    session.workshop.id.includes("week")
+  )
 }
 
 export function ClassesCalendar({ initialClass }: ClassesCalendarProps) {
@@ -101,14 +142,9 @@ export function ClassesCalendar({ initialClass }: ClassesCalendarProps) {
   const [sessions, setSessions] = useState<CalendarSession[]>([])
   const [selectedSessionId, setSelectedSessionId] = useState("")
   const [activeFilter, setActiveFilter] = useState<CalendarFilter>("all")
-  const [people, setPeople] = useState("1")
-  const [isSubmitting, setIsSubmitting] = useState(false)
   const [availability, setAvailability] = useState<Record<string, CalendarAvailability>>({})
   const [availabilityLoading, setAvailabilityLoading] = useState(true)
-  const [error, setError] = useState("")
   const [success, setSuccess] = useState("")
-  const [whatsappPhone, setWhatsappPhone] = useState("")
-  const [payOnArrivalConfirmed, setPayOnArrivalConfirmed] = useState(false)
   const { isAuthenticated, openAuthModal } = useAuth()
 
   const studioDays = useMemo(() => Array.from({ length: 6 }, (_, index) => addDays(weekStart, index)), [weekStart])
@@ -123,9 +159,7 @@ export function ClassesCalendar({ initialClass }: ClassesCalendarProps) {
   const activeMaxParticipants = activeSession?.maxParticipants ?? activeSession?.workshop.maxParticipants ?? 8
   const selectedAvailability = activeSession ? availability[activeSession.id] : undefined
   const activeAvailableSeats = selectedAvailability?.availableSeats ?? activeMaxParticipants
-  const participantOptions = Array.from({ length: Math.max(activeAvailableSeats, 0) }, (_, index) => index + 1)
-  const selectedSeatCount = parseInt(people || "1")
-  const checkoutTotal = activeSession ? activeSession.workshop.price * selectedSeatCount : 0
+  const prepaidProgram = isPrepaidProgram(activeSession)
   const filterCounts = useMemo(() => {
     return sessions.reduce<Record<CalendarFilter, number>>(
       (counts, session) => {
@@ -136,6 +170,30 @@ export function ClassesCalendar({ initialClass }: ClassesCalendarProps) {
       { all: 0, wheel: 0, handbuilding: 0, kids: 0, "multi-day": 0, events: 0 }
     )
   }, [sessions])
+  const programMeetingOptions = useMemo<ProgramMeeting[]>(() => {
+    if (!activeSession || !prepaidProgram) return []
+
+    const startDate = activeSession.scheduleStartDate || activeSession.date
+    const endDate = activeSession.scheduleEndDate || activeSession.date
+    const weekdays = activeSession.scheduleWeekdays
+    const meetings: ProgramMeeting[] = []
+    let date = new Date(startDate)
+
+    while (date <= endDate) {
+      if (!weekdays || weekdays.length === 0 || weekdays.includes(date.getDay())) {
+        const dateKey = formatDateKey(date)
+        meetings.push({
+          key: `${dateKey}|${activeSession.timeLabel}`,
+          dateKey,
+          date: new Date(date),
+          timeLabel: activeSession.timeLabel,
+        })
+      }
+      date = addDays(date, 1)
+    }
+
+    return meetings
+  }, [activeSession, prepaidProgram])
 
   useEffect(() => {
     let ignore = false
@@ -161,6 +219,9 @@ export function ClassesCalendar({ initialClass }: ClassesCalendarProps) {
             dateKey: string
             timeLabel: string
             maxParticipants: number
+            scheduleStartDate?: string
+            scheduleEndDate?: string
+            scheduleWeekdays?: number[]
           }) => {
             const offering = getScheduleOffering(session.workshopId)
             if (!offering) return null
@@ -177,6 +238,9 @@ export function ClassesCalendar({ initialClass }: ClassesCalendarProps) {
               maxParticipants: session.maxParticipants,
               scheduleTitle: session.title,
               scheduleCategory: session.category,
+              scheduleStartDate: session.scheduleStartDate ? parseDateKey(session.scheduleStartDate) : undefined,
+              scheduleEndDate: session.scheduleEndDate ? parseDateKey(session.scheduleEndDate) : null,
+              scheduleWeekdays: session.scheduleWeekdays || null,
             }
           })
           .filter(Boolean) as CalendarSession[]
@@ -204,12 +268,6 @@ export function ClassesCalendar({ initialClass }: ClassesCalendarProps) {
   }, [initialClass, weekStart])
 
   useEffect(() => {
-    if (activeAvailableSeats > 0 && parseInt(people) > activeAvailableSeats) {
-      setPeople(activeAvailableSeats.toString())
-    }
-  }, [activeAvailableSeats, people])
-
-  useEffect(() => {
     if (visibleSessions.length > 0 && !visibleSessions.some((session) => session.id === selectedSessionId)) {
       setSelectedSessionId(visibleSessions[0].id)
     }
@@ -218,91 +276,49 @@ export function ClassesCalendar({ initialClass }: ClassesCalendarProps) {
   const moveWeek = (weeks: number) => {
     const nextWeek = addDays(weekStart, weeks * 7)
     setWeekStart(nextWeek)
-    setPeople("1")
-    setError("")
     setSuccess("")
-    setPayOnArrivalConfirmed(false)
   }
 
   const goToThisWeek = () => {
     const nextWeek = startOfWeek(today)
     setWeekStart(nextWeek)
-    setPeople("1")
-    setError("")
     setSuccess("")
-    setPayOnArrivalConfirmed(false)
   }
 
   const handleSelectSession = (session: CalendarSession) => {
     setSelectedSessionId(session.id)
-    setPeople("1")
-    setError("")
     setSuccess("")
-    setPayOnArrivalConfirmed(false)
   }
 
-  const handleBooking = async () => {
-    const selectedSession = activeSession
-    if (!selectedSession) return
-    setError("")
-    setSuccess("")
+  const buildCheckoutHref = () => {
+    if (!activeSession) return "/classes/calendar"
+    const params = new URLSearchParams({
+      workshopId: activeSession.workshop.id,
+      title: activeSession.scheduleTitle || activeSession.workshop.title,
+      dateKey: formatDateKey(activeSession.date),
+      dateLabel: formatLongDate(activeSession.date),
+      timeLabel: activeSession.timeLabel,
+      price: String(activeSession.workshop.price),
+      maxSeats: String(activeAvailableSeats),
+      prepaid: prepaidProgram ? "true" : "false",
+    })
 
+    if (activeSession.scheduleId) params.set("scheduleId", activeSession.scheduleId)
+    if (prepaidProgram) {
+      params.set("meetings", JSON.stringify(programMeetingOptions.map((meeting) => ({
+        key: meeting.key,
+        dateKey: meeting.dateKey,
+        dateLabel: meeting.date.toLocaleDateString("en-US", { weekday: "long", month: "short", day: "numeric" }),
+        timeLabel: meeting.timeLabel,
+      }))))
+    }
+
+    return `/classes/checkout?${params.toString()}`
+  }
+
+  const handleUnauthenticatedCheckout = () => {
     if (!isAuthenticated) {
       openAuthModal()
-      return
-    }
-
-    const trimmedPhone = whatsappPhone.trim()
-    if (!trimmedPhone) {
-      setError("Enter your WhatsApp phone number to book this class.")
-      return
-    }
-
-    const participants = parseInt(people)
-    if (!payOnArrivalConfirmed) {
-      setError("Confirm that you will pay the class total when you arrive.")
-      return
-    }
-
-    setIsSubmitting(true)
-    try {
-      const preferredDate = `${formatDateKey(selectedSession.date)} · ${selectedSession.timeLabel}`
-      const res = await fetch("/api/bookings", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          workshopId: selectedSession.workshop.id,
-          preferredDate,
-          participants,
-          scheduleId: selectedSession.scheduleId,
-          contactPhone: trimmedPhone,
-          notes: `Pay on arrival confirmed. Total due on arrival: ${formatPrice(selectedSession.workshop.price * participants)}.`,
-        }),
-      })
-
-      if (!res.ok) {
-        const data = await res.json().catch(() => ({}))
-        throw new Error(data.error || "Could not create booking request")
-      }
-      setAvailability((current) => {
-        const currentAvailability = current[selectedSession.id]
-        if (!currentAvailability) return current
-
-        return {
-          ...current,
-          [selectedSession.id]: {
-            ...currentAvailability,
-            bookedSeats: currentAvailability.bookedSeats + participants,
-            availableSeats: Math.max(currentAvailability.availableSeats - participants, 0),
-          },
-        }
-      })
-      setPayOnArrivalConfirmed(false)
-      setSuccess("Booking request sent. Backus Ceramics will confirm your spot by WhatsApp.")
-    } catch (bookingError) {
-      setError(bookingError instanceof Error ? bookingError.message : "Could not create booking request")
-    } finally {
-      setIsSubmitting(false)
     }
   }
 
@@ -368,22 +384,22 @@ export function ClassesCalendar({ initialClass }: ClassesCalendarProps) {
 
   return (
     <main className="min-h-screen bg-background">
-      <section className="border-b border-border bg-secondary/25 pt-28 pb-10">
+      <section className="border-b border-border bg-secondary/25 pt-24 pb-6">
         <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
-          <Button variant="ghost" asChild className="mb-6 px-0">
+          <Button variant="ghost" asChild className="mb-4 px-0">
             <Link href="/classes">
               <ArrowLeft className="h-4 w-4" />
               Class guide
             </Link>
           </Button>
-          <div className="flex flex-col gap-6 lg:flex-row lg:items-end lg:justify-between">
-            <div className="max-w-3xl">
-              <Badge variant="secondary" className="mb-4">Class Calendar</Badge>
-              <h1 className="font-heading text-4xl font-bold tracking-tight text-foreground sm:text-5xl">
+          <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+            <div className="max-w-2xl">
+              <Badge variant="secondary" className="mb-3">Class Calendar</Badge>
+              <h1 className="font-heading text-3xl font-bold tracking-tight text-foreground sm:text-4xl">
                 Book by week.
               </h1>
-              <p className="mt-4 text-lg leading-relaxed text-muted-foreground">
-                Pick the kind of session you want, choose a time on the week view, then book from the details panel.
+              <p className="mt-3 max-w-xl text-sm leading-relaxed text-muted-foreground sm:text-base">
+                Choose a class type, select a time, then complete checkout from the details panel.
               </p>
             </div>
             <div className="flex flex-wrap items-center gap-2 rounded-md border border-border bg-background p-1">
@@ -404,42 +420,40 @@ export function ClassesCalendar({ initialClass }: ClassesCalendarProps) {
 
       <section className="mx-auto grid max-w-7xl gap-6 px-4 py-8 sm:px-6 xl:grid-cols-[minmax(0,1fr)_360px] lg:px-8">
         <div className="xl:col-span-2">
-          <div className="mb-4 flex flex-col gap-3 rounded-lg border border-border bg-background p-3 shadow-sm sm:flex-row sm:items-center sm:justify-between">
-            <div className="flex items-center gap-2 text-sm font-medium text-foreground">
-              <Filter className="h-4 w-4 text-primary" />
-              Choose a class type
+          <div className="mb-5">
+            <div className="mx-auto max-w-2xl text-center">
+              <p className="text-xs font-semibold uppercase tracking-wide text-primary">Class type</p>
+              <h2 className="mt-2 font-heading text-2xl font-bold text-foreground">What would you like to book?</h2>
             </div>
-            <div className="flex gap-2 overflow-x-auto pb-1 sm:pb-0">
-              {(Object.keys(filterLabels) as CalendarFilter[]).map((filter) => (
-                <button
-                  key={filter}
-                  type="button"
-                  onClick={() => {
-                    setActiveFilter(filter)
-                    setPeople("1")
-                    setError("")
-                  }}
-                  className={cn(
-                    "whitespace-nowrap rounded-md border px-3 py-2 text-sm font-medium transition",
-                    activeFilter === filter
-                      ? "border-primary bg-primary text-primary-foreground"
-                      : "border-border bg-background text-muted-foreground hover:text-foreground"
-                  )}
-                >
-                  {filterLabels[filter]}
-                  <span
+            <div className="mt-5 grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+              {bookingTypeCards.map((option) => {
+                const isActive = activeFilter === option.filter
+                const hasAvailability = filterCounts[option.filter] > 0
+
+                return (
+                  <button
+                    key={option.filter}
+                    type="button"
+                    onClick={() => {
+                      setActiveFilter(option.filter)
+                      setSuccess("")
+                    }}
                     className={cn(
-                      "ml-2 rounded-full px-1.5 py-0.5 text-xs",
-                      activeFilter === filter ? "bg-primary-foreground/20" : "bg-muted text-muted-foreground"
+                      "min-h-32 rounded-lg border bg-background p-4 text-left shadow-sm transition hover:border-primary/60 hover:bg-muted/35 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+                      isActive ? "border-primary ring-2 ring-primary/30" : "border-border"
                     )}
                   >
-                    {filterCounts[filter]}
-                  </span>
-                </button>
-              ))}
+                    <span className="text-xs font-semibold uppercase tracking-wide text-primary">{option.eyebrow}</span>
+                    <span className="mt-2 block font-heading text-lg font-bold leading-tight text-foreground">{option.title}</span>
+                    <span className="mt-2 block text-sm leading-relaxed text-muted-foreground">{option.description}</span>
+                    <span className={cn("mt-3 inline-flex rounded-full px-2 py-1 text-xs font-medium", hasAvailability ? "bg-primary/10 text-primary" : "bg-muted text-muted-foreground")}>
+                      {hasAvailability ? "Available this week" : "Check another week"}
+                    </span>
+                  </button>
+                )
+              })}
             </div>
           </div>
-          <p className="mb-4 text-sm text-muted-foreground">{filterHelp[activeFilter]} Select an available session from the calendar.</p>
         </div>
         <div>
           <div className="grid gap-4 lg:grid-cols-3">
@@ -505,93 +519,29 @@ export function ClassesCalendar({ initialClass }: ClassesCalendarProps) {
                   </div>
                 </div>
 
-                <div className="space-y-2">
-                  <Label htmlFor="calendar-people">Seats</Label>
-                  <Select
-                    value={people}
-                    onValueChange={(value) => {
-                      setPeople(value)
-                      setError("")
-                      setSuccess("")
-                      setPayOnArrivalConfirmed(false)
-                    }}
-                    disabled={activeAvailableSeats <= 0}
-                  >
-                    <SelectTrigger id="calendar-people">
-                      <SelectValue placeholder={activeAvailableSeats <= 0 ? "No seats available" : "Select seats"} />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {participantOptions.map((num) => (
-                        <SelectItem key={num} value={num.toString()}>
-                          {num} {num === 1 ? "Person" : "People"}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-
-                <div className="space-y-2">
-                  <Label htmlFor="calendar-whatsapp">WhatsApp phone number</Label>
-                  <Input
-                    id="calendar-whatsapp"
-                    type="tel"
-                    value={whatsappPhone}
-                    onChange={(event) => {
-                      setWhatsappPhone(event.target.value)
-                      setError("")
-                      setSuccess("")
-                    }}
-                    placeholder="+62 812 3456 7890"
-                    autoComplete="tel"
-                  />
-                </div>
-
-                <div className="rounded-lg border border-border bg-muted/35 p-4">
-                  <p className="text-sm font-semibold text-foreground">Checkout</p>
-                  <div className="mt-3 space-y-2 text-sm">
-                    <div className="flex items-center justify-between gap-4 text-muted-foreground">
-                      <span>{activeSession.scheduleTitle || activeSession.workshop.title}</span>
-                      <span>{formatPrice(activeSession.workshop.price)}</span>
-                    </div>
-                    <div className="flex items-center justify-between gap-4 text-muted-foreground">
-                      <span>Seats</span>
-                      <span>x {selectedSeatCount}</span>
-                    </div>
-                    <div className="flex items-center justify-between gap-4 border-t border-border pt-2 font-semibold text-foreground">
-                      <span>Total due on arrival</span>
-                      <span>{formatPrice(checkoutTotal)}</span>
-                    </div>
-                  </div>
-                  <label className="mt-4 flex items-start gap-3 text-sm leading-relaxed text-muted-foreground">
-                    <Checkbox
-                      checked={payOnArrivalConfirmed}
-                      onCheckedChange={(checked) => {
-                        setPayOnArrivalConfirmed(checked === true)
-                        setError("")
-                      }}
-                      className="mt-0.5"
-                    />
-                    <span>I understand this booking is held for me and I will pay {formatPrice(checkoutTotal)} when I arrive to class.</span>
-                  </label>
-                </div>
-
-                {error && <p className="text-sm text-destructive">{error}</p>}
                 {success && <p className="text-sm font-medium text-emerald-600 dark:text-emerald-400">{success}</p>}
 
-                <Button
-                  onClick={handleBooking}
-                  className="h-12 w-full gap-2 text-base"
-                  disabled={isSubmitting || activeAvailableSeats <= 0 || availabilityLoading}
-                >
-                  {isSubmitting ? <Loader2 className="h-4 w-4 animate-spin" /> : <CalendarDays className="h-4 w-4" />}
-                  {isSubmitting
-                    ? "Booking..."
-                    : activeAvailableSeats <= 0
-                      ? "Session Full"
-                      : isAuthenticated
-                        ? "Book Now"
-                        : "Sign in to Book"}
-                </Button>
+                {isAuthenticated ? (
+                  <Button
+                    asChild
+                    className="h-12 w-full gap-2 text-base"
+                    disabled={activeAvailableSeats <= 0 || availabilityLoading}
+                  >
+                    <Link href={buildCheckoutHref()}>
+                      <CalendarDays className="h-4 w-4" />
+                      {activeAvailableSeats <= 0 ? "Session Full" : prepaidProgram ? "Continue to Payment" : "Book Now"}
+                    </Link>
+                  </Button>
+                ) : (
+                  <Button
+                    onClick={handleUnauthenticatedCheckout}
+                    className="h-12 w-full gap-2 text-base"
+                    disabled={activeAvailableSeats <= 0 || availabilityLoading}
+                  >
+                    <CalendarDays className="h-4 w-4" />
+                    {activeAvailableSeats <= 0 ? "Session Full" : "Sign in to Book"}
+                  </Button>
+                )}
               </CardContent>
             </Card>
           ) : (
@@ -609,6 +559,7 @@ export function ClassesCalendar({ initialClass }: ClassesCalendarProps) {
           )}
         </aside>
       </section>
+
     </main>
   )
 }

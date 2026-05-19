@@ -1,12 +1,12 @@
 "use client"
 
-import { useEffect, useState } from "react"
+import { useEffect, useMemo, useState } from "react"
 import Link from "next/link"
-import { CalendarDays, GraduationCap, Loader2 } from "lucide-react"
+import { CalendarDays, Clock, GraduationCap, Loader2, Users } from "lucide-react"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
-import { formatPrice, workshops } from "@/lib/classes-data"
+import { workshops } from "@/lib/classes-data"
 
 interface Booking {
   id: string
@@ -25,6 +25,51 @@ const statusLabels: Record<string, string> = {
   CANCELLED: "Cancelled",
 }
 
+function statusTone(status: string) {
+  if (status === "CONFIRMED") {
+    return "border-emerald-200 bg-emerald-50 text-emerald-800 dark:border-emerald-900/60 dark:bg-emerald-950/40 dark:text-emerald-300"
+  }
+  if (status === "PENDING") return "border-primary/20 bg-primary/10 text-primary"
+  return "border-border bg-muted text-muted-foreground"
+}
+
+function BookingCard({ booking }: { booking: Booking }) {
+  const workshop = workshops.find((item) => item.id === booking.workshopId)
+
+  return (
+    <Card className="border-border/80">
+      <CardContent className="p-5">
+        <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+          <div className="min-w-0">
+            <div className="flex flex-wrap items-center gap-2">
+              <h3 className="font-heading text-lg font-bold text-foreground">{workshop?.title || booking.workshopId}</h3>
+              <Badge className={statusTone(booking.status)} variant="outline">
+                {statusLabels[booking.status] || booking.status}
+              </Badge>
+            </div>
+            <div className="mt-3 grid gap-2 text-sm text-muted-foreground sm:grid-cols-2">
+              <p className="flex items-start gap-2">
+                <CalendarDays className="mt-0.5 h-4 w-4 shrink-0 text-primary" />
+                {booking.preferredDate || "Date to be confirmed"}
+              </p>
+              <p className="flex items-start gap-2">
+                <Users className="mt-0.5 h-4 w-4 shrink-0 text-primary" />
+                {booking.participants} participant{booking.participants === 1 ? "" : "s"}
+              </p>
+            </div>
+            {booking.notes && (
+              <p className="mt-3 rounded-md bg-muted/50 p-3 text-xs leading-relaxed text-muted-foreground">{booking.notes}</p>
+            )}
+          </div>
+          <p className="whitespace-nowrap text-xs text-muted-foreground">
+            Requested {new Date(booking.createdAt).toLocaleDateString()}
+          </p>
+        </div>
+      </CardContent>
+    </Card>
+  )
+}
+
 export default function MyBookingsPage() {
   const [bookings, setBookings] = useState<Booking[]>([])
   const [loading, setLoading] = useState(true)
@@ -33,9 +78,7 @@ export default function MyBookingsPage() {
     async function loadBookings() {
       try {
         const res = await fetch("/api/bookings")
-        if (res.ok) {
-          setBookings(await res.json())
-        }
+        if (res.ok) setBookings(await res.json())
       } catch (error) {
         console.error("Failed to load bookings", error)
       } finally {
@@ -46,7 +89,16 @@ export default function MyBookingsPage() {
     loadBookings()
   }, [])
 
-  const availableClasses = workshops.filter((workshop) => workshop.available && workshop.category !== "residency")
+  const upcomingBookings = useMemo(
+    () => bookings.filter((booking) => !["COMPLETED", "CANCELLED"].includes(booking.status)),
+    [bookings]
+  )
+  const pastBookings = useMemo(
+    () => bookings.filter((booking) => ["COMPLETED", "CANCELLED"].includes(booking.status)),
+    [bookings]
+  )
+  const confirmedCount = bookings.filter((booking) => booking.status === "CONFIRMED").length
+  const pendingCount = bookings.filter((booking) => booking.status === "PENDING").length
 
   if (loading) {
     return (
@@ -58,91 +110,88 @@ export default function MyBookingsPage() {
 
   return (
     <div className="space-y-8">
-      <div className="flex flex-col sm:flex-row sm:items-end sm:justify-between gap-3">
-        <div>
-          <h2 className="font-heading font-bold text-2xl text-foreground">My Bookings</h2>
-          <p className="text-muted-foreground mt-1">Your class bookings and upcoming workshop options</p>
+      <section className="grid gap-4 sm:grid-cols-3">
+        <Card className="border-border/80">
+          <CardContent className="p-5">
+            <p className="text-sm text-muted-foreground">Upcoming</p>
+            <p className="mt-1 text-3xl font-bold text-foreground">{upcomingBookings.length}</p>
+          </CardContent>
+        </Card>
+        <Card className="border-border/80">
+          <CardContent className="p-5">
+            <p className="text-sm text-muted-foreground">Confirmed</p>
+            <p className="mt-1 text-3xl font-bold text-foreground">{confirmedCount}</p>
+          </CardContent>
+        </Card>
+        <Card className="border-border/80">
+          <CardContent className="p-5">
+            <p className="text-sm text-muted-foreground">Pending</p>
+            <p className="mt-1 text-3xl font-bold text-foreground">{pendingCount}</p>
+          </CardContent>
+        </Card>
+      </section>
+
+      <section className="rounded-lg border border-border bg-card p-5 sm:p-6">
+        <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+          <div>
+            <h2 className="font-heading text-2xl font-bold text-foreground">My Bookings</h2>
+            <p className="mt-1 text-sm text-muted-foreground">Track requested, pending, and confirmed studio classes.</p>
+          </div>
+          <Button asChild>
+            <Link href="/classes/calendar">
+              Book from Calendar
+              <CalendarDays className="h-4 w-4" />
+            </Link>
+          </Button>
         </div>
-        <Button variant="outline" asChild>
-          <Link href="/classes/calendar">View calendar</Link>
-        </Button>
-      </div>
+      </section>
 
       <section className="space-y-4">
-        {bookings.length === 0 ? (
-          <Card>
-            <CardContent className="py-16 text-center">
-              <div className="w-16 h-16 rounded-full bg-muted flex items-center justify-center mx-auto mb-4">
-                <GraduationCap className="h-8 w-8 text-muted-foreground" />
+        <div className="flex items-center justify-between gap-3">
+          <div>
+            <h3 className="font-heading text-xl font-bold text-foreground">Upcoming</h3>
+            <p className="mt-1 text-sm text-muted-foreground">Pending and confirmed bookings that still need attention.</p>
+          </div>
+        </div>
+
+        {upcomingBookings.length === 0 ? (
+          <Card className="border-border/80">
+            <CardContent className="py-14 text-center">
+              <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-full bg-muted">
+                <GraduationCap className="h-7 w-7 text-muted-foreground" />
               </div>
-              <CardTitle className="font-heading font-bold text-lg mb-2">No bookings yet</CardTitle>
-              <CardDescription>
-                Book a class below to create a pending request with the studio.
-              </CardDescription>
+              <CardTitle className="mb-2 font-heading text-lg">No upcoming bookings</CardTitle>
+              <CardDescription>Choose a class from the calendar when you are ready.</CardDescription>
+              <Button className="mt-5" asChild>
+                <Link href="/classes/calendar">Open Calendar</Link>
+              </Button>
             </CardContent>
           </Card>
         ) : (
           <div className="space-y-3">
-            {bookings.map((booking) => {
-              const workshop = workshops.find((item) => item.id === booking.workshopId)
-              return (
-                <Card key={booking.id}>
-                  <CardContent className="p-5">
-                    <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-                      <div>
-                        <div className="flex items-center gap-3 mb-1">
-                          <h3 className="font-medium text-foreground">{workshop?.title || booking.workshopId}</h3>
-                          <Badge variant="secondary">{statusLabels[booking.status] || booking.status}</Badge>
-                        </div>
-                        <p className="text-sm text-muted-foreground">
-                          {booking.preferredDate || "Date to be confirmed"} · {booking.participants} participant{booking.participants === 1 ? "" : "s"}
-                        </p>
-                        {booking.notes && (
-                          <p className="text-xs text-muted-foreground mt-2">{booking.notes}</p>
-                        )}
-                      </div>
-                      <span className="text-xs text-muted-foreground">
-                        Requested {new Date(booking.createdAt).toLocaleDateString()}
-                      </span>
-                    </div>
-                  </CardContent>
-                </Card>
-              )
-            })}
+            {upcomingBookings.map((booking) => <BookingCard key={booking.id} booking={booking} />)}
           </div>
         )}
       </section>
 
       <section className="space-y-4">
         <div>
-          <h3 className="font-heading font-bold text-xl text-foreground">Book Another Class</h3>
-          <p className="text-sm text-muted-foreground mt-1">Recurring weekly sessions available at the studio.</p>
+          <h3 className="font-heading text-xl font-bold text-foreground">Past Activity</h3>
+          <p className="mt-1 text-sm text-muted-foreground">Completed or cancelled bookings stay here for reference.</p>
         </div>
-        <div className="grid lg:grid-cols-2 gap-4">
-          {availableClasses.map((workshop) => (
-            <Card key={workshop.id}>
-              <CardContent className="p-5">
-                <div className="flex items-start justify-between gap-4">
-                  <div>
-                    <h4 className="font-heading font-bold text-lg text-foreground">{workshop.title}</h4>
-                    <p className="text-sm text-muted-foreground">{workshop.duration} · {formatPrice(workshop.price)}</p>
-                    <div className="mt-3 space-y-1">
-                      {workshop.schedule?.map((time) => (
-                        <p key={time} className="flex items-center gap-2 text-sm text-muted-foreground">
-                          <CalendarDays className="h-4 w-4" />
-                          {time}
-                        </p>
-                      ))}
-                    </div>
-                  </div>
-                  <Button size="sm" asChild>
-                    <Link href={`/classes/calendar?class=${workshop.slug}`}>Book</Link>
-                  </Button>
-                </div>
-              </CardContent>
-            </Card>
-          ))}
-        </div>
+
+        {pastBookings.length === 0 ? (
+          <Card className="border-border/80">
+            <CardContent className="flex items-center gap-3 p-5 text-sm text-muted-foreground">
+              <Clock className="h-4 w-4 text-primary" />
+              No past booking activity yet.
+            </CardContent>
+          </Card>
+        ) : (
+          <div className="space-y-3">
+            {pastBookings.map((booking) => <BookingCard key={booking.id} booking={booking} />)}
+          </div>
+        )}
       </section>
     </div>
   )

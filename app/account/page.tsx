@@ -64,6 +64,8 @@ const bookingStatusLabels: Record<string, string> = {
   CANCELLED: "Cancelled",
 }
 
+const orderSteps = ["INQUIRY", "REVIEWING", "QUOTED", "ACCEPTED", "IN_PROGRESS", "GLAZING", "FIRING", "COMPLETED"]
+
 function getPieceCount(piecesJson: string) {
   try {
     const pieces = JSON.parse(piecesJson)
@@ -85,16 +87,18 @@ function statusTone(status: string) {
   if (["CONFIRMED", "ACCEPTED", "COMPLETED", "SHIPPED"].includes(status)) {
     return "border-emerald-200 bg-emerald-50 text-emerald-800 dark:border-emerald-900/60 dark:bg-emerald-950/40 dark:text-emerald-300"
   }
-
   if (["IN_PROGRESS", "GLAZING", "FIRING", "QUOTED"].includes(status)) {
     return "border-amber-200 bg-amber-50 text-amber-800 dark:border-amber-900/60 dark:bg-amber-950/40 dark:text-amber-300"
   }
-
-  if (["CANCELLED"].includes(status)) {
-    return "border-border bg-muted text-muted-foreground"
-  }
-
+  if (status === "CANCELLED") return "border-border bg-muted text-muted-foreground"
   return "border-primary/20 bg-primary/10 text-primary"
+}
+
+function orderProgress(status: string) {
+  const index = orderSteps.indexOf(status)
+  if (status === "SHIPPED" || status === "COMPLETED") return 100
+  if (index < 0) return 12
+  return Math.max(12, Math.round(((index + 1) / orderSteps.length) * 100))
 }
 
 export default function AccountDashboardPage() {
@@ -111,13 +115,8 @@ export default function AccountDashboardPage() {
           fetch("/api/bookings"),
         ])
 
-        if (ordersRes.ok) {
-          setOrders(await ordersRes.json())
-        }
-
-        if (bookingsRes.ok) {
-          setBookings(await bookingsRes.json())
-        }
+        if (ordersRes.ok) setOrders(await ordersRes.json())
+        if (bookingsRes.ok) setBookings(await bookingsRes.json())
       } catch (error) {
         console.error("Failed to load account dashboard", error)
       } finally {
@@ -129,13 +128,14 @@ export default function AccountDashboardPage() {
   }, [])
 
   const availableClasses = useMemo(
-    () => workshops.filter((workshop) => workshop.available && workshop.category !== "residency"),
+    () => workshops.filter((workshop) => workshop.available && workshop.category !== "residency").slice(0, 3),
     []
   )
   const activeOrders = orders.filter((order) => !["COMPLETED", "SHIPPED", "CANCELLED"].includes(order.status))
   const upcomingBookings = bookings.filter((booking) => !["COMPLETED", "CANCELLED"].includes(booking.status))
   const nextBooking = upcomingBookings[0]
   const nextWorkshop = nextBooking ? workshops.find((item) => item.id === nextBooking.workshopId) : null
+  const featuredOrder = activeOrders[0] || orders[0]
   const firstName = user?.name?.split(" ")[0] || "there"
 
   if (loading) {
@@ -150,146 +150,153 @@ export default function AccountDashboardPage() {
   }
 
   return (
-    <div className="space-y-10">
-      <section className="overflow-hidden rounded-lg border border-border bg-card">
-        <div className="grid lg:grid-cols-[1.4fr_0.9fr]">
-          <div className="p-6 sm:p-8 lg:p-10">
-            <Badge variant="secondary" className="mb-5">Studio dashboard</Badge>
-            <h2 className="font-heading font-bold text-3xl sm:text-4xl text-foreground">
-              Welcome back, {firstName}
-            </h2>
-            <p className="text-muted-foreground mt-3 max-w-2xl leading-relaxed">
-              Manage upcoming classes, custom order progress, and studio conversations from one quiet place.
-            </p>
-            <div className="mt-8 flex flex-col sm:flex-row gap-3">
+    <div className="space-y-8">
+      <section className="grid gap-4 md:grid-cols-3">
+        <Card className="border-border/80">
+          <CardContent className="flex items-center justify-between p-5">
+            <div>
+              <p className="text-sm text-muted-foreground">Upcoming Classes</p>
+              <p className="mt-1 text-3xl font-bold text-foreground">{upcomingBookings.length}</p>
+            </div>
+            <GraduationCap className="h-5 w-5 text-primary" />
+          </CardContent>
+        </Card>
+        <Card className="border-border/80">
+          <CardContent className="flex items-center justify-between p-5">
+            <div>
+              <p className="text-sm text-muted-foreground">Active Orders</p>
+              <p className="mt-1 text-3xl font-bold text-foreground">{activeOrders.length}</p>
+            </div>
+            <ShoppingBag className="h-5 w-5 text-primary" />
+          </CardContent>
+        </Card>
+        <Card className="border-border/80">
+          <CardContent className="flex items-center justify-between p-5">
+            <div>
+              <p className="text-sm text-muted-foreground">Studio Requests</p>
+              <p className="mt-1 text-3xl font-bold text-foreground">{bookings.length + orders.length}</p>
+            </div>
+            <ClipboardList className="h-5 w-5 text-primary" />
+          </CardContent>
+        </Card>
+      </section>
+
+      <section className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_360px]">
+        <Card className="border-border/80">
+          <CardHeader className="pb-3">
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+              <div>
+                <Badge variant="secondary" className="mb-3">Studio dashboard</Badge>
+                <CardTitle className="font-heading text-3xl">Welcome back, {firstName}</CardTitle>
+                <CardDescription className="mt-2 max-w-2xl">
+                  Your class schedule, custom order progress, and studio follow-ups in one place.
+                </CardDescription>
+              </div>
               <Button asChild>
-                <Link href="/custom-orders">
-                  Start a Custom Order
+                <Link href="/classes/calendar">
+                  Book a Class
                   <ArrowRight className="h-4 w-4" />
                 </Link>
               </Button>
-              <Button variant="outline" asChild>
-                <Link href="/account/bookings">
-                  Manage Bookings
-                </Link>
-              </Button>
             </div>
-          </div>
-          <div className="border-t lg:border-t-0 lg:border-l border-border bg-secondary/40 p-6 sm:p-8 lg:p-10">
-            <p className="text-sm font-medium text-muted-foreground">Next studio touchpoint</p>
-            {nextBooking ? (
-              <div className="mt-4 space-y-4">
-                <div>
-                  <p className="font-heading font-bold text-2xl text-foreground">{nextWorkshop?.title || nextBooking.workshopId}</p>
-                  <p className="text-sm text-muted-foreground mt-1">
-                    {nextBooking.preferredDate || "Date to be confirmed"} · {nextBooking.participants} participant{nextBooking.participants === 1 ? "" : "s"}
-                  </p>
-                </div>
-                <Badge className={statusTone(nextBooking.status)} variant="outline">
-                  {bookingStatusLabels[nextBooking.status] || nextBooking.status}
-                </Badge>
-              </div>
-            ) : (
-              <div className="mt-4">
-                <p className="font-heading font-bold text-2xl text-foreground">Choose your next class</p>
-                <p className="text-sm text-muted-foreground mt-2">
-                  Pick a date from the calendar below and confirm your request with the studio.
-                </p>
-              </div>
-            )}
-          </div>
-        </div>
-      </section>
-
-      <section className="grid sm:grid-cols-3 gap-4">
-        <Card className="border-border/80">
-          <CardHeader className="flex flex-row items-center justify-between pb-2">
-            <CardTitle className="text-sm font-medium text-muted-foreground">Active Orders</CardTitle>
-            <ShoppingBag className="h-4 w-4 text-primary" />
           </CardHeader>
-          <CardContent>
-            <p className="text-3xl font-bold">{activeOrders.length}</p>
-            <p className="text-xs text-muted-foreground mt-2">{orders.length} total custom order submission{orders.length === 1 ? "" : "s"}</p>
-          </CardContent>
-        </Card>
-
-        <Card className="border-border/80">
-          <CardHeader className="flex flex-row items-center justify-between pb-2">
-            <CardTitle className="text-sm font-medium text-muted-foreground">Upcoming Classes</CardTitle>
-            <GraduationCap className="h-4 w-4 text-primary" />
-          </CardHeader>
-          <CardContent>
-            <p className="text-3xl font-bold">{upcomingBookings.length}</p>
-            <p className="text-xs text-muted-foreground mt-2">Pending and confirmed bookings</p>
-          </CardContent>
-        </Card>
-
-        <Card className="border-border/80">
-          <CardHeader className="flex flex-row items-center justify-between pb-2">
-            <CardTitle className="text-sm font-medium text-muted-foreground">Available Workshops</CardTitle>
-            <CalendarDays className="h-4 w-4 text-primary" />
-          </CardHeader>
-          <CardContent>
-            <p className="text-3xl font-bold">{availableClasses.length}</p>
-            <p className="text-xs text-muted-foreground mt-2">Bookable from this dashboard</p>
-          </CardContent>
-        </Card>
-      </section>
-
-      <section className="space-y-5">
-        <div className="flex flex-col sm:flex-row sm:items-end sm:justify-between gap-3">
-          <div>
-            <h2 className="font-heading font-bold text-2xl text-foreground">Book a Class</h2>
-            <p className="text-muted-foreground mt-1">Browse recurring sessions, choose a date, and send the studio your request.</p>
-          </div>
-          <Button variant="outline" asChild>
-            <Link href="/classes/calendar">View calendar</Link>
-          </Button>
-        </div>
-
-        <div className="grid xl:grid-cols-4 md:grid-cols-2 gap-4">
-          {availableClasses.map((workshop) => (
-            <Card key={workshop.id} className="overflow-hidden border-border/80">
-              <div className="aspect-[4/3] bg-muted overflow-hidden">
-                {workshop.image && (
-                  <img src={workshop.image} alt={workshop.title} className="h-full w-full object-cover" />
-                )}
-              </div>
-              <CardContent className="p-5 space-y-4">
-                <div>
-                  <div className="flex items-center justify-between gap-3">
-                    <Badge variant="outline">{workshop.level}</Badge>
-                    <span className="text-xs text-muted-foreground">Max {workshop.maxParticipants || 8}</span>
-                  </div>
-                  <h3 className="font-heading font-bold text-lg text-foreground mt-3">{workshop.title}</h3>
-                  <p className="text-sm text-muted-foreground mt-1">{workshop.duration} · {formatPrice(workshop.price)}</p>
-                </div>
-                <div className="space-y-2">
-                  {workshop.schedule?.map((time) => (
-                    <p key={time} className="flex items-start gap-2 text-xs text-muted-foreground">
-                      <Clock className="h-3.5 w-3.5 mt-0.5 shrink-0" />
-                      {time}
+          <CardContent className="grid gap-4 md:grid-cols-2">
+            <div className="rounded-lg border border-border bg-background p-4">
+              <p className="text-sm font-semibold text-foreground">Next class</p>
+              {nextBooking ? (
+                <div className="mt-4 space-y-3">
+                  <div>
+                    <p className="font-heading text-xl font-bold text-foreground">{nextWorkshop?.title || nextBooking.workshopId}</p>
+                    <p className="mt-1 text-sm text-muted-foreground">
+                      {nextBooking.preferredDate || "Date to be confirmed"} · {nextBooking.participants} participant{nextBooking.participants === 1 ? "" : "s"}
                     </p>
-                  ))}
+                  </div>
+                  <Badge className={statusTone(nextBooking.status)} variant="outline">
+                    {bookingStatusLabels[nextBooking.status] || nextBooking.status}
+                  </Badge>
                 </div>
-                <Button className="w-full" size="sm" asChild>
-                  <Link href={`/classes/calendar?class=${workshop.slug}`}>Choose Date</Link>
-                </Button>
-              </CardContent>
-            </Card>
-          ))}
-        </div>
+              ) : (
+                <div className="mt-4">
+                  <p className="font-medium text-foreground">No upcoming class booked</p>
+                  <p className="mt-1 text-sm text-muted-foreground">Choose a date from the class calendar when you are ready.</p>
+                </div>
+              )}
+            </div>
+
+            <div className="rounded-lg border border-border bg-background p-4">
+              <p className="text-sm font-semibold text-foreground">Custom order tracking</p>
+              {featuredOrder ? (
+                <div className="mt-4">
+                  <div className="flex items-start justify-between gap-3">
+                    <div>
+                      <p className="font-heading text-xl font-bold text-foreground">Order {featuredOrder.id.slice(0, 8)}</p>
+                      <p className="mt-1 text-sm text-muted-foreground">
+                        {getPieceCount(featuredOrder.pieces)} piece{getPieceCount(featuredOrder.pieces) === 1 ? "" : "s"} · submitted {formatDate(featuredOrder.createdAt)}
+                      </p>
+                    </div>
+                    <Badge className={statusTone(featuredOrder.status)} variant="outline">
+                      {orderStatusLabels[featuredOrder.status] || featuredOrder.status}
+                    </Badge>
+                  </div>
+                  <div className="mt-4 h-2 rounded-full bg-muted">
+                    <div className="h-2 rounded-full bg-primary" style={{ width: `${orderProgress(featuredOrder.status)}%` }} />
+                  </div>
+                  {featuredOrder.updates?.[0] && (
+                    <p className="mt-3 flex items-center gap-2 text-xs text-muted-foreground">
+                      <CheckCircle2 className="h-4 w-4 text-primary" />
+                      Latest update: {featuredOrder.updates[0].title}
+                    </p>
+                  )}
+                </div>
+              ) : (
+                <div className="mt-4">
+                  <p className="font-medium text-foreground">No custom order yet</p>
+                  <p className="mt-1 text-sm text-muted-foreground">Submit an idea and track every studio update here.</p>
+                </div>
+              )}
+            </div>
+          </CardContent>
+        </Card>
+
+        <Card className="border-border/80">
+          <CardHeader className="pb-3">
+            <CardTitle className="font-heading text-xl">Quick Actions</CardTitle>
+            <CardDescription>Common next steps.</CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            <Button className="w-full justify-between" asChild>
+              <Link href="/classes/calendar">
+                Book from calendar
+                <CalendarDays className="h-4 w-4" />
+              </Link>
+            </Button>
+            <Button className="w-full justify-between" variant="outline" asChild>
+              <Link href="/custom-orders">
+                Start custom order
+                <PackageCheck className="h-4 w-4" />
+              </Link>
+            </Button>
+            <Button className="w-full justify-between" variant="outline" asChild>
+              <Link href="/account/bookings">
+                View all bookings
+                <GraduationCap className="h-4 w-4" />
+              </Link>
+            </Button>
+          </CardContent>
+        </Card>
       </section>
 
-      <section className="grid lg:grid-cols-2 gap-6">
+      <section className="grid gap-6 lg:grid-cols-2">
         <Card className="border-border/80">
           <CardHeader className="pb-4">
             <div className="flex items-center justify-between gap-3">
               <div>
-                <CardTitle className="font-heading font-bold text-xl">Class Bookings</CardTitle>
-                <CardDescription>Pending and confirmed sessions with the studio.</CardDescription>
+                <CardTitle className="font-heading text-xl">Class Bookings</CardTitle>
+                <CardDescription>Upcoming and recent class requests.</CardDescription>
               </div>
-              <GraduationCap className="h-5 w-5 text-primary" />
+              <Button variant="outline" size="sm" asChild>
+                <Link href="/account/bookings">View all</Link>
+              </Button>
             </div>
           </CardHeader>
           <CardContent>
@@ -297,18 +304,18 @@ export default function AccountDashboardPage() {
               <div className="py-10 text-center">
                 <CalendarDays className="h-9 w-9 text-muted-foreground mx-auto mb-4" />
                 <p className="text-sm font-medium text-foreground">No bookings yet</p>
-                <p className="text-sm text-muted-foreground mt-1">Choose a class above to create your first request.</p>
+                <p className="mt-1 text-sm text-muted-foreground">Your class requests will appear here.</p>
               </div>
             ) : (
               <div className="space-y-3">
-                {bookings.slice(0, 5).map((booking) => {
+                {bookings.slice(0, 4).map((booking) => {
                   const workshop = workshops.find((item) => item.id === booking.workshopId)
                   return (
-                    <div key={booking.id} className="rounded-md border border-border bg-background/50 p-4">
+                    <div key={booking.id} className="rounded-lg border border-border bg-background p-4">
                       <div className="flex items-start justify-between gap-3">
                         <div>
                           <p className="font-medium text-sm text-foreground">{workshop?.title || booking.workshopId}</p>
-                          <p className="text-xs text-muted-foreground mt-1">
+                          <p className="mt-1 text-xs text-muted-foreground">
                             {booking.preferredDate || "Date to be confirmed"} · {booking.participants} participant{booking.participants === 1 ? "" : "s"}
                           </p>
                         </div>
@@ -328,10 +335,12 @@ export default function AccountDashboardPage() {
           <CardHeader className="pb-4">
             <div className="flex items-center justify-between gap-3">
               <div>
-                <CardTitle className="font-heading font-bold text-xl">Custom Order Progress</CardTitle>
-                <CardDescription>Submitted requests and active studio progress.</CardDescription>
+                <CardTitle className="font-heading text-xl">Custom Orders</CardTitle>
+                <CardDescription>Status and latest studio updates.</CardDescription>
               </div>
-              <PackageCheck className="h-5 w-5 text-primary" />
+              <Button variant="outline" size="sm" asChild>
+                <Link href="/custom-orders">New order</Link>
+              </Button>
             </div>
           </CardHeader>
           <CardContent>
@@ -339,19 +348,16 @@ export default function AccountDashboardPage() {
               <div className="py-10 text-center">
                 <ClipboardList className="h-9 w-9 text-muted-foreground mx-auto mb-4" />
                 <p className="text-sm font-medium text-foreground">No custom orders yet</p>
-                <p className="text-sm text-muted-foreground mt-1 mb-5">Share a brief and track the request here.</p>
-                <Button variant="outline" asChild>
-                  <Link href="/custom-orders">Start a custom order</Link>
-                </Button>
+                <p className="mt-1 text-sm text-muted-foreground">Submit a request to start tracking progress.</p>
               </div>
             ) : (
               <div className="space-y-3">
-                {orders.slice(0, 5).map((order) => (
-                  <div key={order.id} className="rounded-md border border-border bg-background/50 p-4">
+                {orders.slice(0, 4).map((order) => (
+                  <div key={order.id} className="rounded-lg border border-border bg-background p-4">
                     <div className="flex items-start justify-between gap-3">
                       <div>
                         <p className="font-medium text-sm text-foreground">Order {order.id.slice(0, 8)}</p>
-                        <p className="text-xs text-muted-foreground mt-1">
+                        <p className="mt-1 text-xs text-muted-foreground">
                           {getPieceCount(order.pieces)} piece{getPieceCount(order.pieces) === 1 ? "" : "s"} · submitted {formatDate(order.createdAt)}
                         </p>
                       </div>
@@ -359,18 +365,45 @@ export default function AccountDashboardPage() {
                         {orderStatusLabels[order.status] || order.status}
                       </Badge>
                     </div>
-                    {order.updates?.[0] ? (
-                      <div className="mt-4 flex items-start gap-3 text-xs text-muted-foreground">
-                        <CheckCircle2 className="h-4 w-4 text-primary shrink-0" />
-                        <span>Latest update: {order.updates[0].title}</span>
-                      </div>
-                    ) : null}
+                    <div className="mt-3 h-1.5 rounded-full bg-muted">
+                      <div className="h-1.5 rounded-full bg-primary" style={{ width: `${orderProgress(order.status)}%` }} />
+                    </div>
                   </div>
                 ))}
               </div>
             )}
           </CardContent>
         </Card>
+      </section>
+
+      <section className="space-y-4">
+        <div className="flex items-center justify-between gap-3">
+          <div>
+            <h2 className="font-heading text-xl font-bold text-foreground">Bookable Classes</h2>
+            <p className="mt-1 text-sm text-muted-foreground">A small selection of available studio sessions.</p>
+          </div>
+          <Button variant="outline" size="sm" asChild>
+            <Link href="/classes/calendar">Open calendar</Link>
+          </Button>
+        </div>
+        <div className="grid gap-4 md:grid-cols-3">
+          {availableClasses.map((workshop) => (
+            <Card key={workshop.id} className="border-border/80">
+              <CardContent className="p-5">
+                <Badge variant="outline">{workshop.level}</Badge>
+                <h3 className="mt-3 font-heading text-lg font-bold text-foreground">{workshop.title}</h3>
+                <p className="mt-1 text-sm text-muted-foreground">{workshop.duration} · {formatPrice(workshop.price)}</p>
+                <p className="mt-3 flex items-start gap-2 text-xs text-muted-foreground">
+                  <Clock className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+                  {workshop.schedule?.[0] || "Schedule varies"}
+                </p>
+                <Button className="mt-4 w-full" size="sm" asChild>
+                  <Link href={`/classes/calendar?class=${workshop.slug}`}>Choose Date</Link>
+                </Button>
+              </CardContent>
+            </Card>
+          ))}
+        </div>
       </section>
     </div>
   )
