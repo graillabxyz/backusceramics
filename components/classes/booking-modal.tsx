@@ -71,6 +71,7 @@ export function BookingModal({ workshop, children }: BookingModalProps) {
     }
 
     setIsSubmitting(true)
+    const whatsappWindow = window.open("", "_blank")
 
     try {
       const participants = parseInt(people)
@@ -89,6 +90,7 @@ export function BookingModal({ workshop, children }: BookingModalProps) {
         throw new Error(data.error || "Could not create booking request")
       }
     } catch (bookingError) {
+      whatsappWindow?.close()
       setError(bookingError instanceof Error ? bookingError.message : "Could not create booking request")
       setIsSubmitting(false)
       return
@@ -98,7 +100,11 @@ export function BookingModal({ workshop, children }: BookingModalProps) {
     const encodedMessage = encodeURIComponent(message)
     const whatsappUrl = `https://wa.me/6282145890402?text=${encodedMessage}`
     
-    window.open(whatsappUrl, "_blank")
+    if (whatsappWindow) {
+      whatsappWindow.location.href = whatsappUrl
+    } else {
+      window.location.href = whatsappUrl
+    }
     setIsSubmitting(false)
     setIsOpen(false)
   }

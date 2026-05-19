@@ -109,6 +109,8 @@ export function ClassesCalendar({ initialClass }: ClassesCalendarProps) {
   const { isAuthenticated, openAuthModal } = useAuth()
 
   const weekDays = useMemo(() => Array.from({ length: 7 }, (_, index) => addDays(weekStart, index)), [weekStart])
+  const studioDays = useMemo(() => weekDays.slice(0, 6), [weekDays])
+  const sunday = weekDays[6]
   const weekLabel = `${weekStart.toLocaleDateString("en-US", { month: "short", day: "numeric" })} - ${addDays(weekStart, 6).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}`
   const visibleSessions = useMemo(() => {
     return activeFilter === "all"
@@ -241,6 +243,7 @@ export function ClassesCalendar({ initialClass }: ClassesCalendarProps) {
     }
 
     setIsSubmitting(true)
+    const whatsappWindow = window.open("", "_blank")
 
     try {
       const participants = parseInt(people)
@@ -262,12 +265,78 @@ export function ClassesCalendar({ initialClass }: ClassesCalendarProps) {
       }
 
       const message = `Hi Backus Ceramics! I'd like to book the "${selectedSession.scheduleTitle || selectedSession.workshop.title}" for ${people} ${participants === 1 ? "person" : "people"}. Requested date: ${formatLongDate(selectedSession.date)}. Preferred time: ${selectedSession.timeLabel}.`
-      window.open(`https://wa.me/6282145890402?text=${encodeURIComponent(message)}`, "_blank")
+      const whatsappUrl = `https://wa.me/6282145890402?text=${encodeURIComponent(message)}`
+      if (whatsappWindow) {
+        whatsappWindow.location.href = whatsappUrl
+      } else {
+        window.location.href = whatsappUrl
+      }
     } catch (bookingError) {
+      whatsappWindow?.close()
       setError(bookingError instanceof Error ? bookingError.message : "Could not create booking request")
     } finally {
       setIsSubmitting(false)
     }
+  }
+
+  const renderSessionButton = (session: CalendarSession) => {
+    const seats = availability[session.id]
+    const seatsAvailable = seats?.availableSeats ?? session.workshop.maxParticipants ?? 8
+    const isFull = seatsAvailable <= 0
+
+    return (
+      <button
+        key={session.id}
+        type="button"
+        onClick={() => handleSelectSession(session)}
+        className={cn(
+          "w-full rounded-md border border-border border-l-4 p-3 text-left shadow-sm transition hover:-translate-y-0.5 hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+          classColors[session.workshop.id] || "border-l-primary bg-muted text-foreground",
+          activeSession?.id === session.id && "ring-2 ring-primary",
+          isFull && "opacity-60"
+        )}
+      >
+        <span className="block text-xs font-semibold">{session.timeLabel}</span>
+        <span className="mt-1 block text-sm font-semibold leading-tight">{session.scheduleTitle || session.workshop.title}</span>
+        <span className="mt-2 flex items-center justify-between gap-2 text-xs opacity-80">
+          <span className="flex items-center gap-1">
+            <Users className="h-3 w-3" />
+            {availabilityLoading ? "Checking" : isFull ? "Full" : `${seatsAvailable} left`}
+          </span>
+          {seats && seats.heldSeats > 0 && (
+            <span>{seats.heldSeats} held</span>
+          )}
+        </span>
+      </button>
+    )
+  }
+
+  const renderDayCard = (date: Date) => {
+    const isToday = formatDateKey(date) === formatDateKey(today)
+    const daySessions = visibleSessions.filter((session) => session.dateKey === formatDateKey(date))
+
+    return (
+      <div key={date.toISOString()} className="min-h-[320px] rounded-lg border border-border bg-background p-4 shadow-sm">
+        <div className="flex items-center justify-between border-b border-border pb-3">
+          <div>
+            <p className="text-xs font-medium uppercase text-muted-foreground">{shortDayNames[date.getDay()]}</p>
+            <p className="mt-1 text-sm text-muted-foreground">{date.toLocaleDateString("en-US", { month: "long" })}</p>
+          </div>
+          <span className={cn("flex h-10 w-10 items-center justify-center rounded-full text-lg font-semibold", isToday && "bg-primary text-primary-foreground")}>
+            {date.getDate()}
+          </span>
+        </div>
+        <div className="mt-3 space-y-2.5">
+          {daySessions.length === 0 ? (
+            <div className="rounded-md border border-dashed border-border p-4 text-center text-sm text-muted-foreground">
+              No sessions
+            </div>
+          ) : (
+            daySessions.map(renderSessionButton)
+          )}
+        </div>
+      </div>
+    )
   }
 
   return (
@@ -370,76 +439,32 @@ export function ClassesCalendar({ initialClass }: ClassesCalendarProps) {
             </div>
           )}
         </div>
-        <div className="hidden overflow-hidden rounded-lg border border-border bg-background shadow-sm lg:block">
-          <div className="overflow-x-auto">
-            <div className="min-w-[1020px]">
-              <div className="grid grid-cols-7 border-b border-border bg-muted/35">
-                {weekDays.map((date) => {
-                  const isToday = formatDateKey(date) === formatDateKey(today)
-                  return (
-                    <div key={date.toISOString()} className="border-r border-border p-4 last:border-r-0">
-                      <p className="text-xs font-medium uppercase text-muted-foreground">{shortDayNames[date.getDay()]}</p>
-                      <div className="mt-2 flex items-center gap-2">
-                        <span className={cn("flex h-9 w-9 items-center justify-center rounded-full text-lg font-semibold", isToday && "bg-primary text-primary-foreground")}>
-                          {date.getDate()}
-                        </span>
-                        <span className="text-xs text-muted-foreground">
-                          {date.toLocaleDateString("en-US", { month: "short" })}
-                        </span>
-                      </div>
-                    </div>
-                  )
-                })}
-              </div>
-
-              <div className="grid grid-cols-7">
-                {weekDays.map((date) => {
-                  const daySessions = visibleSessions.filter((session) => session.dateKey === formatDateKey(date))
-                return (
-                  <div key={date.toISOString()} className="min-h-[460px] border-r border-border bg-background p-2.5 last:border-r-0">
-                    <div className="space-y-2.5">
-                      {daySessions.length === 0 ? (
-                        <div className="rounded-md border border-dashed border-border p-4 text-center text-sm text-muted-foreground">
-                          No sessions
-                        </div>
-                      ) : (
-                        daySessions.map((session) => {
-                          const seats = availability[session.id]
-                          const seatsAvailable = seats?.availableSeats ?? session.workshop.maxParticipants ?? 8
-                          const isFull = seatsAvailable <= 0
-                          return (
-                          <button
-                            key={session.id}
-                            type="button"
-                            onClick={() => handleSelectSession(session)}
-                            className={cn(
-                              "w-full rounded-md border border-border border-l-4 p-3 text-left shadow-sm transition hover:-translate-y-0.5 hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
-                              classColors[session.workshop.id] || "border-l-primary bg-muted text-foreground",
-                              activeSession?.id === session.id && "ring-2 ring-primary",
-                              isFull && "opacity-60"
-                            )}
-                          >
-                            <span className="block text-xs font-semibold">{session.timeLabel}</span>
-                            <span className="mt-1 block text-sm font-semibold leading-tight">{session.scheduleTitle || session.workshop.title}</span>
-                            <span className="mt-2 flex items-center justify-between gap-2 text-xs opacity-80">
-                              <span className="flex items-center gap-1">
-                                <Users className="h-3 w-3" />
-                                {availabilityLoading ? "Checking" : isFull ? "Full" : `${seatsAvailable} left`}
-                              </span>
-                              {seats && seats.heldSeats > 0 && (
-                                <span>{seats.heldSeats} held</span>
-                              )}
-                            </span>
-                          </button>
-                        )})
-                      )}
-                    </div>
-                  </div>
-                )
-                })}
-              </div>
-            </div>
+        <div className="hidden lg:block">
+          <div className="grid grid-cols-3 gap-4">
+            {studioDays.map(renderDayCard)}
           </div>
+          {sunday && (
+            <div className="mt-4 rounded-lg border border-dashed border-border bg-muted/25 p-4">
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                <div>
+                  <p className="text-xs font-medium uppercase text-muted-foreground">Sun {sunday.getDate()}</p>
+                  <p className="mt-1 text-sm font-semibold text-foreground">Sunday studio time</p>
+                </div>
+                <p className="text-sm text-muted-foreground">
+                  {visibleSessions.some((session) => session.dateKey === formatDateKey(sunday))
+                    ? "Sunday sessions are listed here when the studio opens special dates."
+                    : "Studio closed unless a special event is scheduled."}
+                </p>
+              </div>
+              {visibleSessions.some((session) => session.dateKey === formatDateKey(sunday)) && (
+                <div className="mt-3 grid gap-2 sm:grid-cols-2">
+                  {visibleSessions
+                    .filter((session) => session.dateKey === formatDateKey(sunday))
+                    .map(renderSessionButton)}
+                </div>
+              )}
+            </div>
+          )}
         </div>
 
         <aside className="lg:sticky lg:top-24 lg:self-start">
