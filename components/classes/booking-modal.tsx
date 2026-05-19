@@ -70,11 +70,19 @@ export function BookingModal({ workshop, children }: BookingModalProps) {
       return
     }
 
-    setIsSubmitting(true)
-    const whatsappWindow = window.open("", "_blank")
+    const participants = parseInt(people)
+    const message = `Hi Backus Ceramics! I'd like to book the "${workshop.title}" for ${people} ${participants === 1 ? 'person' : 'people'}. Requested date: ${selectedDateLabel}.${time ? ` Preferred time: ${time}.` : ''}`
+    const encodedMessage = encodeURIComponent(message)
+    const whatsappUrl = `https://wa.me/6282145890402?text=${encodedMessage}`
+    const whatsappWindow = window.open(whatsappUrl, "_blank")
+    if (!whatsappWindow) {
+      window.location.href = whatsappUrl
+      return
+    }
+    whatsappWindow.opener = null
 
+    setIsSubmitting(true)
     try {
-      const participants = parseInt(people)
       const res = await fetch("/api/bookings", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -90,21 +98,11 @@ export function BookingModal({ workshop, children }: BookingModalProps) {
         throw new Error(data.error || "Could not create booking request")
       }
     } catch (bookingError) {
-      whatsappWindow?.close()
       setError(bookingError instanceof Error ? bookingError.message : "Could not create booking request")
       setIsSubmitting(false)
       return
     }
 
-    const message = `Hi Backus Ceramics! I'd like to book the "${workshop.title}" for ${people} ${parseInt(people) === 1 ? 'person' : 'people'}. Requested date: ${selectedDateLabel}.${time ? ` Preferred time: ${time}.` : ''}`
-    const encodedMessage = encodeURIComponent(message)
-    const whatsappUrl = `https://wa.me/6282145890402?text=${encodedMessage}`
-    
-    if (whatsappWindow) {
-      whatsappWindow.location.href = whatsappUrl
-    } else {
-      window.location.href = whatsappUrl
-    }
     setIsSubmitting(false)
     setIsOpen(false)
   }

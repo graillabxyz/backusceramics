@@ -239,11 +239,18 @@ export function ClassesCalendar({ initialClass }: ClassesCalendarProps) {
       return
     }
 
-    setIsSubmitting(true)
-    const whatsappWindow = window.open("", "_blank")
+    const participants = parseInt(people)
+    const message = `Hi Backus Ceramics! I'd like to book the "${selectedSession.scheduleTitle || selectedSession.workshop.title}" for ${people} ${participants === 1 ? "person" : "people"}. Requested date: ${formatLongDate(selectedSession.date)}. Preferred time: ${selectedSession.timeLabel}.`
+    const whatsappUrl = `https://wa.me/6282145890402?text=${encodeURIComponent(message)}`
+    const whatsappWindow = window.open(whatsappUrl, "_blank")
+    if (!whatsappWindow) {
+      window.location.href = whatsappUrl
+      return
+    }
+    whatsappWindow.opener = null
 
+    setIsSubmitting(true)
     try {
-      const participants = parseInt(people)
       const preferredDate = `${formatDateKey(selectedSession.date)} · ${selectedSession.timeLabel}`
       const res = await fetch("/api/bookings", {
         method: "POST",
@@ -260,16 +267,7 @@ export function ClassesCalendar({ initialClass }: ClassesCalendarProps) {
         const data = await res.json().catch(() => ({}))
         throw new Error(data.error || "Could not create booking request")
       }
-
-      const message = `Hi Backus Ceramics! I'd like to book the "${selectedSession.scheduleTitle || selectedSession.workshop.title}" for ${people} ${participants === 1 ? "person" : "people"}. Requested date: ${formatLongDate(selectedSession.date)}. Preferred time: ${selectedSession.timeLabel}.`
-      const whatsappUrl = `https://wa.me/6282145890402?text=${encodeURIComponent(message)}`
-      if (whatsappWindow) {
-        whatsappWindow.location.href = whatsappUrl
-      } else {
-        window.location.href = whatsappUrl
-      }
     } catch (bookingError) {
-      whatsappWindow?.close()
       setError(bookingError instanceof Error ? bookingError.message : "Could not create booking request")
     } finally {
       setIsSubmitting(false)
