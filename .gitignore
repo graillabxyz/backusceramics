@@ -16,3 +16,4 @@ public/uploads/
 dev.db
 dev.db-journal
 
+.vercel
