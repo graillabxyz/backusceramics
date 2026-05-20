@@ -197,26 +197,38 @@ export function buildWeekSessions(weekStart: Date) {
 
 export function buildWeekSessionsFromSchedules(weekStart: Date, schedules: ClassScheduleLike[]) {
   const weekEnd = addDays(weekStart, 6)
+  return buildRangeSessionsFromSchedules(weekStart, weekEnd, schedules)
+}
+
+export function buildRangeSessionsFromSchedules(rangeStart: Date, rangeEnd: Date, schedules: ClassScheduleLike[]) {
+  const start = new Date(rangeStart)
+  start.setHours(0, 0, 0, 0)
+  const end = new Date(rangeEnd)
+  end.setHours(23, 59, 59, 999)
 
   return schedules
     .flatMap((schedule) => {
       const offering = getScheduleOffering(schedule.offeringId)
       if (!offering) return []
 
-      const endDate = schedule.endDate || schedule.startDate
+      const endDate = schedule.endDate || (schedule.weekdays ? end : schedule.startDate)
       const dates: Date[] = []
 
       if (schedule.weekdays) {
         const weekdays = parseWeekdays(schedule.weekdays)
-        for (let index = 0; index < 7; index += 1) {
-          const date = addDays(weekStart, index)
-          if (date < schedule.startDate || date > endDate || date > weekEnd) continue
+        let date = new Date(start)
+        while (date <= end) {
+          if (date < schedule.startDate || date > endDate) {
+            date = addDays(date, 1)
+            continue
+          }
           if (weekdays.includes(date.getDay())) dates.push(date)
+          date = addDays(date, 1)
         }
       } else {
         let date = new Date(schedule.startDate)
-        while (date <= endDate && date <= weekEnd) {
-          if (date >= weekStart) dates.push(new Date(date))
+        while (date <= endDate && date <= end) {
+          if (date >= start) dates.push(new Date(date))
           date = addDays(date, 1)
         }
       }

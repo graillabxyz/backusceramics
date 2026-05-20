@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server"
 import { prisma } from "@/lib/prisma"
 import {
   addDays,
+  buildRangeSessionsFromSchedules,
   buildWeekSessions,
   buildWeekSessionsFromSchedules,
   formatDateKey,
@@ -17,7 +18,16 @@ function parseWeekStart(value: string | null) {
   return startOfWeek(parseDateKey(value))
 }
 
-function buildAvailabilityResponse(weekStart: Date, sessions: ReturnType<typeof buildWeekSessions>, bookedSeats = new Map<string, number>(), heldSeats = new Map<string, number>(), holdDetails = new Map<string, { id: string; studentName: string; seats: number }[]>()) {
+function parseMonthStart(value: string | null) {
+  const source = value ? parseDateKey(value) : new Date()
+  return new Date(source.getFullYear(), source.getMonth(), 1)
+}
+
+function endOfMonth(date: Date) {
+  return new Date(date.getFullYear(), date.getMonth() + 1, 0)
+}
+
+function buildAvailabilityResponse(rangeStart: Date, sessions: ReturnType<typeof buildWeekSessions>, bookedSeats = new Map<string, number>(), heldSeats = new Map<string, number>(), holdDetails = new Map<string, { id: string; studentName: string; seats: number }[]>()) {
   const availability = sessions.map((session) => {
     const key = session.scheduleId || sessionKey(session.workshop.id, session.dateKey, session.timeLabel)
     const maxParticipants = session.maxParticipants ?? session.workshop.maxParticipants ?? 8
@@ -54,27 +64,31 @@ function buildAvailabilityResponse(weekStart: Date, sessions: ReturnType<typeof 
     scheduleWeekdays: session.scheduleWeekdays ?? undefined,
   }))
 
-  return NextResponse.json({ weekStart: formatDateKey(weekStart), sessions: serializedSessions, availability })
+  return NextResponse.json({ rangeStart: formatDateKey(rangeStart), sessions: serializedSessions, availability })
 }
 
 export async function GET(req: NextRequest) {
+  const monthStartParam = req.nextUrl.searchParams.get("monthStart")
   const weekStart = parseWeekStart(req.nextUrl.searchParams.get("weekStart"))
-  const weekEnd = addDays(weekStart, 6)
+  const rangeStart = monthStartParam ? parseMonthStart(monthStartParam) : weekStart
+  const rangeEnd = monthStartParam ? endOfMonth(rangeStart) : addDays(weekStart, 6)
   let schedules = []
   try {
     schedules = await prisma.classSchedule.findMany({
       where: {
         status: "ACTIVE",
-        startDate: { lte: weekEnd },
-        OR: [{ endDate: null }, { endDate: { gte: weekStart } }],
+        startDate: { lte: rangeEnd },
+        OR: [{ endDate: null }, { endDate: { gte: rangeStart } }],
       },
     })
   } catch {
-    return buildAvailabilityResponse(weekStart, buildWeekSessions(weekStart))
+    return buildAvailabilityResponse(rangeStart, buildWeekSessions(weekStart))
   }
 
   const sessions = schedules.length > 0
-    ? buildWeekSessionsFromSchedules(weekStart, schedules)
+    ? monthStartParam
+      ? buildRangeSessionsFromSchedules(rangeStart, rangeEnd, schedules)
+      : buildWeekSessionsFromSchedules(weekStart, schedules)
     : buildWeekSessions(weekStart)
   const dateKeys = Array.from(new Set(sessions.map((session) => session.dateKey)))
 
@@ -99,8 +113,8 @@ export async function GET(req: NextRequest) {
       prisma.classHold.findMany({
         where: {
           status: "ACTIVE",
-          startDate: { lte: weekEnd },
-          OR: [{ endDate: null }, { endDate: { gte: weekStart } }],
+          startDate: { lte: rangeEnd },
+          OR: [{ endDate: null }, { endDate: { gte: rangeStart } }],
         },
         select: {
           id: true,
@@ -115,7 +129,7 @@ export async function GET(req: NextRequest) {
       }),
     ])
   } catch {
-    return buildAvailabilityResponse(weekStart, sessions)
+    return buildAvailabilityResponse(rangeStart, sessions)
   }
 
   const bookedSeats = new Map<string, number>()
@@ -150,5 +164,5 @@ export async function GET(req: NextRequest) {
     }
   }
 
-  return buildAvailabilityResponse(weekStart, sessions, bookedSeats, heldSeats, holdDetails)
+  return buildAvailabilityResponse(rangeStart, sessions, bookedSeats, heldSeats, holdDetails)
 }

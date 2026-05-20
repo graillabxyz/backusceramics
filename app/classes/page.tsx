@@ -88,13 +88,18 @@ export default function ClassesPage() {
       {/* Workshop Classes */}
       <section className="py-16 bg-background">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="mb-12">
-            <h2 className="font-heading font-bold text-3xl font-medium text-foreground">
-              Wheel & Handbuilding Classes
-            </h2>
-            <p className="text-muted-foreground mt-2">
-              Single-day and multi-day workshops for all skill levels
-            </p>
+          <div className="mb-12 flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
+            <div>
+              <h2 className="font-heading font-bold text-3xl font-medium text-foreground">
+                Wheel & Handbuilding Classes
+              </h2>
+              <p className="text-muted-foreground mt-2">
+                Single-day and multi-day workshops for all skill levels
+              </p>
+            </div>
+            <Button variant="outline" asChild>
+              <Link href="/classes/calendar">See full calendar</Link>
+            </Button>
           </div>
 
           <div className="grid md:grid-cols-2 gap-8">
@@ -149,7 +154,7 @@ export default function ClassesPage() {
                         </p>
                       </div>
                       <Button asChild>
-                        <Link href={`/classes/calendar?class=${workshop.slug}`}>Book Now</Link>
+                        <Link href={`/classes/book/${workshop.slug}`}>Book Now</Link>
                       </Button>
                     </div>
                   </CardContent>
@@ -220,7 +225,7 @@ export default function ClassesPage() {
 
                   <div className="mt-6">
                     <Button size="lg" asChild>
-                      <Link href={`/classes/calendar?class=${workshop.slug}`}>Book Now</Link>
+                      <Link href={`/classes/book/${workshop.slug}`}>Book Now</Link>
                     </Button>
                   </div>
                 </div>

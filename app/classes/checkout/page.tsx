@@ -53,10 +53,12 @@ function ClassCheckoutContent() {
   const timeLabel = searchParams.get("timeLabel") || "Selected time"
   const price = Number(searchParams.get("price") || 0)
   const maxSeats = Math.max(Number(searchParams.get("maxSeats") || 1), 0)
+  const initialSeats = Math.min(Math.max(Number(searchParams.get("seats") || 1), 1), Math.max(maxSeats, 1))
   const prepaid = searchParams.get("prepaid") === "true"
+  const requiredMeetings = Math.max(Number(searchParams.get("requiredMeetings") || 0), 0)
   const meetings = useMemo(() => parseMeetings(searchParams.get("meetings")), [searchParams])
 
-  const [people, setPeople] = useState("1")
+  const [people, setPeople] = useState(initialSeats.toString())
   const [whatsappPhone, setWhatsappPhone] = useState("")
   const [payOnArrivalConfirmed, setPayOnArrivalConfirmed] = useState(false)
   const [selectedMeetingKeys, setSelectedMeetingKeys] = useState(() => meetings.map((meeting) => meeting.key))
@@ -84,6 +86,11 @@ function ClassCheckoutContent() {
     }
 
     if (prepaid) {
+      if (requiredMeetings > 0 && selectedMeetings.length !== requiredMeetings) {
+        setError(`Choose exactly ${requiredMeetings} program ${requiredMeetings === 1 ? "meeting" : "meetings"} before checkout.`)
+        return
+      }
+
       if (selectedMeetings.length === 0) {
         setError("Choose at least one program meeting before checkout.")
         return
@@ -212,6 +219,11 @@ function ClassCheckoutContent() {
                       <label key={meeting.key} className="flex items-start gap-3 text-sm text-muted-foreground">
                         <Checkbox
                           checked={selectedMeetingKeys.includes(meeting.key)}
+                          disabled={
+                            requiredMeetings > 0 &&
+                            selectedMeetingKeys.includes(meeting.key) &&
+                            selectedMeetingKeys.length <= requiredMeetings
+                          }
                           onCheckedChange={(checked) => {
                             setSelectedMeetingKeys((current) =>
                               checked === true
