@@ -280,7 +280,7 @@ export default function ClassMonthBookingPage() {
         const nextAvailability = Object.fromEntries(
           months.flatMap((data) => data.availability as CalendarAvailability[]).map((item) => [item.sessionId, item])
         )
-        const nextSessions = months.flatMap((data) => data.sessions || [])
+        const mappedSessions = months.flatMap((data) => data.sessions || [])
           .map((session: {
             id: string
             scheduleId?: string
@@ -315,6 +315,22 @@ export default function ClassMonthBookingPage() {
             }
           })
           .filter(Boolean) as CalendarSession[]
+        const nextSessions = Array.from(
+          mappedSessions
+            .reduce((uniqueSessions, session) => {
+              const key = `${session.dateKey}|${session.timeLabel}`
+              const current = uniqueSessions.get(key)
+              const currentSeats = current ? nextAvailability[current.id]?.availableSeats ?? 0 : -1
+              const nextSeats = nextAvailability[session.id]?.availableSeats ?? 0
+
+              if (!current || nextSeats > currentSeats) {
+                uniqueSessions.set(key, session)
+              }
+
+              return uniqueSessions
+            }, new Map<string, CalendarSession>())
+            .values()
+        ).sort((a, b) => a.date.getTime() - b.date.getTime() || a.timeLabel.localeCompare(b.timeLabel))
 
         setSessions(nextSessions)
         setAvailability(nextAvailability)
