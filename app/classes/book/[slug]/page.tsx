@@ -52,6 +52,10 @@ function startOfMonth(date: Date) {
   return new Date(date.getFullYear(), date.getMonth(), 1)
 }
 
+function addMonths(date: Date, months: number) {
+  return new Date(date.getFullYear(), date.getMonth() + months, date.getDate())
+}
+
 function monthGridDays(monthStart: Date) {
   const start = new Date(monthStart)
   const mondayOffset = (start.getDay() + 6) % 7
@@ -139,6 +143,22 @@ function isWorkshopDay(date: Date) {
   return date.getDay() !== 0
 }
 
+function isSameOrAfter(first: Date, second: Date) {
+  const a = new Date(first)
+  const b = new Date(second)
+  a.setHours(0, 0, 0, 0)
+  b.setHours(0, 0, 0, 0)
+  return a >= b
+}
+
+function isSameOrBefore(first: Date, second: Date) {
+  const a = new Date(first)
+  const b = new Date(second)
+  a.setHours(0, 0, 0, 0)
+  b.setHours(0, 0, 0, 0)
+  return a <= b
+}
+
 export default function ClassMonthBookingPage() {
   const params = useParams<{ slug: string }>()
   const slug = params.slug
@@ -154,7 +174,16 @@ export default function ClassMonthBookingPage() {
   const [seats, setSeats] = useState("1")
   const [loading, setLoading] = useState(true)
 
+  const bookingWindowEnd = useMemo(() => {
+    const date = addMonths(today, 2)
+    date.setHours(23, 59, 59, 999)
+    return date
+  }, [today])
+  const minMonthStart = useMemo(() => startOfMonth(today), [today])
+  const maxMonthStart = useMemo(() => startOfMonth(bookingWindowEnd), [bookingWindowEnd])
   const monthLabel = monthStart.toLocaleDateString("en-US", { month: "long", year: "numeric" })
+  const canMovePrevious = monthStart > minMonthStart
+  const canMoveNext = monthStart < maxMonthStart
   const gridDays = useMemo(() => monthGridDays(monthStart), [monthStart])
   const calendarWeeks = useMemo(() => {
     const weeks: Date[][] = []
@@ -178,6 +207,7 @@ export default function ClassMonthBookingPage() {
       }
 
       const dateKey = formatDateKey(cursor)
+      const isInBookingWindow = isSameOrAfter(cursor, today) && isSameOrBefore(cursor, bookingWindowEnd)
       const matchingSession = sessions.find(
         (session) => session.dateKey === dateKey && session.timeLabel === startSession.timeLabel
       )
@@ -185,14 +215,18 @@ export default function ClassMonthBookingPage() {
       const availableSeatsForDay = matchingSession
         ? matchingAvailability?.availableSeats ?? matchingSession.maxParticipants ?? matchingSession.workshop.maxParticipants ?? 0
         : 0
-      const available = Boolean(matchingSession && availableSeatsForDay > 0)
+      const available = Boolean(isInBookingWindow && matchingSession && availableSeatsForDay > 0)
 
       sequenceDays.push({
         date: new Date(cursor),
         dateKey,
-        session: matchingSession,
+        session: isInBookingWindow ? matchingSession : undefined,
         available,
-        reason: available ? undefined : "This selected time slot is already fully booked.",
+        reason: available
+          ? undefined
+          : isInBookingWindow
+            ? "This selected time slot is already fully booked."
+            : "This day is outside the two-month booking window.",
       })
 
       cursor = addDays(cursor, 1)
@@ -297,6 +331,7 @@ export default function ClassMonthBookingPage() {
             const offering = getScheduleOffering(session.workshopId)
             if (!offering || (offering.slug !== slug && offering.id !== slug)) return null
             const date = parseDateKey(session.dateKey)
+            if (!isSameOrAfter(date, today) || !isSameOrBefore(date, bookingWindowEnd)) return null
             return {
               id: session.id,
               scheduleId: session.scheduleId,
@@ -356,14 +391,23 @@ export default function ClassMonthBookingPage() {
     return () => {
       ignore = true
     }
-  }, [monthStart, slug])
+  }, [bookingWindowEnd, monthStart, slug, today])
 
   useEffect(() => {
     if (Number(seats) > purchasableSeats) setSeats(Math.max(purchasableSeats, 1).toString())
   }, [purchasableSeats, seats])
 
   const moveMonth = (amount: number) => {
-    setMonthStart(new Date(monthStart.getFullYear(), monthStart.getMonth() + amount, 1))
+    const nextMonth = new Date(monthStart.getFullYear(), monthStart.getMonth() + amount, 1)
+    if (nextMonth < minMonthStart) {
+      setMonthStart(minMonthStart)
+      return
+    }
+    if (nextMonth > maxMonthStart) {
+      setMonthStart(maxMonthStart)
+      return
+    }
+    setMonthStart(nextMonth)
   }
 
   const selectFirstSessionForDay = (date: Date) => {
@@ -441,22 +485,27 @@ export default function ClassMonthBookingPage() {
       </section>
 
       <section className="mx-auto grid max-w-7xl gap-6 px-4 py-8 sm:px-6 lg:grid-cols-[minmax(0,1fr)_360px] lg:px-8">
-        <Card className="overflow-hidden border-border">
-          <div className="flex flex-col gap-3 border-b border-border p-4 sm:flex-row sm:items-center sm:justify-between">
+        <Card className="overflow-hidden border-border/80 bg-card/80 shadow-lg shadow-primary/5">
+          <div className="flex flex-col gap-3 border-b border-border/80 bg-secondary/20 p-4 sm:flex-row sm:items-center sm:justify-between">
             <div className="flex items-center gap-2">
-              <Button variant="ghost" size="icon" onClick={() => moveMonth(-1)} aria-label="Previous month">
+              <Button variant="ghost" size="icon" onClick={() => moveMonth(-1)} disabled={!canMovePrevious} aria-label="Previous month">
                 <ChevronLeft className="h-4 w-4" />
               </Button>
               <h2 className="min-w-48 text-center font-heading text-xl font-bold text-foreground">{monthLabel}</h2>
-              <Button variant="ghost" size="icon" onClick={() => moveMonth(1)} aria-label="Next month">
+              <Button variant="ghost" size="icon" onClick={() => moveMonth(1)} disabled={!canMoveNext} aria-label="Next month">
                 <ChevronRight className="h-4 w-4" />
               </Button>
             </div>
-            <Button variant="secondary" onClick={() => setMonthStart(startOfMonth(today))}>This Month</Button>
+            <div className="flex flex-col gap-2 sm:items-end">
+              <Button variant="secondary" onClick={() => setMonthStart(startOfMonth(today))}>This Month</Button>
+              <p className="text-xs text-muted-foreground">
+                Book through {bookingWindowEnd.toLocaleDateString("en-US", { month: "short", day: "numeric" })}
+              </p>
+            </div>
           </div>
 
           <CardContent className="p-0">
-            <div className="hidden grid-cols-6 border-b border-border bg-muted/30 md:grid">
+            <div className="hidden grid-cols-6 border-b border-border/80 bg-secondary/10 md:grid">
               {weekdayLabels.map((label) => (
                 <div key={label} className="px-2 py-3 text-center text-xs font-semibold uppercase text-muted-foreground">
                   {label}
@@ -484,19 +533,19 @@ export default function ClassMonthBookingPage() {
                     onClick={() => selectFirstSessionForDay(date)}
                     disabled={!hasSessions && !isSequenceUnavailable}
                     className={cn(
-                      "relative min-h-[104px] border-b border-r border-border p-2 pt-9 text-left transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring lg:min-h-[118px]",
-                      !isCurrentMonth && "bg-muted/20 text-muted-foreground/60",
-                      hasSessions && "hover:bg-muted/50",
+                      "relative min-h-[104px] border-b border-r border-border/70 bg-background/25 p-2 pt-9 text-left transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring lg:min-h-[118px]",
+                      !isCurrentMonth && "bg-muted/15 text-muted-foreground/50",
+                      hasSessions && "hover:bg-secondary/25",
                       !hasSessions && "cursor-default",
                       isSelected && "bg-primary/5 ring-2 ring-inset ring-primary",
-                      isSequenceUnavailable && "bg-destructive/10 ring-2 ring-inset ring-destructive"
+                      isSequenceUnavailable && "bg-accent/10 ring-2 ring-inset ring-accent/70"
                     )}
                     title={isSequenceUnavailable ? sequenceDay?.reason : undefined}
                   >
                     <span
                       className={cn(
-                        "absolute left-2 top-2 flex h-7 w-7 items-center justify-center rounded-full text-sm font-semibold",
-                        isToday && "bg-primary text-primary-foreground"
+                        "absolute left-2 top-2 flex h-7 w-7 items-center justify-center rounded-full text-sm font-semibold text-foreground/90",
+                        isToday && "bg-primary text-primary-foreground shadow-sm"
                       )}
                     >
                       {date.getDate()}
@@ -532,7 +581,7 @@ export default function ClassMonthBookingPage() {
                                   }
                                 }}
                                 className={cn(
-                                  "block rounded-md border px-2 py-1.5 text-xs font-semibold shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+                                  "block rounded-md border px-2 py-1.5 text-xs font-semibold shadow-sm transition hover:translate-y-[-1px] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
                                   isFull || isUnavailableSequenceSession ? "availability-full" : "availability-open"
                                 )}
                                 title={isUnavailableSequenceSession ? sequenceDay?.reason : undefined}
@@ -575,8 +624,8 @@ export default function ClassMonthBookingPage() {
             </div>
             <div className="space-y-4 p-4 md:hidden">
               {calendarWeeks.map((week) => (
-                <div key={formatDateKey(week[0])} className="rounded-lg border border-border">
-                  <div className="border-b border-border px-3 py-2 text-xs font-semibold uppercase text-muted-foreground">
+                <div key={formatDateKey(week[0])} className="overflow-hidden rounded-lg border border-border/80 bg-background/25">
+                  <div className="border-b border-border/80 bg-secondary/10 px-3 py-2 text-xs font-semibold uppercase text-muted-foreground">
                     Week of {week[0].toLocaleDateString("en-US", { month: "short", day: "numeric" })}
                   </div>
                   <div className="divide-y divide-border">
@@ -602,10 +651,10 @@ export default function ClassMonthBookingPage() {
                             disabled={!hasSessions && !isSequenceUnavailable}
                             className={cn(
                               "grid w-full grid-cols-[72px_1fr] gap-3 px-3 py-3 text-left transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
-                              hasSessions && "hover:bg-muted/50",
+                              hasSessions && "hover:bg-secondary/25",
                               !hasSessions && "cursor-default",
                               isSelected && "bg-primary/5",
-                              isSequenceUnavailable && "bg-destructive/10"
+                              isSequenceUnavailable && "bg-accent/10"
                             )}
                             title={isSequenceUnavailable ? sequenceDay?.reason : undefined}
                           >
@@ -616,7 +665,7 @@ export default function ClassMonthBookingPage() {
                               <span
                                 className={cn(
                                   "mt-1 flex h-8 w-8 items-center justify-center rounded-full text-sm font-semibold text-foreground",
-                                  isToday && "bg-primary text-primary-foreground"
+                                  isToday && "bg-primary text-primary-foreground shadow-sm"
                                 )}
                               >
                                 {date.getDate()}
@@ -653,7 +702,7 @@ export default function ClassMonthBookingPage() {
                                           }
                                         }}
                                         className={cn(
-                                          "block rounded-md border px-2 py-1.5 text-xs font-semibold focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+                                          "block rounded-md border px-2 py-1.5 text-xs font-semibold transition hover:translate-y-[-1px] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
                                           isFull || isUnavailableSequenceSession ? "availability-full" : "availability-open"
                                         )}
                                         title={isUnavailableSequenceSession ? sequenceDay?.reason : undefined}
@@ -742,12 +791,12 @@ export default function ClassMonthBookingPage() {
                         ) : (
                           selectedSequence.days.map((day) => (
                             <div key={day.dateKey} className="flex items-center justify-between gap-3 text-sm">
-                              <span className={cn("text-muted-foreground", !day.available && "text-destructive")}>
+                              <span className={cn("text-muted-foreground", !day.available && "text-foreground")}>
                                 {day.date.toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" })}
                                 {" · "}
                                 {day.session?.timeLabel || selectedSession?.timeLabel}
                               </span>
-                              <span className={cn("text-xs font-medium", day.available ? "text-success" : "text-destructive")}>
+                              <span className={cn("text-xs font-medium", day.available ? "text-success" : "text-accent")}>
                                 {day.available ? "Available" : "Unavailable"}
                               </span>
                             </div>
@@ -761,7 +810,7 @@ export default function ClassMonthBookingPage() {
                       </div>
                     )}
                     {selectedSequence?.blocker && (
-                      <div className="rounded-md border border-destructive/40 bg-destructive/10 p-3 text-sm leading-relaxed text-destructive">
+                      <div className="rounded-md border border-accent/50 bg-accent/10 p-3 text-sm leading-relaxed text-foreground">
                         {selectedSequence.blocker}
                       </div>
                     )}

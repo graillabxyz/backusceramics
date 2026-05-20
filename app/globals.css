@@ -157,8 +157,9 @@
     color: var(--success);
   }
   .availability-full {
-    border-color: color-mix(in oklab, var(--destructive) 35%, transparent);
-    background: color-mix(in oklab, var(--destructive) 14%, transparent);
-    color: var(--destructive);
+    border-color: color-mix(in oklab, var(--accent) 50%, var(--border));
+    background: color-mix(in oklab, var(--accent) 14%, var(--card));
+    color: var(--foreground);
+    box-shadow: inset 3px 0 0 color-mix(in oklab, var(--accent) 70%, var(--foreground));
   }
 }
