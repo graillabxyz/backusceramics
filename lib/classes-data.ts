@@ -82,7 +82,7 @@ export const workshops: Workshop[] = [
     level: "Beginner to Intermediate",
     duration: "3 days",
     schedule: [
-      "Monday - Friday: 10:00 - 12:00 PM"
+      "Monday - Saturday: 10:00 - 12:00 PM"
     ],
     features: [
       "Theme-based learning",

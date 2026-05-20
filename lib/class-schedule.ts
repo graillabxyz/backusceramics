@@ -167,7 +167,7 @@ export function parsePreferredDate(preferredDate?: string | null) {
 }
 
 export function buildWeekSessions(weekStart: Date) {
-  const defaultBookableIds = new Set(["beginner-wheel", "handbuilding", "kids-workshop"])
+  const defaultBookableIds = new Set(["beginner-wheel", "handbuilding", "kids-workshop", "3-day-workshop", "6-day-workshop"])
   const classWorkshops = workshops.filter((workshop) => workshop.available && defaultBookableIds.has(workshop.id))
 
   return classWorkshops

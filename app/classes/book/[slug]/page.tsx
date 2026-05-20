@@ -23,10 +23,29 @@ import {
 } from "@/lib/class-schedule"
 import { cn } from "@/lib/utils"
 
-const weekdayLabels = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
+const weekdayLabels = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat"]
 const requiredMultiDaySelections: Record<string, number> = {
   "3-day-workshop": 3,
   "6-day-workshop": 6,
+}
+
+interface WorkshopSequenceDay {
+  date: Date
+  dateKey: string
+  session?: CalendarSession
+  available: boolean
+  reason?: string
+}
+
+interface WorkshopSequence {
+  startSession: CalendarSession
+  days: WorkshopSequenceDay[]
+  isComplete: boolean
+  hasUnavailableDays: boolean
+  hasNonSuccessiveDays: boolean
+  clayGapBlocked: boolean
+  warning?: string
+  blocker?: string
 }
 
 function startOfMonth(date: Date) {
@@ -39,13 +58,13 @@ function monthGridDays(monthStart: Date) {
   start.setDate(start.getDate() - mondayOffset)
 
   const end = new Date(monthStart.getFullYear(), monthStart.getMonth() + 1, 0)
-  const sundayOffset = (7 - end.getDay()) % 7
-  end.setDate(end.getDate() + sundayOffset)
+  const saturdayOffset = (6 - end.getDay() + 7) % 7
+  end.setDate(end.getDate() + saturdayOffset)
 
   const days: Date[] = []
   let cursor = new Date(start)
   while (cursor <= end) {
-    days.push(new Date(cursor))
+    if (cursor.getDay() !== 0) days.push(new Date(cursor))
     cursor = addDays(cursor, 1)
   }
   return days
@@ -58,6 +77,18 @@ function formatLongDate(date: Date) {
     day: "numeric",
     year: "numeric",
   })
+}
+
+function formatStartTime(timeLabel: string) {
+  const [start = timeLabel] = timeLabel.split("-")
+  const match = start.trim().match(/^(\d{1,2})(?::(\d{2}))?/)
+  if (!match) return start.trim()
+
+  const hour = Number(match[1])
+  const minute = match[2] || "00"
+  const suffix = hour >= 12 ? "pm" : "am"
+  const displayHour = hour > 12 ? hour - 12 : hour
+  return `${displayHour}${minute === "00" ? "" : `:${minute}`}${suffix}`
 }
 
 function isPrepaidProgram(session?: CalendarSession) {
@@ -95,6 +126,19 @@ function buildProgramMeetings(session: CalendarSession) {
   return meetings
 }
 
+function daysBetween(first: Date, second: Date) {
+  const dayMs = 24 * 60 * 60 * 1000
+  const start = new Date(first)
+  const end = new Date(second)
+  start.setHours(0, 0, 0, 0)
+  end.setHours(0, 0, 0, 0)
+  return Math.round((end.getTime() - start.getTime()) / dayMs)
+}
+
+function isWorkshopDay(date: Date) {
+  return date.getDay() !== 0
+}
+
 export default function ClassMonthBookingPage() {
   const params = useParams<{ slug: string }>()
   const slug = params.slug
@@ -107,18 +151,82 @@ export default function ClassMonthBookingPage() {
   const [sessions, setSessions] = useState<CalendarSession[]>([])
   const [availability, setAvailability] = useState<Record<string, CalendarAvailability>>({})
   const [selectedSessionId, setSelectedSessionId] = useState("")
-  const [selectedProgramSessions, setSelectedProgramSessions] = useState<CalendarSession[]>([])
   const [seats, setSeats] = useState("1")
   const [loading, setLoading] = useState(true)
 
   const monthLabel = monthStart.toLocaleDateString("en-US", { month: "long", year: "numeric" })
   const gridDays = useMemo(() => monthGridDays(monthStart), [monthStart])
+  const calendarWeeks = useMemo(() => {
+    const weeks: Date[][] = []
+    for (let index = 0; index < gridDays.length; index += 6) {
+      weeks.push(gridDays.slice(index, index + 6))
+    }
+    return weeks
+  }, [gridDays])
   const workshop = sessions[0]?.workshop || scheduleOfferings.find((offering) => offering.slug === slug || offering.id === slug)
   const requiredProgramDays = workshop ? requiredMultiDaySelections[workshop.id] || 0 : 0
   const isMultiDaySelection = requiredProgramDays > 0
   const selectedSession = sessions.find((session) => session.id === selectedSessionId) || null
-  const activeSelectedSessions = isMultiDaySelection ? selectedProgramSessions : selectedSession ? [selectedSession] : []
-  const displaySession = isMultiDaySelection ? activeSelectedSessions[0] || null : selectedSession
+  const buildSequenceForSession = (startSession: CalendarSession): WorkshopSequence => {
+    const sequenceDays: WorkshopSequenceDay[] = []
+    let cursor = new Date(startSession.date)
+
+    while (sequenceDays.length < requiredProgramDays) {
+      if (!isWorkshopDay(cursor)) {
+        cursor = addDays(cursor, 1)
+        continue
+      }
+
+      const dateKey = formatDateKey(cursor)
+      const matchingSession = sessions.find(
+        (session) => session.dateKey === dateKey && session.timeLabel === startSession.timeLabel
+      )
+      const matchingAvailability = matchingSession ? availability[matchingSession.id] : undefined
+      const availableSeatsForDay = matchingSession
+        ? matchingAvailability?.availableSeats ?? matchingSession.maxParticipants ?? matchingSession.workshop.maxParticipants ?? 0
+        : 0
+      const available = Boolean(matchingSession && availableSeatsForDay > 0)
+
+      sequenceDays.push({
+        date: new Date(cursor),
+        dateKey,
+        session: matchingSession,
+        available,
+        reason: available ? undefined : "This selected time slot is already fully booked.",
+      })
+
+      cursor = addDays(cursor, 1)
+    }
+
+    const gaps = sequenceDays.slice(1).map((day, index) => daysBetween(sequenceDays[index].date, day.date))
+    const hasNonSuccessiveDays = gaps.some((gap) => gap > 1)
+    const clayGapBlocked = gaps.some((gap) => gap > 2)
+    const hasUnavailableDays = sequenceDays.some((day) => !day.available)
+
+    return {
+      startSession,
+      days: sequenceDays,
+      isComplete: sequenceDays.length === requiredProgramDays && !hasUnavailableDays && !clayGapBlocked,
+      hasUnavailableDays,
+      hasNonSuccessiveDays,
+      clayGapBlocked,
+      warning: hasNonSuccessiveDays
+        ? "These workshop days are not all successive. Clay normally dries and is ready for trimming the next calendar day. It can be covered and held for one extra day if needed."
+        : undefined,
+      blocker: clayGapBlocked
+        ? "This sequence leaves clay waiting more than 2 days before the next workshop day, so it cannot be booked."
+        : hasUnavailableDays
+          ? "One or more required workshop days are unavailable in this time slot."
+          : undefined,
+    }
+  }
+  const selectedSequence = isMultiDaySelection && selectedSession ? buildSequenceForSession(selectedSession) : null
+  const activeSelectedSessions = isMultiDaySelection
+    ? selectedSequence?.days.flatMap((day) => (day.session ? [day.session] : [])) || []
+    : selectedSession
+      ? [selectedSession]
+      : []
+  const displaySession = selectedSession
   const selectedAvailability = selectedSession ? availability[selectedSession.id] : undefined
   const availableSeats = selectedSession
     ? selectedAvailability?.availableSeats ?? selectedSession.maxParticipants ?? selectedSession.workshop.maxParticipants ?? 1
@@ -134,8 +242,21 @@ export default function ClassMonthBookingPage() {
   const seatOptions = Array.from({ length: Math.max(purchasableSeats, 0) }, (_, index) => index + 1)
   const total = workshop ? workshop.price * Number(seats || 1) : 0
   const prepaid = isMultiDaySelection || isPrepaidProgram(selectedSession || undefined)
+  const alternativeSequence = useMemo(() => {
+    if (!isMultiDaySelection || !selectedSession) return null
+    const startDaySessions = sessions.filter(
+      (session) =>
+        session.dateKey === selectedSession.dateKey &&
+        session.timeLabel !== selectedSession.timeLabel &&
+        (availability[session.id]?.availableSeats ?? 0) > 0
+    )
+
+    return startDaySessions
+      .map((session) => buildSequenceForSession(session))
+      .find((sequence) => sequence.isComplete) || null
+  }, [availability, isMultiDaySelection, selectedSession, sessions])
   const canContinue = isMultiDaySelection
-    ? selectedProgramSessions.length === requiredProgramDays && purchasableSeats > 0
+    ? Boolean(selectedSequence?.isComplete && purchasableSeats > 0)
     : Boolean(selectedSession && purchasableSeats > 0)
 
   useEffect(() => {
@@ -144,15 +265,22 @@ export default function ClassMonthBookingPage() {
     async function loadMonth() {
       setLoading(true)
       try {
-        const res = await fetch(`/api/classes/availability?monthStart=${formatDateKey(monthStart)}`)
-        if (!res.ok) throw new Error("Could not load class availability")
-        const data = await res.json()
+        const monthStarts = [
+          new Date(monthStart.getFullYear(), monthStart.getMonth() - 1, 1),
+          monthStart,
+          new Date(monthStart.getFullYear(), monthStart.getMonth() + 1, 1),
+        ]
+        const responses = await Promise.all(
+          monthStarts.map((date) => fetch(`/api/classes/availability?monthStart=${formatDateKey(date)}`))
+        )
+        if (responses.some((res) => !res.ok)) throw new Error("Could not load class availability")
+        const months = await Promise.all(responses.map((res) => res.json()))
         if (ignore) return
 
         const nextAvailability = Object.fromEntries(
-          (data.availability as CalendarAvailability[]).map((item) => [item.sessionId, item])
+          months.flatMap((data) => data.availability as CalendarAvailability[]).map((item) => [item.sessionId, item])
         )
-        const nextSessions = (data.sessions || [])
+        const nextSessions = months.flatMap((data) => data.sessions || [])
           .map((session: {
             id: string
             scheduleId?: string
@@ -228,32 +356,20 @@ export default function ClassMonthBookingPage() {
     const firstAvailable = daySessions.find((session) => (availability[session.id]?.availableSeats ?? 0) > 0)
     const nextSession = firstAvailable || daySessions[0]
     if (nextSession) {
-      if (isMultiDaySelection) {
-        setSelectedProgramSessions((current) => {
-          if (current.some((session) => session.id === nextSession.id)) {
-            return current.filter((session) => session.id !== nextSession.id)
-          }
-          if ((availability[nextSession.id]?.availableSeats ?? 0) <= 0) return current
-          if (current.length >= requiredProgramDays) return current
-          return [...current, nextSession].sort((a, b) => a.date.getTime() - b.date.getTime())
-        })
-        setSelectedSessionId(nextSession.id)
-        setSeats("1")
-        return
-      }
       setSelectedSessionId(nextSession.id)
       setSeats("1")
     }
   }
 
   const checkoutHref = useMemo(() => {
-    const checkoutSession = isMultiDaySelection ? selectedProgramSessions[0] : selectedSession
+    const programSessions = selectedSequence?.days.flatMap((day) => (day.session ? [day.session] : [])) || []
+    const checkoutSession = isMultiDaySelection ? programSessions[0] : selectedSession
     if (!checkoutSession || !workshop) return "/classes/calendar"
     const params = new URLSearchParams({
       workshopId: workshop.id,
       title: checkoutSession.scheduleTitle || workshop.title,
       dateKey: formatDateKey(checkoutSession.date),
-      dateLabel: isMultiDaySelection ? `${selectedProgramSessions.length} selected days` : formatLongDate(checkoutSession.date),
+      dateLabel: isMultiDaySelection ? `${programSessions.length} selected days` : formatLongDate(checkoutSession.date),
       timeLabel: isMultiDaySelection ? "Selected program days" : checkoutSession.timeLabel,
       price: String(workshop.price),
       maxSeats: String(purchasableSeats),
@@ -265,7 +381,7 @@ export default function ClassMonthBookingPage() {
     if (checkoutSession.scheduleId) params.set("scheduleId", checkoutSession.scheduleId)
     if (prepaid) {
       const meetings = isMultiDaySelection
-        ? selectedProgramSessions.map((session) => ({
+        ? programSessions.map((session) => ({
             key: `${session.dateKey}|${session.timeLabel}`,
             dateKey: session.dateKey,
             dateLabel: session.date.toLocaleDateString("en-US", { weekday: "long", month: "short", day: "numeric" }),
@@ -276,7 +392,7 @@ export default function ClassMonthBookingPage() {
     }
 
     return `/classes/checkout?${params.toString()}`
-  }, [isMultiDaySelection, prepaid, purchasableSeats, seats, selectedProgramSessions, selectedSession, workshop])
+  }, [isMultiDaySelection, prepaid, purchasableSeats, seats, selectedSequence, selectedSession, workshop])
 
   return (
     <main className="min-h-screen bg-background">
@@ -297,7 +413,7 @@ export default function ClassMonthBookingPage() {
               </h1>
               <p className="mt-3 max-w-2xl text-sm leading-relaxed text-muted-foreground sm:text-base">
                 {isMultiDaySelection
-                  ? `Choose exactly ${requiredProgramDays} available days, select your seats, then continue to checkout.`
+                  ? "Choose your starting day. We will automatically show the next available workshop days for your selected time slot. If your selected time slot is unavailable for the full workshop, we will show the unavailable days in red and suggest another available time when possible."
                   : "Choose an available day, select your seats, then continue to checkout."}
               </p>
             </div>
@@ -324,65 +440,113 @@ export default function ClassMonthBookingPage() {
           </div>
 
           <CardContent className="p-0">
-            <div className="grid grid-cols-7 border-b border-border bg-muted/30">
+            <div className="hidden grid-cols-6 border-b border-border bg-muted/30 md:grid">
               {weekdayLabels.map((label) => (
                 <div key={label} className="px-2 py-3 text-center text-xs font-semibold uppercase text-muted-foreground">
                   {label}
                 </div>
               ))}
             </div>
-            <div className="grid grid-cols-7">
+            <div className="hidden grid-cols-6 md:grid">
               {gridDays.map((date) => {
                 const dateKey = formatDateKey(date)
                 const daySessions = sessions.filter((session) => session.dateKey === dateKey)
                 const hasSessions = daySessions.length > 0
                 const isCurrentMonth = date.getMonth() === monthStart.getMonth()
                 const isToday = dateKey === formatDateKey(today)
+                const sequenceDay = selectedSequence?.days.find((day) => day.dateKey === dateKey)
                 const isSelected = isMultiDaySelection
-                  ? selectedProgramSessions.some((session) => session.dateKey === dateKey)
+                  ? Boolean(sequenceDay?.available)
                   : selectedSession?.dateKey === dateKey
+                const isSequenceUnavailable = Boolean(sequenceDay && !sequenceDay.available)
+                const sequenceSessionShown = Boolean(sequenceDay?.session && daySessions.some((session) => session.id === sequenceDay.session?.id))
 
                 return (
                   <button
                     key={dateKey}
                     type="button"
                     onClick={() => selectFirstSessionForDay(date)}
-                    disabled={!hasSessions}
+                    disabled={!hasSessions && !isSequenceUnavailable}
                     className={cn(
-                      "min-h-[118px] border-b border-r border-border p-2 text-left transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring sm:min-h-[150px]",
+                      "relative min-h-[104px] border-b border-r border-border p-2 pt-9 text-left transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring lg:min-h-[118px]",
                       !isCurrentMonth && "bg-muted/20 text-muted-foreground/60",
                       hasSessions && "hover:bg-muted/50",
                       !hasSessions && "cursor-default",
-                      isSelected && "bg-primary/5 ring-2 ring-inset ring-primary"
+                      isSelected && "bg-primary/5 ring-2 ring-inset ring-primary",
+                      isSequenceUnavailable && "bg-destructive/10 ring-2 ring-inset ring-destructive"
                     )}
+                    title={isSequenceUnavailable ? sequenceDay?.reason : undefined}
                   >
                     <span
                       className={cn(
-                        "flex h-7 w-7 items-center justify-center rounded-full text-sm font-semibold",
+                        "absolute left-2 top-2 flex h-7 w-7 items-center justify-center rounded-full text-sm font-semibold",
                         isToday && "bg-primary text-primary-foreground"
                       )}
                     >
                       {date.getDate()}
                     </span>
-                    <div className="mt-2 space-y-1.5">
+                    <div className="space-y-1">
                       {loading ? (
                         <span className="block rounded bg-muted px-2 py-1 text-xs text-muted-foreground">Checking</span>
                       ) : hasSessions ? (
-                        daySessions.slice(0, 2).map((session) => {
-                          const sessionAvailability = availability[session.id]
-                          const left = sessionAvailability?.availableSeats ?? session.maxParticipants ?? session.workshop.maxParticipants ?? 0
-                          return (
-                            <span key={session.id} className="block rounded-md bg-background px-2 py-1.5 text-xs shadow-sm">
-                              <span className="block font-semibold text-foreground">{session.timeLabel}</span>
-                              <span className={cn("text-muted-foreground", left <= 0 && "text-destructive")}>
-                                {left <= 0 ? "Full" : `${left} seats left`}
+                        <>
+                          {daySessions.map((session) => {
+                            const sessionAvailability = availability[session.id]
+                            const left = sessionAvailability?.availableSeats ?? session.maxParticipants ?? session.workshop.maxParticipants ?? 0
+                            const max = sessionAvailability?.maxParticipants ?? session.maxParticipants ?? session.workshop.maxParticipants ?? 0
+                            const isFull = left <= 0
+                            const isSequenceSession = sequenceDay?.session?.id === session.id
+                            const isUnavailableSequenceSession = Boolean(isSequenceSession && sequenceDay && !sequenceDay.available)
+                            return (
+                              <span
+                                key={session.id}
+                                role="button"
+                                tabIndex={0}
+                                onClick={(event) => {
+                                  event.stopPropagation()
+                                  setSelectedSessionId(session.id)
+                                  setSeats("1")
+                                }}
+                                onKeyDown={(event) => {
+                                  if (event.key === "Enter" || event.key === " ") {
+                                    event.preventDefault()
+                                    event.stopPropagation()
+                                    setSelectedSessionId(session.id)
+                                    setSeats("1")
+                                  }
+                                }}
+                                className={cn(
+                                  "block rounded-md border px-2 py-1.5 text-xs font-semibold shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+                                  isFull || isUnavailableSequenceSession ? "availability-full" : "availability-open"
+                                )}
+                                title={isUnavailableSequenceSession ? sequenceDay?.reason : undefined}
+                              >
+                                <span className="flex items-center justify-between gap-2">
+                                  <span>{formatStartTime(session.timeLabel)}</span>
+                                  <span>{left}/{max}</span>
+                                </span>
+                                {isMultiDaySelection && isSequenceSession && sequenceDay?.available && (
+                                  <span className="mt-1 block font-semibold text-primary">Selected</span>
+                                )}
                               </span>
-                              {isMultiDaySelection && selectedProgramSessions.some((selected) => selected.id === session.id) && (
-                                <span className="mt-1 block font-semibold text-primary">Selected</span>
-                              )}
+                            )
+                          })}
+                          {isSequenceUnavailable && !sequenceSessionShown && (
+                            <span className="block rounded-md border px-2 py-1.5 text-xs font-semibold shadow-sm availability-full" title={sequenceDay?.reason}>
+                              <span className="flex items-center justify-between gap-2">
+                                <span>{selectedSession ? formatStartTime(selectedSession.timeLabel) : "Selected time"}</span>
+                                <span>0/{selectedSession?.maxParticipants ?? selectedSession?.workshop.maxParticipants ?? 3}</span>
+                              </span>
                             </span>
-                          )
-                        })
+                          )}
+                        </>
+                      ) : isSequenceUnavailable ? (
+                        <span className="block rounded-md border px-2 py-1.5 text-xs font-semibold shadow-sm availability-full" title={sequenceDay?.reason}>
+                          <span className="flex items-center justify-between gap-2">
+                            <span>{selectedSession ? formatStartTime(selectedSession.timeLabel) : "Selected time"}</span>
+                            <span>0/{selectedSession?.maxParticipants ?? selectedSession?.workshop.maxParticipants ?? 3}</span>
+                          </span>
+                        </span>
                       ) : isCurrentMonth && date.getDay() === 0 ? (
                         <span className="block rounded border border-dashed border-border px-2 py-1 text-xs text-muted-foreground">
                           Closed
@@ -392,6 +556,128 @@ export default function ClassMonthBookingPage() {
                   </button>
                 )
               })}
+            </div>
+            <div className="space-y-4 p-4 md:hidden">
+              {calendarWeeks.map((week) => (
+                <div key={formatDateKey(week[0])} className="rounded-lg border border-border">
+                  <div className="border-b border-border px-3 py-2 text-xs font-semibold uppercase text-muted-foreground">
+                    Week of {week[0].toLocaleDateString("en-US", { month: "short", day: "numeric" })}
+                  </div>
+                  <div className="divide-y divide-border">
+                    {week
+                      .filter((date) => date.getMonth() === monthStart.getMonth())
+                      .map((date) => {
+                        const dateKey = formatDateKey(date)
+                        const daySessions = sessions.filter((session) => session.dateKey === dateKey)
+                        const hasSessions = daySessions.length > 0
+                        const isToday = dateKey === formatDateKey(today)
+                        const sequenceDay = selectedSequence?.days.find((day) => day.dateKey === dateKey)
+                        const isSelected = isMultiDaySelection
+                          ? Boolean(sequenceDay?.available)
+                          : selectedSession?.dateKey === dateKey
+                        const isSequenceUnavailable = Boolean(sequenceDay && !sequenceDay.available)
+                        const sequenceSessionShown = Boolean(sequenceDay?.session && daySessions.some((session) => session.id === sequenceDay.session?.id))
+
+                        return (
+                          <button
+                            key={dateKey}
+                            type="button"
+                            onClick={() => selectFirstSessionForDay(date)}
+                            disabled={!hasSessions && !isSequenceUnavailable}
+                            className={cn(
+                              "grid w-full grid-cols-[72px_1fr] gap-3 px-3 py-3 text-left transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+                              hasSessions && "hover:bg-muted/50",
+                              !hasSessions && "cursor-default",
+                              isSelected && "bg-primary/5",
+                              isSequenceUnavailable && "bg-destructive/10"
+                            )}
+                            title={isSequenceUnavailable ? sequenceDay?.reason : undefined}
+                          >
+                            <div>
+                              <span className="block text-xs font-medium uppercase text-muted-foreground">
+                                {date.toLocaleDateString("en-US", { weekday: "short" })}
+                              </span>
+                              <span
+                                className={cn(
+                                  "mt-1 flex h-8 w-8 items-center justify-center rounded-full text-sm font-semibold text-foreground",
+                                  isToday && "bg-primary text-primary-foreground"
+                                )}
+                              >
+                                {date.getDate()}
+                              </span>
+                            </div>
+                            <div className="space-y-1.5">
+                              {loading ? (
+                                <span className="block rounded bg-muted px-2 py-1 text-xs text-muted-foreground">Checking</span>
+                              ) : hasSessions ? (
+                                <>
+                                  {daySessions.map((session) => {
+                                    const sessionAvailability = availability[session.id]
+                                    const left = sessionAvailability?.availableSeats ?? session.maxParticipants ?? session.workshop.maxParticipants ?? 0
+                                    const max = sessionAvailability?.maxParticipants ?? session.maxParticipants ?? session.workshop.maxParticipants ?? 0
+                                    const isFull = left <= 0
+                                    const isSequenceSession = sequenceDay?.session?.id === session.id
+                                    const isUnavailableSequenceSession = Boolean(isSequenceSession && sequenceDay && !sequenceDay.available)
+                                    return (
+                                      <span
+                                        key={session.id}
+                                        role="button"
+                                        tabIndex={0}
+                                        onClick={(event) => {
+                                          event.stopPropagation()
+                                          setSelectedSessionId(session.id)
+                                          setSeats("1")
+                                        }}
+                                        onKeyDown={(event) => {
+                                          if (event.key === "Enter" || event.key === " ") {
+                                            event.preventDefault()
+                                            event.stopPropagation()
+                                            setSelectedSessionId(session.id)
+                                            setSeats("1")
+                                          }
+                                        }}
+                                        className={cn(
+                                          "block rounded-md border px-2 py-1.5 text-xs font-semibold focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+                                          isFull || isUnavailableSequenceSession ? "availability-full" : "availability-open"
+                                        )}
+                                        title={isUnavailableSequenceSession ? sequenceDay?.reason : undefined}
+                                      >
+                                        <span className="flex items-center justify-between gap-2">
+                                          <span>{formatStartTime(session.timeLabel)}</span>
+                                          <span>{left}/{max}</span>
+                                        </span>
+                                        {isMultiDaySelection && isSequenceSession && sequenceDay?.available && (
+                                          <span className="mt-1 block font-semibold text-primary">Selected</span>
+                                        )}
+                                      </span>
+                                    )
+                                  })}
+                                  {isSequenceUnavailable && !sequenceSessionShown && (
+                                    <span className="block rounded-md border px-2 py-1.5 text-xs font-semibold availability-full" title={sequenceDay?.reason}>
+                                      <span className="flex items-center justify-between gap-2">
+                                        <span>{selectedSession ? formatStartTime(selectedSession.timeLabel) : "Selected time"}</span>
+                                        <span>0/{selectedSession?.maxParticipants ?? selectedSession?.workshop.maxParticipants ?? 3}</span>
+                                      </span>
+                                    </span>
+                                  )}
+                                </>
+                              ) : isSequenceUnavailable ? (
+                                <span className="block rounded-md border px-2 py-1.5 text-xs font-semibold availability-full" title={sequenceDay?.reason}>
+                                  <span className="flex items-center justify-between gap-2">
+                                    <span>{selectedSession ? formatStartTime(selectedSession.timeLabel) : "Selected time"}</span>
+                                    <span>0/{selectedSession?.maxParticipants ?? selectedSession?.workshop.maxParticipants ?? 3}</span>
+                                  </span>
+                                </span>
+                              ) : (
+                                <span className="text-sm text-muted-foreground">No class times</span>
+                              )}
+                            </div>
+                          </button>
+                        )
+                      })}
+                  </div>
+                </div>
+              ))}
             </div>
           </CardContent>
         </Card>
@@ -409,7 +695,7 @@ export default function ClassMonthBookingPage() {
                       </p>
                       <p className="mt-1 text-sm text-muted-foreground">
                         {isMultiDaySelection
-                          ? `${selectedProgramSessions.length} of ${requiredProgramDays} days selected`
+                          ? `${selectedSequence?.days.filter((day) => day.available).length || 0} of ${requiredProgramDays} days available`
                           : formatLongDate(selectedSession.date)}
                       </p>
                     </div>
@@ -435,26 +721,50 @@ export default function ClassMonthBookingPage() {
                     </div>
                     {isMultiDaySelection && (
                       <div className="space-y-2 rounded-md border border-border p-3">
-                        {selectedProgramSessions.length === 0 ? (
-                          <p className="text-sm text-muted-foreground">Choose your first day on the calendar.</p>
+                        {!selectedSequence ? (
+                          <p className="text-sm text-muted-foreground">Choose your starting day on the calendar.</p>
                         ) : (
-                          selectedProgramSessions.map((session) => (
-                            <div key={session.id} className="flex items-center justify-between gap-3 text-sm">
-                              <span className="text-muted-foreground">
-                                {session.date.toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" })}
+                          selectedSequence.days.map((day) => (
+                            <div key={day.dateKey} className="flex items-center justify-between gap-3 text-sm">
+                              <span className={cn("text-muted-foreground", !day.available && "text-destructive")}>
+                                {day.date.toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" })}
                                 {" · "}
-                                {session.timeLabel}
+                                {day.session?.timeLabel || selectedSession?.timeLabel}
                               </span>
-                              <button
-                                type="button"
-                                onClick={() => setSelectedProgramSessions((current) => current.filter((item) => item.id !== session.id))}
-                                className="text-xs font-medium text-destructive"
-                              >
-                                Remove
-                              </button>
+                              <span className={cn("text-xs font-medium", day.available ? "text-success" : "text-destructive")}>
+                                {day.available ? "Available" : "Unavailable"}
+                              </span>
                             </div>
                           ))
                         )}
+                      </div>
+                    )}
+                    {selectedSequence?.warning && (
+                      <div className="rounded-md border border-accent/40 bg-accent/10 p-3 text-sm leading-relaxed text-foreground">
+                        {selectedSequence.warning}
+                      </div>
+                    )}
+                    {selectedSequence?.blocker && (
+                      <div className="rounded-md border border-destructive/40 bg-destructive/10 p-3 text-sm leading-relaxed text-destructive">
+                        {selectedSequence.blocker}
+                      </div>
+                    )}
+                    {alternativeSequence && selectedSequence?.hasUnavailableDays && (
+                      <div className="space-y-3 rounded-md border border-accent/40 bg-accent/10 p-3 text-sm leading-relaxed text-foreground">
+                        <p>
+                          The {formatStartTime(selectedSession.timeLabel)} class is not available for all required workshop days. {formatStartTime(alternativeSequence.startSession.timeLabel)} slots are available for this workshop sequence. Please switch to the {formatStartTime(alternativeSequence.startSession.timeLabel)} class to continue.
+                        </p>
+                        <Button
+                          type="button"
+                          variant="secondary"
+                          size="sm"
+                          onClick={() => {
+                            setSelectedSessionId(alternativeSequence.startSession.id)
+                            setSeats("1")
+                          }}
+                        >
+                          Switch to {formatStartTime(alternativeSequence.startSession.timeLabel)}
+                        </Button>
                       </div>
                     )}
                   </div>
@@ -485,7 +795,7 @@ export default function ClassMonthBookingPage() {
 
                   <div className="rounded-md border border-border p-4 text-sm">
                     <div className="flex items-center justify-between text-muted-foreground">
-                      <span>{formatPrice(selectedSession.workshop.price)}</span>
+                      <span>{formatPrice(workshop?.price || displaySession.workshop.price)}</span>
                       <span>x {seats}</span>
                     </div>
                     <div className="mt-2 flex items-center justify-between border-t border-border pt-2 font-semibold text-foreground">
@@ -502,7 +812,7 @@ export default function ClassMonthBookingPage() {
                     >
                       <CalendarDays className="h-4 w-4" />
                       {isMultiDaySelection && !canContinue
-                        ? `Choose ${requiredProgramDays - selectedProgramSessions.length} more`
+                        ? "Choose another start time"
                         : "Continue to Checkout"}
                     </Link>
                   </Button>
