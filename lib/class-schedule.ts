@@ -167,19 +167,31 @@ export function parsePreferredDate(preferredDate?: string | null) {
 }
 
 export function buildWeekSessions(weekStart: Date) {
+  return buildDefaultRangeSessions(weekStart, addDays(weekStart, 6))
+}
+
+export function buildDefaultRangeSessions(rangeStart: Date, rangeEnd: Date) {
   const defaultBookableIds = new Set(["beginner-wheel", "handbuilding", "kids-workshop", "3-day-workshop", "6-day-workshop"])
   const classWorkshops = workshops.filter((workshop) => workshop.available && defaultBookableIds.has(workshop.id))
+  const start = new Date(rangeStart)
+  start.setHours(0, 0, 0, 0)
+  const end = new Date(rangeEnd)
+  end.setHours(23, 59, 59, 999)
 
   return classWorkshops
     .flatMap((workshop) =>
       (workshop.schedule || []).flatMap((schedule) => {
         const days = parseScheduleDays(schedule)
         const timeLabel = parseTimeLabel(schedule)
+        const dates: Date[] = []
 
-        return days.map((dayIndex) => {
-          const weekDayOffset = (dayIndex + 6) % 7
-          const date = addDays(weekStart, weekDayOffset)
+        let date = new Date(start)
+        while (date <= end) {
+          if (days.includes(date.getDay())) dates.push(new Date(date))
+          date = addDays(date, 1)
+        }
 
+        return dates.map((date) => {
           return {
             id: `${workshop.id}-${formatDateKey(date)}-${timeLabel}`,
             workshop,

@@ -151,15 +151,37 @@
   .font-display {
     font-family: var(--font-fredericka), 'Fredericka the Great', cursive;
   }
+  .calendar-time-slot {
+    border-color: color-mix(in oklab, var(--border) 78%, transparent);
+    background:
+      linear-gradient(90deg, color-mix(in oklab, var(--success) 62%, var(--card)) 0 3px, transparent 3px),
+      color-mix(in oklab, var(--card) 82%, var(--background));
+    color: var(--foreground);
+    box-shadow: 0 1px 0 color-mix(in oklab, var(--background) 65%, transparent);
+  }
+  .calendar-time-slot:hover {
+    border-color: color-mix(in oklab, var(--success) 42%, var(--border));
+    background:
+      linear-gradient(90deg, color-mix(in oklab, var(--success) 72%, var(--card)) 0 3px, transparent 3px),
+      color-mix(in oklab, var(--success) 10%, var(--card));
+  }
+  .calendar-time-slot-selected {
+    border-color: color-mix(in oklab, var(--primary) 68%, var(--border));
+    background:
+      linear-gradient(90deg, var(--primary) 0 3px, transparent 3px),
+      color-mix(in oklab, var(--primary) 16%, var(--card));
+    box-shadow: 0 0 0 1px color-mix(in oklab, var(--primary) 35%, transparent);
+  }
   .availability-open {
     border-color: color-mix(in oklab, var(--success) 35%, transparent);
     background: color-mix(in oklab, var(--success) 14%, transparent);
     color: var(--success);
   }
   .availability-full {
-    border-color: color-mix(in oklab, var(--accent) 50%, var(--border));
-    background: color-mix(in oklab, var(--accent) 14%, var(--card));
+    border-color: color-mix(in oklab, var(--accent) 46%, var(--border));
+    background:
+      linear-gradient(90deg, color-mix(in oklab, var(--accent) 70%, var(--foreground)) 0 3px, transparent 3px),
+      color-mix(in oklab, var(--accent) 13%, var(--card));
     color: var(--foreground);
-    box-shadow: inset 3px 0 0 color-mix(in oklab, var(--accent) 70%, var(--foreground));
   }
 }

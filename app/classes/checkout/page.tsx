@@ -61,7 +61,6 @@ function ClassCheckoutContent() {
   const [people, setPeople] = useState(initialSeats.toString())
   const [whatsappPhone, setWhatsappPhone] = useState("")
   const [payOnArrivalConfirmed, setPayOnArrivalConfirmed] = useState(false)
-  const [selectedMeetingKeys, setSelectedMeetingKeys] = useState(() => meetings.map((meeting) => meeting.key))
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [error, setError] = useState("")
   const [success, setSuccess] = useState("")
@@ -69,7 +68,6 @@ function ClassCheckoutContent() {
   const selectedSeatCount = Number(people || 1)
   const total = price * selectedSeatCount
   const participantOptions = Array.from({ length: maxSeats }, (_, index) => index + 1)
-  const selectedMeetings = meetings.filter((meeting) => selectedMeetingKeys.includes(meeting.key))
 
   const handleSubmit = async () => {
     setError("")
@@ -86,13 +84,13 @@ function ClassCheckoutContent() {
     }
 
     if (prepaid) {
-      if (requiredMeetings > 0 && selectedMeetings.length !== requiredMeetings) {
-        setError(`Choose exactly ${requiredMeetings} program ${requiredMeetings === 1 ? "meeting" : "meetings"} before checkout.`)
+      if (requiredMeetings > 0 && meetings.length !== requiredMeetings) {
+        setError(`This booking needs ${requiredMeetings} available program ${requiredMeetings === 1 ? "day" : "days"} before payment.`)
         return
       }
 
-      if (selectedMeetings.length === 0) {
-        setError("Choose at least one program meeting before checkout.")
+      if (meetings.length === 0) {
+        setError("Return to the calendar and choose your program start day.")
         return
       }
       setError("Online payment is required to confirm this program. Payment checkout will be enabled once the payment gateway is connected.")
@@ -139,16 +137,32 @@ function ClassCheckoutContent() {
       <Navigation />
       <section className="border-b border-border bg-secondary/25 pt-24 pb-6">
         <div className="mx-auto max-w-5xl px-4 sm:px-6 lg:px-8">
-          <Button variant="ghost" asChild className="mb-4 px-0">
-            <Link href="/classes/calendar">
-              <ArrowLeft className="h-4 w-4" />
-              Back to calendar
-            </Link>
-          </Button>
+          <div className="mb-4">
+            <Button variant="ghost" asChild className="gap-2 px-0">
+              <Link href="/classes/calendar">
+                <ArrowLeft className="h-4 w-4" />
+                Back to calendar
+              </Link>
+            </Button>
+          </div>
           <Badge variant="secondary" className="mb-3">Checkout</Badge>
-          <h1 className="font-heading text-3xl font-bold tracking-tight text-foreground sm:text-4xl">
-            Confirm your booking.
-          </h1>
+          <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
+            <div>
+              <h1 className="font-heading text-3xl font-bold tracking-tight text-foreground sm:text-4xl">
+                Review your booking.
+              </h1>
+              <p className="mt-2 max-w-2xl text-sm leading-relaxed text-muted-foreground">
+                {prepaid
+                  ? "Check the details and add your WhatsApp number. Payment will be required to confirm this program."
+                  : "Check the details, add your WhatsApp number, then confirm the booking."}
+              </p>
+            </div>
+            <div className="flex w-fit rounded-md border border-border bg-background p-1 text-xs font-medium text-muted-foreground">
+              <span className="px-2.5 py-1">1. Choose</span>
+              <span className="rounded bg-primary px-2.5 py-1 text-primary-foreground">2. Review</span>
+              <span className="px-2.5 py-1">3. Confirm</span>
+            </div>
+          </div>
         </div>
       </section>
 
@@ -213,29 +227,16 @@ function ClassCheckoutContent() {
 
               {prepaid && (
                 <div className="rounded-lg border border-border bg-muted/35 p-4">
-                  <p className="text-sm font-semibold text-foreground">Program meetings</p>
+                  <p className="text-sm font-semibold text-foreground">Workshop days</p>
+                  <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
+                    These days were selected automatically from your starting day and time.
+                  </p>
                   <div className="mt-3 space-y-2">
                     {meetings.map((meeting) => (
-                      <label key={meeting.key} className="flex items-start gap-3 text-sm text-muted-foreground">
-                        <Checkbox
-                          checked={selectedMeetingKeys.includes(meeting.key)}
-                          disabled={
-                            requiredMeetings > 0 &&
-                            selectedMeetingKeys.includes(meeting.key) &&
-                            selectedMeetingKeys.length <= requiredMeetings
-                          }
-                          onCheckedChange={(checked) => {
-                            setSelectedMeetingKeys((current) =>
-                              checked === true
-                                ? Array.from(new Set([...current, meeting.key]))
-                                : current.filter((key) => key !== meeting.key)
-                            )
-                            setError("")
-                          }}
-                          className="mt-0.5"
-                        />
-                        <span>{meeting.dateLabel} · {meeting.timeLabel}</span>
-                      </label>
+                      <div key={meeting.key} className="flex items-center justify-between gap-3 rounded-md border border-border bg-background/60 px-3 py-2 text-sm">
+                        <span className="font-medium text-foreground">{meeting.dateLabel}</span>
+                        <span className="text-muted-foreground">{meeting.timeLabel}</span>
+                      </div>
                     ))}
                   </div>
                 </div>
@@ -267,7 +268,7 @@ function ClassCheckoutContent() {
 
               {prepaid ? (
                 <p className="rounded-md bg-muted/50 p-3 text-sm leading-relaxed text-muted-foreground">
-                  Online payment is required to confirm this program. Checkout will be enabled here once the payment gateway is connected.
+                  Online payment is required to confirm this program. This button will connect to the payment gateway once it is enabled.
                 </p>
               ) : (
                 <label className="flex items-start gap-3 text-sm leading-relaxed text-muted-foreground">
@@ -289,10 +290,10 @@ function ClassCheckoutContent() {
               <Button
                 onClick={handleSubmit}
                 className="h-12 w-full gap-2 text-base"
-                disabled={isSubmitting || maxSeats <= 0}
+                disabled={isSubmitting || maxSeats <= 0 || prepaid}
               >
                 {isSubmitting ? <Loader2 className="h-4 w-4 animate-spin" /> : <CalendarDays className="h-4 w-4" />}
-                {isSubmitting ? "Booking..." : prepaid ? "Continue to Payment" : "Confirm Booking"}
+                {isSubmitting ? "Booking..." : prepaid ? "Payment Coming Soon" : "Confirm Booking"}
               </Button>
             </CardContent>
           </Card>

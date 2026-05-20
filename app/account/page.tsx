@@ -398,7 +398,7 @@ export default function AccountDashboardPage() {
                   {workshop.schedule?.[0] || "Schedule varies"}
                 </p>
                 <Button className="mt-4 w-full" size="sm" asChild>
-                  <Link href={`/classes/calendar?class=${workshop.slug}`}>Choose Date</Link>
+                  <Link href={`/classes/book/${workshop.slug}`}>Choose Date</Link>
                 </Button>
               </CardContent>
             </Card>

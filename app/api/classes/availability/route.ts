@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server"
 import { prisma } from "@/lib/prisma"
 import {
   addDays,
+  buildDefaultRangeSessions,
   buildRangeSessionsFromSchedules,
   buildWeekSessions,
   buildWeekSessionsFromSchedules,
@@ -82,14 +83,19 @@ export async function GET(req: NextRequest) {
       },
     })
   } catch {
-    return buildAvailabilityResponse(rangeStart, buildWeekSessions(weekStart))
+    return buildAvailabilityResponse(
+      rangeStart,
+      monthStartParam ? buildDefaultRangeSessions(rangeStart, rangeEnd) : buildWeekSessions(weekStart)
+    )
   }
 
   const sessions = schedules.length > 0
     ? monthStartParam
       ? buildRangeSessionsFromSchedules(rangeStart, rangeEnd, schedules)
       : buildWeekSessionsFromSchedules(weekStart, schedules)
-    : buildWeekSessions(weekStart)
+    : monthStartParam
+      ? buildDefaultRangeSessions(rangeStart, rangeEnd)
+      : buildWeekSessions(weekStart)
   const dateKeys = Array.from(new Set(sessions.map((session) => session.dateKey)))
 
   let bookings = []

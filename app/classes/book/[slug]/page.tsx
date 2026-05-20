@@ -58,12 +58,20 @@ function addMonths(date: Date, months: number) {
 
 function monthGridDays(monthStart: Date) {
   const start = new Date(monthStart)
-  const mondayOffset = (start.getDay() + 6) % 7
-  start.setDate(start.getDate() - mondayOffset)
+  if (start.getDay() === 0) {
+    start.setDate(start.getDate() + 1)
+  } else {
+    const mondayOffset = (start.getDay() + 6) % 7
+    start.setDate(start.getDate() - mondayOffset)
+  }
 
   const end = new Date(monthStart.getFullYear(), monthStart.getMonth() + 1, 0)
-  const saturdayOffset = (6 - end.getDay() + 7) % 7
-  end.setDate(end.getDate() + saturdayOffset)
+  if (end.getDay() === 0) {
+    end.setDate(end.getDate() - 1)
+  } else {
+    const saturdayOffset = (6 - end.getDay() + 7) % 7
+    end.setDate(end.getDate() + saturdayOffset)
+  }
 
   const days: Date[] = []
   let cursor = new Date(start)
@@ -473,13 +481,20 @@ export default function ClassMonthBookingPage() {
               </h1>
               <p className="mt-3 max-w-2xl text-sm leading-relaxed text-muted-foreground sm:text-base">
                 {isMultiDaySelection
-                  ? "Choose your starting day. We will automatically show the next available workshop days for your selected time slot. If your selected time slot is unavailable for the full workshop, we will show the unavailable days in red and suggest another available time when possible."
+                  ? "Choose one starting day and time. We will automatically hold the full workshop sequence for that same time slot when the days are available."
                   : "Choose an available day, select your seats, then continue to checkout."}
               </p>
             </div>
-            <Button variant="outline" asChild>
-              <Link href={`/classes/calendar?class=${workshop?.slug || slug}`}>See full calendar</Link>
-            </Button>
+            <div className="flex flex-col gap-3 lg:items-end">
+              <div className="flex rounded-md border border-border bg-background p-1 text-xs font-medium text-muted-foreground">
+                <span className="rounded bg-primary px-2.5 py-1 text-primary-foreground">1. Choose</span>
+                <span className="px-2.5 py-1">2. Review</span>
+                <span className="px-2.5 py-1">3. Confirm</span>
+              </div>
+              <Button variant="outline" asChild>
+                <Link href={`/classes/calendar?class=${workshop?.slug || slug}`}>See full calendar</Link>
+              </Button>
+            </div>
           </div>
         </div>
       </section>
@@ -487,14 +502,17 @@ export default function ClassMonthBookingPage() {
       <section className="mx-auto grid max-w-7xl gap-6 px-4 py-8 sm:px-6 lg:grid-cols-[minmax(0,1fr)_360px] lg:px-8">
         <Card className="overflow-hidden border-border/80 bg-card/80 shadow-lg shadow-primary/5">
           <div className="flex flex-col gap-3 border-b border-border/80 bg-secondary/20 p-4 sm:flex-row sm:items-center sm:justify-between">
-            <div className="flex items-center gap-2">
-              <Button variant="ghost" size="icon" onClick={() => moveMonth(-1)} disabled={!canMovePrevious} aria-label="Previous month">
-                <ChevronLeft className="h-4 w-4" />
-              </Button>
-              <h2 className="min-w-48 text-center font-heading text-xl font-bold text-foreground">{monthLabel}</h2>
-              <Button variant="ghost" size="icon" onClick={() => moveMonth(1)} disabled={!canMoveNext} aria-label="Next month">
-                <ChevronRight className="h-4 w-4" />
-              </Button>
+            <div>
+              <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Available dates</p>
+              <div className="mt-1 flex items-center gap-2">
+                <Button variant="ghost" size="icon" onClick={() => moveMonth(-1)} disabled={!canMovePrevious} aria-label="Previous month">
+                  <ChevronLeft className="h-4 w-4" />
+                </Button>
+                <h2 className="min-w-48 text-center font-heading text-xl font-bold text-foreground">{monthLabel}</h2>
+                <Button variant="ghost" size="icon" onClick={() => moveMonth(1)} disabled={!canMoveNext} aria-label="Next month">
+                  <ChevronRight className="h-4 w-4" />
+                </Button>
+              </div>
             </div>
             <div className="flex flex-col gap-2 sm:items-end">
               <Button variant="secondary" onClick={() => setMonthStart(startOfMonth(today))}>This Month</Button>
@@ -533,7 +551,7 @@ export default function ClassMonthBookingPage() {
                     onClick={() => selectFirstSessionForDay(date)}
                     disabled={!hasSessions && !isSequenceUnavailable}
                     className={cn(
-                      "relative min-h-[104px] border-b border-r border-border/70 bg-background/25 p-2 pt-9 text-left transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring lg:min-h-[118px]",
+                      "relative min-h-[92px] border-b border-r border-border/70 bg-background/25 p-2 pt-9 text-left transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring lg:min-h-[104px]",
                       !isCurrentMonth && "bg-muted/15 text-muted-foreground/50",
                       hasSessions && "hover:bg-secondary/25",
                       !hasSessions && "cursor-default",
@@ -562,6 +580,7 @@ export default function ClassMonthBookingPage() {
                             const isFull = left <= 0
                             const isSequenceSession = sequenceDay?.session?.id === session.id
                             const isUnavailableSequenceSession = Boolean(isSequenceSession && sequenceDay && !sequenceDay.available)
+                            const isActiveSession = selectedSession?.id === session.id || Boolean(isMultiDaySelection && isSequenceSession && sequenceDay?.available)
                             return (
                               <span
                                 key={session.id}
@@ -581,35 +600,33 @@ export default function ClassMonthBookingPage() {
                                   }
                                 }}
                                 className={cn(
-                                  "block rounded-md border px-2 py-1.5 text-xs font-semibold shadow-sm transition hover:translate-y-[-1px] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
-                                  isFull || isUnavailableSequenceSession ? "availability-full" : "availability-open"
+                                  "calendar-time-slot block rounded-md border py-1.5 pl-3 pr-2 text-xs font-semibold transition hover:translate-y-[-1px] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+                                  isFull || isUnavailableSequenceSession ? "availability-full" : "availability-open",
+                                  isActiveSession && !isFull && !isUnavailableSequenceSession && "calendar-time-slot-selected"
                                 )}
                                 title={isUnavailableSequenceSession ? sequenceDay?.reason : undefined}
                               >
                                 <span className="flex items-center justify-between gap-2">
-                                  <span>{formatStartTime(session.timeLabel)}</span>
-                                  <span>{left}/{max}</span>
+                                  <span className="tracking-wide">{formatStartTime(session.timeLabel)}</span>
+                                  <span className="rounded-sm bg-background/45 px-1.5 py-0.5 font-mono text-[11px] tabular-nums">{left}/{max}</span>
                                 </span>
-                                {isMultiDaySelection && isSequenceSession && sequenceDay?.available && (
-                                  <span className="mt-1 block font-semibold text-primary">Selected</span>
-                                )}
                               </span>
                             )
                           })}
                           {isSequenceUnavailable && !sequenceSessionShown && (
-                            <span className="block rounded-md border px-2 py-1.5 text-xs font-semibold shadow-sm availability-full" title={sequenceDay?.reason}>
+                            <span className="calendar-time-slot block rounded-md border py-1.5 pl-3 pr-2 text-xs font-semibold shadow-sm availability-full" title={sequenceDay?.reason}>
                               <span className="flex items-center justify-between gap-2">
-                                <span>{selectedSession ? formatStartTime(selectedSession.timeLabel) : "Selected time"}</span>
-                                <span>0/{selectedSession?.maxParticipants ?? selectedSession?.workshop.maxParticipants ?? 3}</span>
+                                <span className="tracking-wide">{selectedSession ? formatStartTime(selectedSession.timeLabel) : "Selected time"}</span>
+                                <span className="rounded-sm bg-background/45 px-1.5 py-0.5 font-mono text-[11px] tabular-nums">0/{selectedSession?.maxParticipants ?? selectedSession?.workshop.maxParticipants ?? 3}</span>
                               </span>
                             </span>
                           )}
                         </>
                       ) : isSequenceUnavailable ? (
-                        <span className="block rounded-md border px-2 py-1.5 text-xs font-semibold shadow-sm availability-full" title={sequenceDay?.reason}>
+                        <span className="calendar-time-slot block rounded-md border py-1.5 pl-3 pr-2 text-xs font-semibold shadow-sm availability-full" title={sequenceDay?.reason}>
                           <span className="flex items-center justify-between gap-2">
-                            <span>{selectedSession ? formatStartTime(selectedSession.timeLabel) : "Selected time"}</span>
-                            <span>0/{selectedSession?.maxParticipants ?? selectedSession?.workshop.maxParticipants ?? 3}</span>
+                            <span className="tracking-wide">{selectedSession ? formatStartTime(selectedSession.timeLabel) : "Selected time"}</span>
+                            <span className="rounded-sm bg-background/45 px-1.5 py-0.5 font-mono text-[11px] tabular-nums">0/{selectedSession?.maxParticipants ?? selectedSession?.workshop.maxParticipants ?? 3}</span>
                           </span>
                         </span>
                       ) : isCurrentMonth && date.getDay() === 0 ? (
@@ -683,6 +700,7 @@ export default function ClassMonthBookingPage() {
                                     const isFull = left <= 0
                                     const isSequenceSession = sequenceDay?.session?.id === session.id
                                     const isUnavailableSequenceSession = Boolean(isSequenceSession && sequenceDay && !sequenceDay.available)
+                                    const isActiveSession = selectedSession?.id === session.id || Boolean(isMultiDaySelection && isSequenceSession && sequenceDay?.available)
                                     return (
                                       <span
                                         key={session.id}
@@ -702,35 +720,33 @@ export default function ClassMonthBookingPage() {
                                           }
                                         }}
                                         className={cn(
-                                          "block rounded-md border px-2 py-1.5 text-xs font-semibold transition hover:translate-y-[-1px] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
-                                          isFull || isUnavailableSequenceSession ? "availability-full" : "availability-open"
+                                          "calendar-time-slot block rounded-md border py-1.5 pl-3 pr-2 text-xs font-semibold transition hover:translate-y-[-1px] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+                                          isFull || isUnavailableSequenceSession ? "availability-full" : "availability-open",
+                                          isActiveSession && !isFull && !isUnavailableSequenceSession && "calendar-time-slot-selected"
                                         )}
                                         title={isUnavailableSequenceSession ? sequenceDay?.reason : undefined}
                                       >
                                         <span className="flex items-center justify-between gap-2">
-                                          <span>{formatStartTime(session.timeLabel)}</span>
-                                          <span>{left}/{max}</span>
+                                          <span className="tracking-wide">{formatStartTime(session.timeLabel)}</span>
+                                          <span className="rounded-sm bg-background/45 px-1.5 py-0.5 font-mono text-[11px] tabular-nums">{left}/{max}</span>
                                         </span>
-                                        {isMultiDaySelection && isSequenceSession && sequenceDay?.available && (
-                                          <span className="mt-1 block font-semibold text-primary">Selected</span>
-                                        )}
                                       </span>
                                     )
                                   })}
                                   {isSequenceUnavailable && !sequenceSessionShown && (
-                                    <span className="block rounded-md border px-2 py-1.5 text-xs font-semibold availability-full" title={sequenceDay?.reason}>
+                                    <span className="calendar-time-slot block rounded-md border py-1.5 pl-3 pr-2 text-xs font-semibold availability-full" title={sequenceDay?.reason}>
                                       <span className="flex items-center justify-between gap-2">
-                                        <span>{selectedSession ? formatStartTime(selectedSession.timeLabel) : "Selected time"}</span>
-                                        <span>0/{selectedSession?.maxParticipants ?? selectedSession?.workshop.maxParticipants ?? 3}</span>
+                                        <span className="tracking-wide">{selectedSession ? formatStartTime(selectedSession.timeLabel) : "Selected time"}</span>
+                                        <span className="rounded-sm bg-background/45 px-1.5 py-0.5 font-mono text-[11px] tabular-nums">0/{selectedSession?.maxParticipants ?? selectedSession?.workshop.maxParticipants ?? 3}</span>
                                       </span>
                                     </span>
                                   )}
                                 </>
                               ) : isSequenceUnavailable ? (
-                                <span className="block rounded-md border px-2 py-1.5 text-xs font-semibold availability-full" title={sequenceDay?.reason}>
+                                <span className="calendar-time-slot block rounded-md border py-1.5 pl-3 pr-2 text-xs font-semibold availability-full" title={sequenceDay?.reason}>
                                   <span className="flex items-center justify-between gap-2">
-                                    <span>{selectedSession ? formatStartTime(selectedSession.timeLabel) : "Selected time"}</span>
-                                    <span>0/{selectedSession?.maxParticipants ?? selectedSession?.workshop.maxParticipants ?? 3}</span>
+                                    <span className="tracking-wide">{selectedSession ? formatStartTime(selectedSession.timeLabel) : "Selected time"}</span>
+                                    <span className="rounded-sm bg-background/45 px-1.5 py-0.5 font-mono text-[11px] tabular-nums">0/{selectedSession?.maxParticipants ?? selectedSession?.workshop.maxParticipants ?? 3}</span>
                                   </span>
                                 </span>
                               ) : (
@@ -751,7 +767,7 @@ export default function ClassMonthBookingPage() {
           <Card className="border-border">
             <CardContent className="space-y-5 p-6">
               <div>
-                <p className="text-sm font-semibold text-foreground">Selected booking</p>
+                <p className="text-sm font-semibold text-foreground">Booking summary</p>
                 {displaySession ? (
                   <div className="mt-4 space-y-3">
                     <div>
@@ -834,9 +850,12 @@ export default function ClassMonthBookingPage() {
                     )}
                   </div>
                 ) : (
-                  <p className="mt-3 text-sm leading-relaxed text-muted-foreground">
-                    Select a day with availability to build your booking.
-                  </p>
+                  <div className="mt-4 rounded-lg border border-dashed border-border bg-muted/25 p-4">
+                    <p className="text-sm font-medium text-foreground">Select a date and time</p>
+                    <p className="mt-1 text-sm leading-relaxed text-muted-foreground">
+                      Choose an available slot from the calendar. Your booking details and price will appear here before checkout.
+                    </p>
+                  </div>
                 )}
               </div>
 
@@ -878,7 +897,7 @@ export default function ClassMonthBookingPage() {
                       <CalendarDays className="h-4 w-4" />
                       {isMultiDaySelection && !canContinue
                         ? "Choose another start time"
-                        : "Continue to Checkout"}
+                        : "Review Booking"}
                     </Link>
                   </Button>
                 </>

@@ -89,7 +89,7 @@ export function ClassesPreview() {
                       </p>
                     </div>
                     <Button size="sm" asChild>
-                      <Link href={`/classes/calendar?class=${workshop.slug}`}>Book Now</Link>
+                      <Link href={`/classes/book/${workshop.slug}`}>Book Now</Link>
                     </Button>
                   </div>
                 </CardContent>
