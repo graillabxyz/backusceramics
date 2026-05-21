@@ -17,7 +17,7 @@ export default function AdminSettingsPage() {
     description: "A ceramics studio in Bali offering residency programs, pottery classes, and handcrafted ceramic pieces.",
     email: "info@backusceramics.com",
     phone: "",
-    address: "Bali, Indonesia",
+    address: "Jl. Bantan Kangin No.1, Canggu, Kec. Kuta Utara, Kabupaten Badung, Bali 80631",
     instagram: "@backusceramics",
   })
 

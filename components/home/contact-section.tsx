@@ -76,8 +76,8 @@ export function ContactSection() {
             <div className="flex items-start gap-4 mb-10">
               <MapPin className="h-6 w-6 text-primary flex-shrink-0 mt-1" />
               <div>
-                <p className="font-medium">Bali, Indonesia</p>
-                <p className="text-sm text-muted-foreground mb-3">Jl. Raya Kerobokan, Kuta Utara, Bali</p>
+                <p className="font-medium">Canggu, Bali</p>
+                <p className="text-sm text-muted-foreground mb-3">Jl. Bantan Kangin No.1, Canggu, Kec. Kuta Utara, Kabupaten Badung, Bali 80631</p>
                 <Button asChild variant="outline" size="sm" className="h-8">
                   <a href="https://maps.app.goo.gl/d5FvjdfKAk6iSwrK8" target="_blank" rel="noopener noreferrer">
                     Get Directions

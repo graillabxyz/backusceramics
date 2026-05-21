@@ -174,10 +174,10 @@ export default function ContactPage() {
                   <div>
                     <h3 className="font-medium text-foreground mb-1">Location</h3>
                     <p className="text-muted-foreground">
-                      Bali, Indonesia
+                      Canggu, Bali
                     </p>
                     <p className="text-sm text-muted-foreground mt-1 mb-3">
-                      Jl. Raya Kerobokan, Kuta Utara, Bali
+                      Jl. Bantan Kangin No.1, Canggu, Kec. Kuta Utara, Kabupaten Badung, Bali 80631
                     </p>
                     <Button asChild variant="outline" size="sm" className="h-8">
                       <a href="https://maps.app.goo.gl/d5FvjdfKAk6iSwrK8" target="_blank" rel="noopener noreferrer">

@@ -158,6 +158,15 @@ export default function ResidencyBookingPage() {
     return residencySlots
   }
 
+  function orderedSlotsForDate(dateKey: string, nextFocus = focus) {
+    const date = parseDateKey(dateKey)
+    const slots = orderedSlotsForFocus(nextFocus)
+    if (date.getDay() === 6) {
+      return slots.filter((slot) => slot.workshopId === "beginner-wheel" && slot.timeLabel === "12:00 - 14:00 PM")
+    }
+    return slots
+  }
+
   function getSlotAvailability(dateKey: string, slot: ResidencySlot) {
     const session = sessionsByKey.get(`${slot.workshopId}|${dateKey}|${slot.timeLabel}`)
     if (!session) return { availableSeats: 0, maxParticipants: slot.capacity, session: null }
@@ -168,7 +177,7 @@ export default function ResidencyBookingPage() {
   }
 
   function suggestedSlotForDate(dateKey: string) {
-    return orderedSlotsForFocus().find((slot) => getSlotAvailability(dateKey, slot).availableSeats > 0)
+    return orderedSlotsForDate(dateKey).find((slot) => getSlotAvailability(dateKey, slot).availableSeats > 0)
   }
 
   function selectDay(date: Date) {
@@ -214,7 +223,7 @@ export default function ResidencyBookingPage() {
             const offering = getScheduleOffering(session.workshopId)
             if (!offering || !["beginner-wheel", "handbuilding"].includes(offering.id)) return null
             const date = parseDateKey(session.dateKey)
-            if (date.getDay() === 0 || date.getDay() === 6) return null
+            if (date.getDay() === 0) return null
             if (!isSameOrAfter(date, today) || !isSameOrBefore(date, bookingWindowEnd)) return null
             return {
               id: session.id,
@@ -253,7 +262,7 @@ export default function ResidencyBookingPage() {
       const next: Record<string, SelectedDay> = {}
       for (const day of Object.values(current)) {
         const currentSlot = residencySlots.find((slot) => slot.timeLabel === day.timeLabel)
-        const allowed = currentSlot && orderedSlotsForFocus().some((slot) => slot.timeLabel === currentSlot.timeLabel)
+        const allowed = currentSlot && orderedSlotsForDate(day.dateKey).some((slot) => slot.timeLabel === currentSlot.timeLabel)
         if (manualTimes && allowed && getSlotAvailability(day.dateKey, currentSlot).availableSeats > 0) {
           next[day.dateKey] = day
         } else {
@@ -341,29 +350,67 @@ export default function ResidencyBookingPage() {
       <section className="mx-auto grid max-w-7xl gap-6 px-4 py-8 sm:px-6 lg:grid-cols-[minmax(0,1fr)_380px] lg:px-8">
         <div className="space-y-6">
           <Card className="border-border">
-            <CardContent className="space-y-5 p-5">
-              <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_280px]">
-                <div>
-                  <Label className="text-sm font-semibold text-foreground">Focus</Label>
-                  <div className="mt-2 grid gap-2 sm:grid-cols-3">
+            <CardContent className="p-5 sm:p-6">
+              <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_340px] lg:items-start">
+                <div className="space-y-4">
+                  <div>
+                    <Badge variant="secondary" className="mb-3">Step 1</Badge>
+                    <h2 className="font-heading text-2xl font-bold text-foreground">Set your studio focus.</h2>
+                    <p className="mt-2 max-w-2xl text-sm leading-relaxed text-muted-foreground">
+                      Choose the kind of work you want to prioritize. We will suggest a steady weekly rhythm, and you can take over the exact times if you prefer.
+                    </p>
+                  </div>
+
+                  <div>
+                    <Label className="text-sm font-semibold text-foreground">Focus area</Label>
+                    <div className="mt-2 grid gap-2 sm:grid-cols-3">
                     {(["wheel", "handbuilding", "mix"] as ResidencyFocus[]).map((option) => (
-                      <button key={option} type="button" onClick={() => setFocus(option)} className={cn("rounded-md border px-3 py-2 text-left text-sm transition", focus === option ? "border-primary bg-primary text-primary-foreground" : "border-border bg-background hover:bg-secondary/40")}>
-                        {focusLabel(option)}
+                      <button
+                        key={option}
+                        type="button"
+                        onClick={() => setFocus(option)}
+                        className={cn(
+                          "min-h-20 rounded-md border px-4 py-3 text-left text-sm font-semibold transition",
+                          focus === option
+                            ? "border-primary bg-primary text-primary-foreground shadow-sm"
+                            : "border-border bg-background/70 text-foreground hover:bg-secondary/40"
+                        )}
+                      >
+                        <span>{focusLabel(option)}</span>
                       </button>
                     ))}
+                    </div>
                   </div>
                 </div>
-                <div className="flex items-center justify-between gap-4 rounded-lg border border-border bg-muted/30 p-4">
-                  <div>
-                    <p className="text-sm font-semibold text-foreground">Select times manually</p>
-                    <p className="mt-1 text-xs text-muted-foreground">Otherwise we place each day at 10am, then 12pm, then 2pm when needed.</p>
+
+                <div className="space-y-3 rounded-lg border border-border bg-muted/25 p-4">
+                  <div className="flex items-start justify-between gap-4">
+                    <div>
+                      <p className="text-sm font-semibold text-foreground">Time selection</p>
+                      <p className="mt-1 text-sm leading-relaxed text-muted-foreground">
+                        Auto-assign each day at 10am first, then 12pm, then 2pm when needed.
+                      </p>
+                    </div>
+                    <Switch checked={manualTimes} onCheckedChange={setManualTimes} aria-label="Select times manually" />
                   </div>
-                  <Switch checked={manualTimes} onCheckedChange={setManualTimes} />
+                  <div className="rounded-md border border-border bg-background/60 px-3 py-2">
+                    <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                      {manualTimes ? "Manual mode on" : "Automatic mode on"}
+                    </p>
+                    <p className="mt-1 text-sm text-foreground">
+                      {manualTimes
+                        ? "Choose the time for each selected residency day in the summary panel."
+                        : "We will place each selected day into the earliest available matching slot."}
+                    </p>
+                  </div>
                 </div>
               </div>
-              <p className="rounded-lg border border-border bg-secondary/20 p-3 text-sm leading-relaxed text-muted-foreground">
-                Choose 5 days in each residency week. We avoid kids classes and only use regular studio slots that can support resident work.
-              </p>
+
+              <div className="mt-5 rounded-lg border border-border bg-secondary/20 px-4 py-3">
+                <p className="text-sm leading-relaxed text-muted-foreground">
+                Choose 5 days in each residency week. We avoid kids classes and only use regular studio slots that can support resident work, including the 12pm Saturday slot when available.
+                </p>
+              </div>
             </CardContent>
           </Card>
 
@@ -382,7 +429,7 @@ export default function ResidencyBookingPage() {
                 {weekdayLabels.map((label) => <div key={label} className="px-4 py-3 text-center text-xs font-semibold uppercase tracking-wide text-muted-foreground">{label}</div>)}
               </div>
               <div className="hidden grid-cols-6 md:grid">
-                {gridDays.map((date) => {
+                {gridDays.map((date, index) => {
                   const dateKey = formatDateKey(date)
                   const inCurrentMonth = date.getMonth() === monthStart.getMonth()
                   const inWindow = isSameOrAfter(date, today) && isSameOrBefore(date, bookingWindowEnd)
@@ -391,12 +438,13 @@ export default function ResidencyBookingPage() {
                   const weekCount = selectedWeekCounts.get(weekKey(date)) || 0
                   const disabled = !inCurrentMonth || !inWindow || !suggested || (!selected && (selectedCount >= requiredDays || weekCount >= 5))
                   const isToday = dateKey === formatDateKey(today)
+                  const isLastRow = index >= gridDays.length - 6
                   return (
-                    <button key={dateKey} type="button" onClick={() => selectDay(date)} disabled={disabled && !selected} className={cn("min-h-36 border-b border-r border-border p-3 text-left transition", inCurrentMonth ? "bg-background hover:bg-secondary/20" : "bg-muted/20 text-muted-foreground", selected && "bg-primary/10 ring-2 ring-inset ring-primary", disabled && !selected && "cursor-default opacity-45")}>
+                    <button key={dateKey} type="button" onClick={() => selectDay(date)} disabled={disabled && !selected} className={cn("min-h-36 border-r border-border p-3 text-left transition", !isLastRow && "border-b", inCurrentMonth ? "bg-background hover:bg-secondary/20" : "bg-muted/20 text-muted-foreground", selected && "bg-primary/10 ring-2 ring-inset ring-primary", disabled && !selected && "cursor-default opacity-45")}>
                       <span className={cn("flex h-8 w-8 items-center justify-center rounded-full text-sm font-bold", isToday && "bg-primary text-primary-foreground")}>{date.getDate()}</span>
                       {inCurrentMonth && inWindow && (
                         <div className="mt-5 space-y-1.5">
-                          {orderedSlotsForFocus().map((slot) => {
+                          {orderedSlotsForDate(dateKey).map((slot) => {
                             const slotAvailability = getSlotAvailability(dateKey, slot)
                             return (
                               <span key={`${dateKey}-${slot.timeLabel}`} className={cn("block rounded-md border px-2 py-1 text-xs font-semibold", slotAvailability.availableSeats > 0 ? "border-olive-moss/50 text-olive-moss" : "border-destructive/50 text-destructive", selected?.timeLabel === slot.timeLabel && "border-primary bg-primary text-primary-foreground")}>
@@ -425,7 +473,7 @@ export default function ResidencyBookingPage() {
                         <span className="mt-1 block text-xl font-bold text-foreground">{date.getDate()}</span>
                       </div>
                       <div className="space-y-1.5">
-                        {orderedSlotsForFocus().map((slot) => {
+                        {orderedSlotsForDate(dateKey).map((slot) => {
                           const slotAvailability = getSlotAvailability(dateKey, slot)
                           return (
                             <span key={slot.timeLabel} className={cn("flex items-center justify-between rounded-md border px-2 py-1 text-xs font-semibold", slotAvailability.availableSeats > 0 ? "border-olive-moss/50 text-olive-moss" : "border-destructive/50 text-destructive", selected?.timeLabel === slot.timeLabel && "border-primary bg-primary text-primary-foreground")}>
@@ -465,7 +513,7 @@ export default function ResidencyBookingPage() {
                         <Select value={day.timeLabel} onValueChange={(value) => updateSelectedTime(day.dateKey, value)}>
                           <SelectTrigger className="h-8 text-xs"><SelectValue /></SelectTrigger>
                           <SelectContent>
-                            {orderedSlotsForFocus().map((slot) => {
+                            {orderedSlotsForDate(day.dateKey).map((slot) => {
                               const slotAvailability = getSlotAvailability(day.dateKey, slot)
                               return <SelectItem key={slot.timeLabel} value={slot.timeLabel} disabled={slotAvailability.availableSeats <= 0}>{formatStartTime(slot.timeLabel)} · {slotAvailability.availableSeats}/{slotAvailability.maxParticipants}</SelectItem>
                             })}

@@ -31,6 +31,7 @@ export const workshops: Workshop[] = [
     schedule: [
       "Monday - Friday: 10:00 - 12:00 PM",
       "Monday - Friday: 12:00 - 14:00 PM",
+      "Saturday: 12:00 - 14:00 PM",
       "Saturday: 14:00 - 16:00 PM"
     ],
     features: [
