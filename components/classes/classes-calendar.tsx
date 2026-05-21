@@ -13,8 +13,9 @@ import {
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { useAuth } from "@/lib/auth-context"
-import { formatPrice } from "@/lib/classes-data"
+import { formatPrice, workshops } from "@/lib/classes-data"
 import {
   addDays,
   CalendarAvailability,
@@ -48,6 +49,31 @@ interface ProgramMeeting {
   timeLabel: string
 }
 
+interface WorkshopSequenceDay {
+  date: Date
+  dateKey: string
+  session?: CalendarSession
+  available: boolean
+  reason?: string
+}
+
+interface WorkshopSequence {
+  startSession?: CalendarSession
+  days: WorkshopSequenceDay[]
+  isComplete: boolean
+  hasUnavailableDays: boolean
+  hasNonSuccessiveDays: boolean
+  clayGapBlocked: boolean
+  warning?: string
+  blocker?: string
+}
+
+const multiDayWorkshopIds = ["3-day-workshop", "6-day-workshop"]
+const requiredMultiDaySelections: Record<string, number> = {
+  "3-day-workshop": 3,
+  "6-day-workshop": 6,
+}
+
 function formatLongDate(date: Date) {
   return date.toLocaleDateString("en-US", {
     weekday: "long",
@@ -69,6 +95,10 @@ function getSessionFilter(session: CalendarSession): CalendarFilter {
   return "all"
 }
 
+function isMultiDayWorkshop(session?: CalendarSession) {
+  return Boolean(session && multiDayWorkshopIds.includes(session.workshop.id))
+}
+
 const filterLabels: Record<CalendarFilter, string> = {
   all: "All",
   wheel: "Wheel",
@@ -81,44 +111,30 @@ const filterLabels: Record<CalendarFilter, string> = {
 const bookingTypeCards: Array<{
   filter: CalendarFilter
   title: string
-  eyebrow: string
-  description: string
 }> = [
   {
     filter: "all",
     title: "All Classes",
-    eyebrow: "Studio calendar",
-    description: "Browse every available class, workshop, and event.",
   },
   {
     filter: "wheel",
-    title: "Beginner Wheel Single Day",
-    eyebrow: "Wheel class",
-    description: "A two-hour wheel session with up to 3 students.",
+    title: "Wheel",
   },
   {
     filter: "handbuilding",
-    title: "Handbuilding Single Day",
-    eyebrow: "Handbuilding",
-    description: "A guided handbuilding class with up to 8 students.",
+    title: "Handbuilding",
   },
   {
     filter: "kids",
-    title: "Kids & Family Workshop",
-    eyebrow: "Family session",
-    description: "Playful clay sessions for children and families.",
+    title: "Kids & Family",
   },
   {
     filter: "multi-day",
-    title: "3 & 6 Day / Week Programs",
-    eyebrow: "Programs",
-    description: "Choose the exact meetings and pay online to confirm.",
+    title: "3 & 6 Day",
   },
   {
     filter: "events",
     title: "Private Events",
-    eyebrow: "Events",
-    description: "Birthday ateliers, private groups, and special sessions.",
   },
 ]
 
@@ -132,6 +148,31 @@ function isPrepaidProgram(session?: CalendarSession) {
   )
 }
 
+function isWorkshopDay(date: Date) {
+  return date.getDay() !== 0
+}
+
+function daysBetween(first: Date, second: Date) {
+  const dayMs = 24 * 60 * 60 * 1000
+  const start = new Date(first)
+  const end = new Date(second)
+  start.setHours(0, 0, 0, 0)
+  end.setHours(0, 0, 0, 0)
+  return Math.round((end.getTime() - start.getTime()) / dayMs)
+}
+
+function formatStartTime(timeLabel: string) {
+  const [start = timeLabel] = timeLabel.split("-")
+  const match = start.trim().match(/^(\d{1,2})(?::(\d{2}))?/)
+  if (!match) return start.trim()
+
+  const hour = Number(match[1])
+  const minute = match[2] || "00"
+  const suffix = hour >= 12 ? "pm" : "am"
+  const displayHour = hour > 12 ? hour - 12 : hour
+  return `${displayHour}${minute === "00" ? "" : `:${minute}`}${suffix}`
+}
+
 export function ClassesCalendar({ initialClass }: ClassesCalendarProps) {
   const today = useMemo(() => {
     const date = new Date()
@@ -141,6 +182,7 @@ export function ClassesCalendar({ initialClass }: ClassesCalendarProps) {
   const [weekStart, setWeekStart] = useState(() => startOfWeek(today))
   const [sessions, setSessions] = useState<CalendarSession[]>([])
   const [selectedSessionId, setSelectedSessionId] = useState("")
+  const [selectedMultiDayWorkshopId, setSelectedMultiDayWorkshopId] = useState("3-day-workshop")
   const [activeFilter, setActiveFilter] = useState<CalendarFilter>("all")
   const [availability, setAvailability] = useState<Record<string, CalendarAvailability>>({})
   const [availabilityLoading, setAvailabilityLoading] = useState(true)
@@ -149,19 +191,36 @@ export function ClassesCalendar({ initialClass }: ClassesCalendarProps) {
 
   const studioDays = useMemo(() => Array.from({ length: 6 }, (_, index) => addDays(weekStart, index)), [weekStart])
   const weekLabel = `${weekStart.toLocaleDateString("en-US", { month: "short", day: "numeric" })} - ${addDays(weekStart, 6).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}`
+  const weekSessions = useMemo(() => {
+    const weekKeys = new Set(studioDays.map(formatDateKey))
+    return sessions.filter((session) => weekKeys.has(session.dateKey))
+  }, [sessions, studioDays])
   const visibleSessions = useMemo(() => {
     return activeFilter === "all"
-      ? sessions
-      : sessions.filter((session) => getSessionFilter(session) === activeFilter)
-  }, [activeFilter, sessions])
+      ? weekSessions
+      : weekSessions.filter((session) => getSessionFilter(session) === activeFilter)
+  }, [activeFilter, weekSessions])
   const selectedVisibleSession = visibleSessions.find((session) => session.id === selectedSessionId) || visibleSessions[0]
   const activeSession = selectedVisibleSession
+  const selectedMultiDayWorkshop = workshops.find((workshop) => workshop.id === selectedMultiDayWorkshopId)
+  const selectedMultiDaySession = activeSession && isMultiDayWorkshop(activeSession)
+    ? sessions.find(
+        (session) =>
+          session.workshop.id === selectedMultiDayWorkshopId &&
+          session.dateKey === activeSession.dateKey &&
+          session.timeLabel === activeSession.timeLabel
+      ) || activeSession
+    : null
+  const activeCheckoutSession = selectedMultiDaySession || activeSession
+  const activeWorkshop = selectedMultiDaySession ? selectedMultiDayWorkshop || selectedMultiDaySession.workshop : activeSession?.workshop
   const activeMaxParticipants = activeSession?.maxParticipants ?? activeSession?.workshop.maxParticipants ?? 8
   const selectedAvailability = activeSession ? availability[activeSession.id] : undefined
   const activeAvailableSeats = selectedAvailability?.availableSeats ?? activeMaxParticipants
-  const prepaidProgram = isPrepaidProgram(activeSession)
+  const isMultiDaySelection = isMultiDayWorkshop(activeSession)
+  const requiredProgramDays = isMultiDaySelection ? requiredMultiDaySelections[selectedMultiDayWorkshopId] || 0 : 0
+  const prepaidProgram = isMultiDaySelection || isPrepaidProgram(activeSession)
   const filterCounts = useMemo(() => {
-    return sessions.reduce<Record<CalendarFilter, number>>(
+    return weekSessions.reduce<Record<CalendarFilter, number>>(
       (counts, session) => {
         counts.all += 1
         counts[getSessionFilter(session)] += 1
@@ -169,8 +228,90 @@ export function ClassesCalendar({ initialClass }: ClassesCalendarProps) {
       },
       { all: 0, wheel: 0, handbuilding: 0, kids: 0, "multi-day": 0, events: 0 }
     )
-  }, [sessions])
+  }, [weekSessions])
+  const buildSequenceForSession = (startSession: CalendarSession, workshopId: string): WorkshopSequence => {
+    const requiredDays = requiredMultiDaySelections[workshopId] || 0
+    const sequenceDays: WorkshopSequenceDay[] = []
+    let cursor = new Date(startSession.date)
+
+    while (sequenceDays.length < requiredDays) {
+      if (!isWorkshopDay(cursor)) {
+        cursor = addDays(cursor, 1)
+        continue
+      }
+
+      const dateKey = formatDateKey(cursor)
+      const matchingSession = sessions.find(
+        (session) =>
+          session.workshop.id === workshopId &&
+          session.dateKey === dateKey &&
+          session.timeLabel === startSession.timeLabel
+      )
+      const matchingAvailability = matchingSession ? availability[matchingSession.id] : undefined
+      const availableSeatsForDay = matchingSession
+        ? matchingAvailability?.availableSeats ?? matchingSession.maxParticipants ?? matchingSession.workshop.maxParticipants ?? 0
+        : 0
+      const available = Boolean(matchingSession && availableSeatsForDay > 0)
+
+      sequenceDays.push({
+        date: new Date(cursor),
+        dateKey,
+        session: matchingSession,
+        available,
+        reason: available ? undefined : "This selected time slot is already fully booked or unavailable.",
+      })
+
+      cursor = addDays(cursor, 1)
+    }
+
+    const gaps = sequenceDays.slice(1).map((day, index) => daysBetween(sequenceDays[index].date, day.date))
+    const hasNonSuccessiveDays = gaps.some((gap) => gap > 1)
+    const clayGapBlocked = gaps.some((gap) => gap > 2)
+    const hasUnavailableDays = sequenceDays.some((day) => !day.available)
+
+    return {
+      startSession,
+      days: sequenceDays,
+      isComplete: sequenceDays.length === requiredDays && !hasUnavailableDays && !clayGapBlocked,
+      hasUnavailableDays,
+      hasNonSuccessiveDays,
+      clayGapBlocked,
+      warning: hasNonSuccessiveDays
+        ? "These workshop days are not all successive. Clay normally dries and is ready for trimming the next calendar day. It can be covered and held for one extra day if needed."
+        : undefined,
+      blocker: clayGapBlocked
+        ? "This sequence leaves clay waiting more than 2 days before the next workshop day, so it cannot be booked."
+        : hasUnavailableDays
+          ? "One or more required workshop days are unavailable in this time slot."
+          : undefined,
+    }
+  }
+  const selectedSequence = isMultiDaySelection && selectedMultiDaySession
+    ? buildSequenceForSession(selectedMultiDaySession, selectedMultiDayWorkshopId)
+    : null
+  const activeSelectedSessions = selectedSequence?.days.flatMap((day) => (day.session ? [day.session] : [])) || []
+  const programAvailableSeats = activeSelectedSessions.length > 0
+    ? Math.min(
+        ...activeSelectedSessions.map((session) =>
+          availability[session.id]?.availableSeats ?? session.maxParticipants ?? session.workshop.maxParticipants ?? 1
+        )
+      )
+    : 0
+  const purchasableSeats = isMultiDaySelection ? programAvailableSeats : activeAvailableSeats
   const programMeetingOptions = useMemo<ProgramMeeting[]>(() => {
+    if (isMultiDaySelection) {
+      return selectedSequence?.days.flatMap((day) =>
+        day.session
+          ? [{
+              key: `${day.session.dateKey}|${day.session.timeLabel}`,
+              dateKey: day.session.dateKey,
+              date: day.session.date,
+              timeLabel: day.session.timeLabel,
+            }]
+          : []
+      ) || []
+    }
+
     if (!activeSession || !prepaidProgram) return []
 
     const startDate = activeSession.scheduleStartDate || activeSession.date
@@ -193,7 +334,7 @@ export function ClassesCalendar({ initialClass }: ClassesCalendarProps) {
     }
 
     return meetings
-  }, [activeSession, prepaidProgram])
+  }, [activeSession, isMultiDaySelection, prepaidProgram, selectedSequence])
 
   useEffect(() => {
     let ignore = false
@@ -201,15 +342,18 @@ export function ClassesCalendar({ initialClass }: ClassesCalendarProps) {
     async function loadAvailability() {
       setAvailabilityLoading(true)
       try {
-        const res = await fetch(`/api/classes/availability?weekStart=${formatDateKey(weekStart)}`)
-        if (!res.ok) throw new Error("Could not load availability")
-        const data = await res.json()
+        const responses = await Promise.all([
+          fetch(`/api/classes/availability?weekStart=${formatDateKey(weekStart)}`),
+          fetch(`/api/classes/availability?weekStart=${formatDateKey(addDays(weekStart, 7))}`),
+        ])
+        if (responses.some((res) => !res.ok)) throw new Error("Could not load availability")
+        const weeks = await Promise.all(responses.map((res) => res.json()))
         if (ignore) return
 
         const nextAvailability = Object.fromEntries(
-          (data.availability as CalendarAvailability[]).map((item) => [item.sessionId, item])
+          weeks.flatMap((data) => data.availability as CalendarAvailability[]).map((item) => [item.sessionId, item])
         )
-        const nextSessions = (data.sessions || [])
+        const nextSessions = weeks.flatMap((data) => data.sessions || [])
           .map((session: {
             id: string
             scheduleId?: string
@@ -234,7 +378,7 @@ export function ClassesCalendar({ initialClass }: ClassesCalendarProps) {
               dateKey: session.dateKey,
               timeLabel: session.timeLabel,
               scheduleLabel: session.category,
-              sortHour: 0,
+              sortHour: Number.parseInt(session.timeLabel, 10) || 0,
               maxParticipants: session.maxParticipants,
               scheduleTitle: session.title,
               scheduleCategory: session.category,
@@ -247,9 +391,12 @@ export function ClassesCalendar({ initialClass }: ClassesCalendarProps) {
 
         setSessions(nextSessions)
         setAvailability(nextAvailability)
+        const currentWeekKeys = new Set(Array.from({ length: 6 }, (_, index) => formatDateKey(addDays(weekStart, index))))
+        const nextWeekSessions = nextSessions.filter((session) => currentWeekKeys.has(session.dateKey))
+
         setSelectedSessionId((current) => {
-          if (nextSessions.some((session) => session.id === current)) return current
-          return nextSessions.find((session) => session.workshop.slug === initialClass || session.workshop.id === initialClass)?.id || nextSessions[0]?.id || ""
+          if (nextWeekSessions.some((session) => session.id === current)) return current
+          return nextWeekSessions.find((session) => session.workshop.slug === initialClass || session.workshop.id === initialClass)?.id || nextWeekSessions[0]?.id || ""
         })
       } catch {
         if (!ignore) {
@@ -291,19 +438,20 @@ export function ClassesCalendar({ initialClass }: ClassesCalendarProps) {
   }
 
   const buildCheckoutHref = () => {
-    if (!activeSession) return "/classes/calendar"
+    if (!activeCheckoutSession || !activeWorkshop) return "/classes/calendar"
     const params = new URLSearchParams({
-      workshopId: activeSession.workshop.id,
-      title: activeSession.scheduleTitle || activeSession.workshop.title,
-      dateKey: formatDateKey(activeSession.date),
-      dateLabel: formatLongDate(activeSession.date),
-      timeLabel: activeSession.timeLabel,
-      price: String(activeSession.workshop.price),
-      maxSeats: String(activeAvailableSeats),
+      workshopId: activeWorkshop.id,
+      title: activeCheckoutSession.scheduleTitle || activeWorkshop.title,
+      dateKey: formatDateKey(activeCheckoutSession.date),
+      dateLabel: isMultiDaySelection ? `${programMeetingOptions.length} selected days` : formatLongDate(activeCheckoutSession.date),
+      timeLabel: isMultiDaySelection ? "Selected program days" : activeCheckoutSession.timeLabel,
+      price: String(activeWorkshop.price),
+      maxSeats: String(purchasableSeats),
       prepaid: prepaidProgram ? "true" : "false",
     })
 
-    if (activeSession.scheduleId) params.set("scheduleId", activeSession.scheduleId)
+    if (isMultiDaySelection) params.set("requiredMeetings", String(requiredProgramDays))
+    if (activeCheckoutSession.scheduleId) params.set("scheduleId", activeCheckoutSession.scheduleId)
     if (prepaidProgram) {
       params.set("meetings", JSON.stringify(programMeetingOptions.map((meeting) => ({
         key: meeting.key,
@@ -321,11 +469,16 @@ export function ClassesCalendar({ initialClass }: ClassesCalendarProps) {
       openAuthModal()
     }
   }
+  const canContinue = isMultiDaySelection
+    ? Boolean(selectedSequence?.isComplete && purchasableSeats > 0)
+    : Boolean(activeSession && purchasableSeats > 0)
 
   const renderSessionButton = (session: CalendarSession) => {
     const seats = availability[session.id]
     const seatsAvailable = seats?.availableSeats ?? session.workshop.maxParticipants ?? 8
     const isFull = seatsAvailable <= 0
+    const isCombinedMultiDay = isMultiDayWorkshop(session)
+    const buttonTitle = isCombinedMultiDay ? "3 or 6 Day Workshop" : session.scheduleTitle || session.workshop.title
 
     return (
       <button
@@ -334,13 +487,13 @@ export function ClassesCalendar({ initialClass }: ClassesCalendarProps) {
         onClick={() => handleSelectSession(session)}
         className={cn(
           "w-full rounded-md border border-border border-l-4 p-3 text-left shadow-sm transition hover:-translate-y-0.5 hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
-          classColors[session.workshop.id] || "border-l-primary bg-muted text-foreground",
+          isCombinedMultiDay ? "border-l-sky-500 bg-sky-50 text-sky-950 dark:bg-sky-950/30 dark:text-sky-100" : classColors[session.workshop.id] || "border-l-primary bg-muted text-foreground",
           activeSession?.id === session.id && "ring-2 ring-primary",
           isFull && "opacity-60"
         )}
       >
         <span className="block text-xs font-semibold">{session.timeLabel}</span>
-        <span className="mt-1 block text-sm font-semibold leading-tight">{session.scheduleTitle || session.workshop.title}</span>
+        <span className="mt-1 block text-sm font-semibold leading-tight">{buttonTitle}</span>
         <span className="mt-2 flex items-center justify-between gap-2 text-xs opacity-80">
           <span className="flex items-center gap-1">
             <Users className="h-3 w-3" />
@@ -356,7 +509,18 @@ export function ClassesCalendar({ initialClass }: ClassesCalendarProps) {
 
   const renderDayCard = (date: Date) => {
     const isToday = formatDateKey(date) === formatDateKey(today)
-    const daySessions = visibleSessions.filter((session) => session.dateKey === formatDateKey(date))
+    const daySessions = Array.from(
+      visibleSessions
+        .filter((session) => session.dateKey === formatDateKey(date))
+        .reduce((groupedSessions, session) => {
+          const key = isMultiDayWorkshop(session) ? `multi-day|${session.dateKey}|${session.timeLabel}` : session.id
+          if (!groupedSessions.has(key) || session.workshop.id === "3-day-workshop") {
+            groupedSessions.set(key, session)
+          }
+          return groupedSessions
+        }, new Map<string, CalendarSession>())
+        .values()
+    )
 
     return (
       <div key={date.toISOString()} className="min-h-[320px] rounded-lg border border-border bg-background p-4 shadow-sm">
@@ -420,38 +584,41 @@ export function ClassesCalendar({ initialClass }: ClassesCalendarProps) {
 
       <section className="mx-auto grid max-w-7xl gap-6 px-4 py-8 sm:px-6 xl:grid-cols-[minmax(0,1fr)_360px] lg:px-8">
         <div className="xl:col-span-2">
-          <div className="mb-5">
-            <div className="mx-auto max-w-2xl text-center">
-              <p className="text-xs font-semibold uppercase tracking-wide text-primary">Class type</p>
-              <h2 className="mt-2 font-heading text-2xl font-bold text-foreground">What would you like to book?</h2>
-            </div>
-            <div className="mt-5 grid gap-3 md:grid-cols-2 xl:grid-cols-3">
-              {bookingTypeCards.map((option) => {
-                const isActive = activeFilter === option.filter
-                const hasAvailability = filterCounts[option.filter] > 0
+          <div className="mb-4 rounded-lg border border-border bg-card/70 p-3 shadow-sm">
+            <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+              <div className="lg:min-w-64">
+                <p className="text-xs font-semibold uppercase tracking-wide text-primary">Class type</p>
+                <h2 className="mt-1 font-heading text-lg font-bold text-foreground">What would you like to book?</h2>
+              </div>
+              <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:flex lg:flex-wrap lg:justify-end">
+                {bookingTypeCards.map((option) => {
+                  const isActive = activeFilter === option.filter
+                  const hasAvailability = filterCounts[option.filter] > 0
 
-                return (
-                  <button
-                    key={option.filter}
-                    type="button"
-                    onClick={() => {
-                      setActiveFilter(option.filter)
-                      setSuccess("")
-                    }}
-                    className={cn(
-                      "min-h-32 rounded-lg border bg-background p-4 text-left shadow-sm transition hover:border-primary/60 hover:bg-muted/35 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
-                      isActive ? "border-primary ring-2 ring-primary/30" : "border-border"
-                    )}
-                  >
-                    <span className="text-xs font-semibold uppercase tracking-wide text-primary">{option.eyebrow}</span>
-                    <span className="mt-2 block font-heading text-lg font-bold leading-tight text-foreground">{option.title}</span>
-                    <span className="mt-2 block text-sm leading-relaxed text-muted-foreground">{option.description}</span>
-                    <span className={cn("mt-3 inline-flex rounded-full px-2 py-1 text-xs font-medium", hasAvailability ? "bg-primary/10 text-primary" : "bg-muted text-muted-foreground")}>
-                      {hasAvailability ? "Available this week" : "Check another week"}
-                    </span>
-                  </button>
-                )
-              })}
+                  return (
+                    <button
+                      key={option.filter}
+                      type="button"
+                      onClick={() => {
+                        setActiveFilter(option.filter)
+                        setSuccess("")
+                      }}
+                      className={cn(
+                        "rounded-md border px-3 py-2 text-sm font-semibold transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+                        isActive
+                          ? "border-primary bg-primary text-primary-foreground shadow-sm"
+                          : "border-border bg-background text-foreground hover:border-primary/60 hover:bg-muted/35",
+                        !hasAvailability && !isActive && "text-muted-foreground"
+                      )}
+                    >
+                      <span className="block leading-tight">{option.title}</span>
+                      <span className={cn("mt-0.5 block text-[11px] font-medium", isActive ? "text-primary-foreground/80" : hasAvailability ? "text-primary" : "text-muted-foreground")}>
+                        {hasAvailability ? "Available" : "No times"}
+                      </span>
+                    </button>
+                  )
+                })}
+              </div>
             </div>
           </div>
         </div>
@@ -476,9 +643,28 @@ export function ClassesCalendar({ initialClass }: ClassesCalendarProps) {
               <CardContent className="space-y-5 p-6">
                 <div>
                   <Badge variant="outline">{activeSession.workshop.level}</Badge>
-                  <h2 className="mt-3 font-heading text-2xl font-bold text-foreground">{activeSession.scheduleTitle || activeSession.workshop.title}</h2>
-                  <p className="mt-1 text-sm font-medium uppercase tracking-wide text-primary">{activeSession.workshop.subtitle}</p>
+                  <h2 className="mt-3 font-heading text-2xl font-bold text-foreground">
+                    {isMultiDaySelection ? selectedMultiDayWorkshop?.title || "3 Days Workshop" : activeSession.scheduleTitle || activeSession.workshop.title}
+                  </h2>
+                  <p className="mt-1 text-sm font-medium uppercase tracking-wide text-primary">
+                    {isMultiDaySelection ? "Workshop sequence" : activeSession.workshop.subtitle}
+                  </p>
                 </div>
+
+                {isMultiDaySelection && (
+                  <div className="space-y-2">
+                    <p className="text-sm font-semibold text-foreground">Choose workshop length</p>
+                    <Select value={selectedMultiDayWorkshopId} onValueChange={setSelectedMultiDayWorkshopId}>
+                      <SelectTrigger>
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="3-day-workshop">3 Day Workshop</SelectItem>
+                        <SelectItem value="6-day-workshop">6 Day Workshop</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                )}
 
                 <div className="grid grid-cols-2 gap-3">
                   <div className="rounded-md bg-muted/60 p-3">
@@ -486,30 +672,67 @@ export function ClassesCalendar({ initialClass }: ClassesCalendarProps) {
                       <CalendarDays className="h-3.5 w-3.5" />
                       Date
                     </p>
-                    <p className="mt-1 text-sm font-semibold text-foreground">{formatLongDate(activeSession.date)}</p>
+                    <p className="mt-1 text-sm font-semibold text-foreground">
+                      {isMultiDaySelection ? `${selectedSequence?.days.filter((day) => day.available).length || 0} of ${requiredProgramDays} days available` : formatLongDate(activeSession.date)}
+                    </p>
                   </div>
                   <div className="rounded-md bg-muted/60 p-3">
                     <p className="flex items-center gap-2 text-xs font-medium text-muted-foreground">
                       <Clock className="h-3.5 w-3.5" />
                       Time
                     </p>
-                    <p className="mt-1 text-sm font-semibold text-foreground">{activeSession.timeLabel}</p>
+                    <p className="mt-1 text-sm font-semibold text-foreground">
+                      {isMultiDaySelection ? `${formatStartTime(activeSession.timeLabel)} start` : activeSession.timeLabel}
+                    </p>
                   </div>
                 </div>
 
-                <p className="text-sm leading-relaxed text-muted-foreground">{activeSession.workshop.description}</p>
+                <p className="text-sm leading-relaxed text-muted-foreground">
+                  {isMultiDaySelection
+                    ? "Choose your starting time. We will show the full workshop commitment for the selected program before checkout."
+                    : activeSession.workshop.description}
+                </p>
+
+                {isMultiDaySelection && selectedSequence && (
+                  <div className="space-y-2 rounded-md border border-border p-3">
+                    {selectedSequence.days.map((day) => (
+                      <div key={day.dateKey} className="flex items-center justify-between gap-3 text-sm">
+                        <span className={cn("text-muted-foreground", !day.available && "text-foreground")}>
+                          {day.date.toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" })}
+                          {" · "}
+                          {day.session?.timeLabel || activeSession.timeLabel}
+                        </span>
+                        <span className={cn("text-xs font-medium", day.available ? "text-success" : "text-accent")}>
+                          {day.available ? "Available" : "Unavailable"}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                {selectedSequence?.warning && (
+                  <div className="rounded-md border border-accent/40 bg-accent/10 p-3 text-sm leading-relaxed text-foreground">
+                    {selectedSequence.warning}
+                  </div>
+                )}
+
+                {selectedSequence?.blocker && (
+                  <div className="rounded-md border border-accent/50 bg-accent/10 p-3 text-sm leading-relaxed text-foreground">
+                    {selectedSequence.blocker}
+                  </div>
+                )}
 
                 <div className="grid grid-cols-2 gap-3 text-sm">
                   <div>
                     <p className="text-muted-foreground">Price</p>
-                    <p className="font-semibold text-foreground">{formatPrice(activeSession.workshop.price)}</p>
+                    <p className="font-semibold text-foreground">{formatPrice(activeWorkshop?.price || activeSession.workshop.price)}</p>
                   </div>
                   <div>
                     <p className="text-muted-foreground">Seats</p>
                     <p className="font-semibold text-foreground">
                       {availabilityLoading
                         ? "Checking..."
-                        : `${activeAvailableSeats} of ${activeMaxParticipants} available`}
+                        : `${purchasableSeats} of ${activeMaxParticipants} available`}
                     </p>
                     {selectedAvailability && selectedAvailability.heldSeats > 0 && (
                       <p className="mt-1 text-xs text-muted-foreground">
@@ -525,21 +748,21 @@ export function ClassesCalendar({ initialClass }: ClassesCalendarProps) {
                   <Button
                     asChild
                     className="h-12 w-full gap-2 text-base"
-                    disabled={activeAvailableSeats <= 0 || availabilityLoading}
+                    disabled={!canContinue || availabilityLoading}
                   >
-                    <Link href={buildCheckoutHref()}>
+                    <Link href={buildCheckoutHref()} className={cn((!canContinue || availabilityLoading) && "pointer-events-none opacity-50")}>
                       <CalendarDays className="h-4 w-4" />
-                      {activeAvailableSeats <= 0 ? "Session Full" : prepaidProgram ? "Continue to Payment" : "Book Now"}
+                      {!canContinue ? "Choose another start time" : prepaidProgram ? "Continue to Payment" : "Book Now"}
                     </Link>
                   </Button>
                 ) : (
                   <Button
                     onClick={handleUnauthenticatedCheckout}
                     className="h-12 w-full gap-2 text-base"
-                    disabled={activeAvailableSeats <= 0 || availabilityLoading}
+                    disabled={!canContinue || availabilityLoading}
                   >
                     <CalendarDays className="h-4 w-4" />
-                    {activeAvailableSeats <= 0 ? "Session Full" : "Sign in to Book"}
+                    {!canContinue ? "Choose another start time" : "Sign in to Book"}
                   </Button>
                 )}
               </CardContent>

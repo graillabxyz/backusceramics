@@ -6,6 +6,8 @@ import { CalendarDays, Clock, GraduationCap, Loader2, Users } from "lucide-react
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
+import { CalendarExportButtons } from "@/components/calendar-export-buttons"
+import { parsePreferredDateForCalendar } from "@/lib/calendar-export"
 import { workshops } from "@/lib/classes-data"
 
 interface Booking {
@@ -35,6 +37,15 @@ function statusTone(status: string) {
 
 function BookingCard({ booking }: { booking: Booking }) {
   const workshop = workshops.find((item) => item.id === booking.workshopId)
+  const calendarDate = parsePreferredDateForCalendar(booking.preferredDate)
+  const calendarEvent = calendarDate
+    ? {
+        title: `${workshop?.title || booking.workshopId} at Backus Ceramics`,
+        dateKey: calendarDate.dateKey,
+        timeLabel: calendarDate.timeLabel,
+        description: `${booking.participants} participant${booking.participants === 1 ? "" : "s"} · ${statusLabels[booking.status] || booking.status}`,
+      }
+    : null
 
   return (
     <Card className="border-border/80">
@@ -59,6 +70,12 @@ function BookingCard({ booking }: { booking: Booking }) {
             </div>
             {booking.notes && (
               <p className="mt-3 rounded-md bg-muted/50 p-3 text-xs leading-relaxed text-muted-foreground">{booking.notes}</p>
+            )}
+            {calendarEvent && booking.status !== "CANCELLED" && (
+              <div className="mt-4">
+                <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">Add to calendar</p>
+                <CalendarExportButtons event={calendarEvent} compact />
+              </div>
             )}
           </div>
           <p className="whitespace-nowrap text-xs text-muted-foreground">

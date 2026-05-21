@@ -206,58 +206,59 @@ export async function POST(req: NextRequest) {
     `Total due today: ${formatPrice(total)}.`,
   ].filter(Boolean).join(" ")
 
-  const createdBookings = await prisma.$transaction(
-    meetings.map((meeting) =>
-      prisma.classBooking.create({
-        data: {
-          workshopId: meeting.slotWorkshopId || workshopId,
-          scheduleId,
-          userId: session.user.id,
-          preferredDate: `${meeting.dateKey} · ${meeting.timeLabel}`,
-          participants,
-          notes: meeting.slotTitle ? `${paymentNote} Reserved slot: ${meeting.slotTitle}.` : paymentNote,
-          contactName: session.user.name || "",
-          contactEmail: session.user.email || "",
-          contactPhone: contactPhone || null,
-        },
-      })
+  let createdBookings = []
+  try {
+    createdBookings = await prisma.$transaction(
+      meetings.map((meeting) =>
+        prisma.classBooking.create({
+          data: {
+            workshopId: meeting.slotWorkshopId || workshopId,
+            scheduleId,
+            userId: session.user.id,
+            preferredDate: `${meeting.dateKey} · ${meeting.timeLabel}`,
+            participants,
+            notes: meeting.slotTitle ? `${paymentNote} Reserved slot: ${meeting.slotTitle}.` : paymentNote,
+            contactName: session.user.name || "",
+            contactEmail: session.user.email || "",
+            contactPhone: contactPhone || null,
+          },
+        })
+      )
     )
-  )
+  } catch (error) {
+    console.error("Could not reserve booking before Xendit payment", error)
+    return NextResponse.json(
+      { error: "Could not reserve those class seats before payment. Please refresh and try again." },
+      { status: 500 }
+    )
+  }
 
   try {
-    const xenditResponse = await fetch("https://api.xendit.co/sessions", {
+    const xenditResponse = await fetch("https://api.xendit.co/v2/invoices", {
       method: "POST",
       headers: {
         Authorization: `Basic ${Buffer.from(`${xenditKey}:`).toString("base64")}`,
         "Content-Type": "application/json",
       },
       body: JSON.stringify({
-        reference_id: referenceId,
-        session_type: "PAY",
-        mode: "PAYMENT_LINK",
+        external_id: referenceId,
         amount: total,
-        currency: "IDR",
-        country: "ID",
+        description: `${workshop.title} - ${participants} ${participants === 1 ? "seat" : "seats"}`,
+        payer_email: session.user.email || undefined,
+        invoice_duration: 1800,
+        should_send_email: false,
         customer: {
-          reference_id: sanitizeReference(session.user.id),
-          type: "INDIVIDUAL",
+          given_names: sanitizeCustomerName(session.user.name),
           email: session.user.email || undefined,
           mobile_number: toE164OrUndefined(contactPhone),
-          individual_detail: {
-            given_names: sanitizeCustomerName(session.user.name),
-          },
         },
-        locale: "en",
-        description: `${workshop.title} - ${participants} ${participants === 1 ? "seat" : "seats"}`,
+        currency: "IDR",
         items: [
           {
-            reference_id: workshop.id,
-            type: "DIGITAL_SERVICE",
             name: workshop.title,
-            net_unit_amount: workshop.price,
             quantity: participants,
+            price: workshop.price,
             category: "Ceramics class",
-            description: `${meetings.length} workshop ${meetings.length === 1 ? "day" : "days"}`,
           },
         ],
         metadata: {
@@ -268,8 +269,8 @@ export async function POST(req: NextRequest) {
         },
         ...(hasHttpsOrigin
           ? {
-              success_return_url: `${origin}/account/bookings?payment=success&reference=${referenceId}`,
-              cancel_return_url: `${origin}/classes/checkout?payment=cancelled`,
+              success_redirect_url: `${origin}/account/bookings?payment=success&reference=${referenceId}`,
+              failure_redirect_url: `${origin}/classes/checkout?payment=cancelled`,
             }
           : {}),
       }),
@@ -277,10 +278,10 @@ export async function POST(req: NextRequest) {
 
     const xenditData = await xenditResponse.json().catch(() => ({}))
     if (!xenditResponse.ok) {
-      throw new Error(xenditData?.message || "Could not start Xendit payment")
+      throw new Error(xenditData?.message || xenditData?.error_code || "Could not start Xendit payment")
     }
 
-    const paymentUrl = xenditData?.payment_link_url
+    const paymentUrl = xenditData?.invoice_url
     if (typeof paymentUrl !== "string" || !paymentUrl) {
       throw new Error("Xendit did not return a payment link")
     }
@@ -291,10 +292,15 @@ export async function POST(req: NextRequest) {
       bookingIds: createdBookings.map((booking) => booking.id),
     })
   } catch (error) {
-    await prisma.classBooking.updateMany({
-      where: { id: { in: createdBookings.map((booking) => booking.id) } },
-      data: { status: "CANCELLED" },
-    })
+    console.error("Could not start Xendit invoice payment", error)
+    try {
+      await prisma.classBooking.updateMany({
+        where: { id: { in: createdBookings.map((booking) => booking.id) } },
+        data: { status: "CANCELLED" },
+      })
+    } catch (rollbackError) {
+      console.error("Could not cancel reserved bookings after Xendit failure", rollbackError)
+    }
 
     return NextResponse.json(
       { error: error instanceof Error ? error.message : "Could not start payment" },

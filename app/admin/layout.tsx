@@ -23,6 +23,7 @@ import {
   Store,
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
+import { AdminNotifications } from "@/components/admin-notifications"
 import { useState } from "react"
 
 const navItems = [
@@ -185,6 +186,12 @@ export default function AdminLayout({
 
       {/* Main Content */}
       <main className="lg:pl-64 pt-16 lg:pt-0">
+        <div className="hidden border-b border-border bg-background/80 px-6 py-3 backdrop-blur lg:flex lg:items-center lg:justify-end lg:px-8">
+          <AdminNotifications enabled={isFullAdminRole(user?.role)} />
+        </div>
+        <div className="fixed right-4 top-3 z-50 lg:hidden">
+          <AdminNotifications enabled={isFullAdminRole(user?.role)} />
+        </div>
         <div className="p-6 lg:p-8">
           {children}
         </div>

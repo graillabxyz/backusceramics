@@ -211,6 +211,27 @@ model PosProduct {
   @@index([category])
 }
 
+model AdminNotification {
+  id        String    @id @default(cuid())
+  type      String
+  title     String
+  message   String
+  path      String?
+  city      String?
+  region    String?
+  country   String?
+  ip        String?
+  userAgent String?
+  metadata  String?
+  readAt    DateTime?
+
+  createdAt DateTime @default(now())
+
+  @@index([type])
+  @@index([readAt])
+  @@index([createdAt])
+}
+
 model ResidencyApplication {
   id     String @id @default(cuid())
   userId String?

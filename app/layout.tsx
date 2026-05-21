@@ -5,6 +5,7 @@ import { Analytics } from '@vercel/analytics/next'
 import { AuthProvider } from "@/lib/auth-context"
 import { AuthModal } from "@/components/auth-modal"
 import { ThemeProvider } from "@/components/theme-provider"
+import { VisitTracker } from "@/components/visit-tracker"
 import './globals.css'
 
 const montserrat = Montserrat({ 
@@ -51,6 +52,7 @@ export default function RootLayout({
           disableTransitionOnChange
         >
           <AuthProvider>
+            <VisitTracker />
             {children}
             <AuthModal />
           </AuthProvider>

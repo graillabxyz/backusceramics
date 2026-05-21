@@ -13,6 +13,8 @@ import { Card, CardContent } from "@/components/ui/card"
 import { Checkbox } from "@/components/ui/checkbox"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
+import { CalendarExportButtons } from "@/components/calendar-export-buttons"
+import { canExportCalendarEvent } from "@/lib/calendar-export"
 import {
   Select,
   SelectContent,
@@ -62,6 +64,26 @@ function ClassCheckoutContent() {
   const requiredMeetings = Math.max(Number(searchParams.get("requiredMeetings") || 0), 0)
   const meetings = useMemo(() => parseMeetings(searchParams.get("meetings")), [searchParams])
   const focus = searchParams.get("focus") || ""
+  const calendarEvents = useMemo(() => {
+    if (prepaid) {
+      return meetings
+        .filter((meeting) => canExportCalendarEvent(meeting))
+        .map((meeting) => ({
+          title: `${title} at Backus Ceramics`,
+          dateKey: meeting.dateKey,
+          timeLabel: meeting.timeLabel,
+          description: meeting.slotTitle ? `${meeting.slotTitle} · Backus Ceramics booking` : "Backus Ceramics booking",
+        }))
+    }
+
+    if (!canExportCalendarEvent({ dateKey, timeLabel })) return []
+    return [{
+      title: `${title} at Backus Ceramics`,
+      dateKey,
+      timeLabel,
+      description: "Backus Ceramics booking",
+    }]
+  }, [dateKey, meetings, prepaid, timeLabel, title])
 
   const [people, setPeople] = useState(initialSeats.toString())
   const [whatsappPhone, setWhatsappPhone] = useState("")
@@ -330,6 +352,24 @@ function ClassCheckoutContent() {
 
               {error && <p className="text-sm text-destructive">{error}</p>}
               {success && <p className="text-sm font-medium text-emerald-600 dark:text-emerald-400">{success}</p>}
+
+              {success && calendarEvents.length > 0 && (
+                <div className="space-y-3 rounded-md border border-border bg-muted/35 p-3">
+                  <p className="text-sm font-semibold text-foreground">Add {calendarEvents.length === 1 ? "this class" : "these dates"} to your calendar</p>
+                  <div className="space-y-2">
+                    {calendarEvents.map((event) => (
+                      <div key={`${event.dateKey}-${event.timeLabel}`} className="space-y-2">
+                        {calendarEvents.length > 1 && (
+                          <p className="text-xs font-medium text-muted-foreground">
+                            {event.dateKey} · {event.timeLabel}
+                          </p>
+                        )}
+                        <CalendarExportButtons event={event} compact />
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
 
               <Button
                 onClick={handleSubmit}
