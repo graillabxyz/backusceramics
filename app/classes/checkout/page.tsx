@@ -6,6 +6,7 @@ import { useSearchParams } from "next/navigation"
 import { ArrowLeft, CalendarDays, Clock, Loader2 } from "lucide-react"
 import { Navigation } from "@/components/navigation"
 import { Footer } from "@/components/footer"
+import { BrandClosingSection } from "@/components/brand-closing-section"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
@@ -93,7 +94,36 @@ function ClassCheckoutContent() {
         setError("Return to the calendar and choose your program start day.")
         return
       }
-      setError("Online payment is required to confirm this program. Payment checkout will be enabled once the payment gateway is connected.")
+
+      setIsSubmitting(true)
+      try {
+        const res = await fetch("/api/payments/xendit-session", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            workshopId,
+            scheduleId: scheduleId || null,
+            participants: selectedSeatCount,
+            contactPhone: whatsappPhone.trim(),
+            meetings,
+            requiredMeetings,
+          }),
+        })
+
+        const data = await res.json().catch(() => ({}))
+        if (!res.ok) {
+          throw new Error(data.error || "Could not start payment")
+        }
+
+        if (!data.paymentUrl) {
+          throw new Error("Payment link was not returned")
+        }
+
+        window.location.href = data.paymentUrl
+      } catch (paymentError) {
+        setError(paymentError instanceof Error ? paymentError.message : "Could not start payment")
+        setIsSubmitting(false)
+      }
       return
     }
 
@@ -153,7 +183,7 @@ function ClassCheckoutContent() {
               </h1>
               <p className="mt-2 max-w-2xl text-sm leading-relaxed text-muted-foreground">
                 {prepaid
-                  ? "Check the details and add your WhatsApp number. Payment will be required to confirm this program."
+                  ? "Check the details, add your WhatsApp number, then continue to secure payment."
                   : "Check the details, add your WhatsApp number, then confirm the booking."}
               </p>
             </div>
@@ -268,7 +298,7 @@ function ClassCheckoutContent() {
 
               {prepaid ? (
                 <p className="rounded-md bg-muted/50 p-3 text-sm leading-relaxed text-muted-foreground">
-                  Online payment is required to confirm this program. This button will connect to the payment gateway once it is enabled.
+                  Online payment is required to confirm this program. We will hold the selected workshop days while you complete secure payment through Xendit.
                 </p>
               ) : (
                 <label className="flex items-start gap-3 text-sm leading-relaxed text-muted-foreground">
@@ -290,15 +320,20 @@ function ClassCheckoutContent() {
               <Button
                 onClick={handleSubmit}
                 className="h-12 w-full gap-2 text-base"
-                disabled={isSubmitting || maxSeats <= 0 || prepaid}
+                disabled={isSubmitting || maxSeats <= 0}
               >
                 {isSubmitting ? <Loader2 className="h-4 w-4 animate-spin" /> : <CalendarDays className="h-4 w-4" />}
-                {isSubmitting ? "Booking..." : prepaid ? "Payment Coming Soon" : "Confirm Booking"}
+                {isSubmitting ? (prepaid ? "Starting Payment..." : "Booking...") : prepaid ? "Continue to Payment" : "Confirm Booking"}
               </Button>
             </CardContent>
           </Card>
         </aside>
       </section>
+      <BrandClosingSection
+        eyebrow="Studio note"
+        title="Your seat matters in a small studio."
+        body="Our classes are intentionally limited so every student has space, tools, and attention. Once confirmed, your booking helps us prepare the room and protect that time for you."
+      />
       <Footer />
     </main>
   )

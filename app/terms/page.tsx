@@ -49,7 +49,7 @@ export default function TermsPage() {
                 Class bookings and custom order inquiries submitted through the Site are subject to availability and confirmation by Backus Ceramics. Submitting a booking or inquiry does not guarantee acceptance. Prices displayed are in Indonesian Rupiah (IDR) and are subject to change without prior notice.
               </p>
               <p>
-                A 24-hour cancellation notice is required for deposit refunds on class bookings. Refund policies for custom orders will be communicated on a case-by-case basis.
+                Class bookings are non-refundable within 7 days of the scheduled session because reserved seats are difficult to refill on short notice. Reschedule requests made 7 or more days in advance are subject to studio availability. Refund policies for custom orders will be communicated on a case-by-case basis.
               </p>
             </section>
 

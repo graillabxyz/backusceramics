@@ -3,6 +3,7 @@
 import React, { useState, useRef, useId } from "react"
 import { Navigation } from "@/components/navigation"
 import { Footer } from "@/components/footer"
+import { BrandClosingSection } from "@/components/brand-closing-section"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Textarea } from "@/components/ui/textarea"
@@ -763,6 +764,11 @@ export default function CustomOrdersPage() {
         </div>
       </section>
 
+      <BrandClosingSection
+        eyebrow="Made with intention"
+        title="Custom pieces begin with a good conversation."
+        body="Share the measurements, references, and feeling you want. We will review what is possible in clay, then come back with a clear quote, timeline, and next steps."
+      />
       <Footer />
     </main>
   )

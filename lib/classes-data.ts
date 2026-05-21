@@ -213,7 +213,8 @@ export const studioInfo = {
     "Ready in approximately 2 weeks",
     "Pickup or shipping available",
     "Storage up to 3 months",
-    "24 hour cancellation notice required for deposit refund",
+    "Class bookings are non-refundable within 7 days of the scheduled session",
+    "Reschedule requests made 7 or more days in advance are subject to studio availability",
     "Classes can be held in Indonesian upon request"
   ],
   teachers: [

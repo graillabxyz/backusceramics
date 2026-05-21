@@ -6,6 +6,7 @@ import { useParams } from "next/navigation"
 import { ArrowLeft, CalendarDays, ChevronLeft, ChevronRight, Clock, Users } from "lucide-react"
 import { Navigation } from "@/components/navigation"
 import { Footer } from "@/components/footer"
+import { BrandClosingSection } from "@/components/brand-closing-section"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
@@ -897,7 +898,7 @@ export default function ClassMonthBookingPage() {
                       <CalendarDays className="h-4 w-4" />
                       {isMultiDaySelection && !canContinue
                         ? "Choose another start time"
-                        : "Review Booking"}
+                        : "Book Now"}
                     </Link>
                   </Button>
                 </>
@@ -910,6 +911,11 @@ export default function ClassMonthBookingPage() {
           </Card>
         </aside>
       </section>
+      <BrandClosingSection
+        eyebrow="After your booking"
+        title="We will have the clay, tools, and wheel ready for you."
+        body="Each session is intentionally small so the studio can feel personal and unhurried. Bring clothes that can get a little clay on them, and we will guide the rest."
+      />
       <Footer />
     </main>
   )
