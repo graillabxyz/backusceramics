@@ -4,6 +4,7 @@ import { prisma } from "@/lib/prisma"
 import { formatPrice, workshops } from "@/lib/classes-data"
 import {
   getScheduleOffering,
+  hasSessionStartPassed,
   parseDateKey,
   parsePreferredDate,
   parseWeekdays,
@@ -160,6 +161,13 @@ export async function POST(req: NextRequest) {
 
   const scheduleId = typeof data.scheduleId === "string" && data.scheduleId ? data.scheduleId : null
   for (const meeting of meetings) {
+    if (hasSessionStartPassed(meeting.dateKey, meeting.timeLabel)) {
+      return NextResponse.json(
+        { error: `${meeting.dateLabel || meeting.dateKey} at ${meeting.timeLabel} has already started and can no longer be booked.` },
+        { status: 400 }
+      )
+    }
+
     const slotWorkshopId = meeting.slotWorkshopId || workshopId
     const slotWorkshop = getScheduleOffering(slotWorkshopId) || workshops.find((item) => item.id === slotWorkshopId)
     if (!slotWorkshop) {

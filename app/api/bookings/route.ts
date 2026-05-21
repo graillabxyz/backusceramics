@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server"
 import { auth } from "@/lib/auth"
 import { prisma } from "@/lib/prisma"
-import { getScheduleOffering, parseDateKey, parsePreferredDate, parseWeekdays, sessionKey } from "@/lib/class-schedule"
+import { getScheduleOffering, hasSessionStartPassed, parseDateKey, parsePreferredDate, parseWeekdays, sessionKey } from "@/lib/class-schedule"
 import { isFullAdminRole } from "@/lib/permissions"
 
 export async function GET() {
@@ -57,6 +57,10 @@ export async function POST(req: NextRequest) {
 
   const preferred = parsePreferredDate(data.preferredDate)
   if (preferred) {
+    if (hasSessionStartPassed(preferred.dateKey, preferred.timeLabel)) {
+      return NextResponse.json({ error: "This class has already started and can no longer be booked" }, { status: 400 })
+    }
+
     const schedule = data.scheduleId
       ? await prisma.classSchedule.findUnique({ where: { id: data.scheduleId } })
       : null

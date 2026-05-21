@@ -14,7 +14,7 @@ import { Label } from "@/components/ui/label"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Switch } from "@/components/ui/switch"
 import { formatPrice, workshops } from "@/lib/classes-data"
-import { addDays, CalendarAvailability, CalendarSession, formatDateKey, getScheduleOffering, parseDateKey } from "@/lib/class-schedule"
+import { addDays, CalendarAvailability, CalendarSession, formatDateKey, getScheduleOffering, hasSessionStartPassed, parseDateKey } from "@/lib/class-schedule"
 import { cn } from "@/lib/utils"
 
 type ResidencyFocus = "wheel" | "handbuilding" | "mix"
@@ -161,10 +161,11 @@ export default function ResidencyBookingPage() {
   function orderedSlotsForDate(dateKey: string, nextFocus = focus) {
     const date = parseDateKey(dateKey)
     const slots = orderedSlotsForFocus(nextFocus)
+    const upcomingSlots = slots.filter((slot) => !hasSessionStartPassed(dateKey, slot.timeLabel))
     if (date.getDay() === 6) {
-      return slots.filter((slot) => slot.workshopId === "beginner-wheel" && slot.timeLabel === "12:00 - 14:00 PM")
+      return upcomingSlots.filter((slot) => slot.workshopId === "beginner-wheel" && slot.timeLabel === "12:00 - 14:00 PM")
     }
-    return slots
+    return upcomingSlots
   }
 
   function getSlotAvailability(dateKey: string, slot: ResidencySlot) {

@@ -7,6 +7,7 @@ import {
   buildWeekSessions,
   buildWeekSessionsFromSchedules,
   formatDateKey,
+  hasSessionStartPassed,
   parseDateKey,
   parsePreferredDate,
   parseWeekdays,
@@ -40,6 +41,10 @@ function mergeSessions(defaultSessions: ReturnType<typeof buildWeekSessions>, sc
   }
 
   return Array.from(sessions.values()).sort((a, b) => a.date.getTime() - b.date.getTime() || a.sortHour - b.sortHour)
+}
+
+function removeStartedSessions(sessions: ReturnType<typeof buildWeekSessions>) {
+  return sessions.filter((session) => !hasSessionStartPassed(session.dateKey, session.timeLabel))
 }
 
 function buildAvailabilityResponse(rangeStart: Date, sessions: ReturnType<typeof buildWeekSessions>, bookedSeats = new Map<string, number>(), heldSeats = new Map<string, number>(), holdDetails = new Map<string, { id: string; studentName: string; seats: number }[]>()) {
@@ -99,7 +104,7 @@ export async function GET(req: NextRequest) {
   } catch {
     return buildAvailabilityResponse(
       rangeStart,
-      monthStartParam ? buildDefaultRangeSessions(rangeStart, rangeEnd) : buildWeekSessions(weekStart)
+      removeStartedSessions(monthStartParam ? buildDefaultRangeSessions(rangeStart, rangeEnd) : buildWeekSessions(weekStart))
     )
   }
 
@@ -111,7 +116,7 @@ export async function GET(req: NextRequest) {
       ? buildRangeSessionsFromSchedules(rangeStart, rangeEnd, schedules)
       : buildWeekSessionsFromSchedules(weekStart, schedules)
     : []
-  const sessions = mergeSessions(defaultSessions, scheduledSessions)
+  const sessions = removeStartedSessions(mergeSessions(defaultSessions, scheduledSessions))
   const dateKeys = Array.from(new Set(sessions.map((session) => session.dateKey)))
 
   let bookings = []

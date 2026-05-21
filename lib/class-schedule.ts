@@ -115,6 +115,36 @@ export function parseTimeHour(timeLabel: string) {
   return match ? Number(match[1]) : 12
 }
 
+export function parseStartTime(timeLabel: string) {
+  const [startPart = timeLabel] = timeLabel.split("-")
+  const normalizedStart = startPart.trim().toLowerCase()
+  const normalizedLabel = timeLabel.toLowerCase()
+  const match = normalizedStart.match(/^(\d{1,2})(?::(\d{2}))?\s*(am|pm)?/)
+  if (!match) return { hour: 12, minute: 0 }
+
+  let hour = Number(match[1])
+  const minute = Number(match[2] || 0)
+  const explicitSuffix = match[3]
+  const hasAfternoonContext = normalizedLabel.includes("pm")
+
+  if (explicitSuffix === "pm" && hour < 12) hour += 12
+  if (explicitSuffix === "am" && hour === 12) hour = 0
+  if (!explicitSuffix && hasAfternoonContext && hour > 0 && hour < 8) hour += 12
+
+  return { hour, minute }
+}
+
+export function getSessionStartDateTime(dateKey: string, timeLabel: string) {
+  const { hour, minute } = parseStartTime(timeLabel)
+  const paddedHour = hour.toString().padStart(2, "0")
+  const paddedMinute = minute.toString().padStart(2, "0")
+  return new Date(`${dateKey}T${paddedHour}:${paddedMinute}:00+08:00`)
+}
+
+export function hasSessionStartPassed(dateKey: string, timeLabel: string, now = new Date()) {
+  return getSessionStartDateTime(dateKey, timeLabel).getTime() <= now.getTime()
+}
+
 export function parseScheduleDays(schedule: string) {
   const [dayPart = ""] = schedule.split(":")
   const normalized = dayPart.trim()
