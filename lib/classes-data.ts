@@ -30,6 +30,7 @@ export const workshops: Workshop[] = [
     duration: "1 day (2 hours)",
     schedule: [
       "Monday - Friday: 10:00 - 12:00 PM",
+      "Monday - Friday: 12:00 - 14:00 PM",
       "Saturday: 14:00 - 16:00 PM"
     ],
     features: [
@@ -139,6 +140,7 @@ export const workshops: Workshop[] = [
       "From shaping to final firing",
       "Learn foundations of clay work",
       "Technical skill development",
+      "Portfolio planning support",
       "Full studio access",
       "Personal mentorship",
       "Help with accommodation setup"

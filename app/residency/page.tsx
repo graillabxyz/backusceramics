@@ -123,16 +123,21 @@ export default function ResidencyPage() {
                       </ul>
                     </div>
 
-                    <div className="border-t border-border pt-6 flex items-end justify-between">
+                    <div className="border-t border-border pt-6 flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
                       <div>
                         <p className="text-sm text-muted-foreground">Price</p>
                         <p className="text-3xl font-semibold text-foreground">
                           {formatPrice(program.price)}
                         </p>
                       </div>
-                      <Button size="lg" asChild>
-                        <Link href="/contact">Inquire</Link>
-                      </Button>
+                      <div className="flex flex-col gap-2 sm:items-end">
+                        <Button size="lg" asChild>
+                          <Link href={`/residency/book/${program.slug}`}>Book Dates</Link>
+                        </Button>
+                        <Button variant="ghost" size="sm" asChild>
+                          <Link href="/contact">Ask a question</Link>
+                        </Button>
+                      </div>
                     </div>
                   </div>
                 </CardContent>
@@ -254,7 +259,7 @@ export default function ResidencyPage() {
 
           <div className="mt-12 text-center">
             <Button size="lg" asChild>
-              <Link href="/contact">Apply for Residency</Link>
+              <Link href="/residency/book/3-week-residency">Book Residency Dates</Link>
             </Button>
           </div>
         </div>

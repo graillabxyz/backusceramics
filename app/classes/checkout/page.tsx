@@ -28,6 +28,9 @@ interface CheckoutMeeting {
   dateKey: string
   dateLabel: string
   timeLabel: string
+  slotWorkshopId?: string
+  slotTitle?: string
+  focus?: string
 }
 
 function parseMeetings(value: string | null) {
@@ -58,6 +61,7 @@ function ClassCheckoutContent() {
   const prepaid = searchParams.get("prepaid") === "true"
   const requiredMeetings = Math.max(Number(searchParams.get("requiredMeetings") || 0), 0)
   const meetings = useMemo(() => parseMeetings(searchParams.get("meetings")), [searchParams])
+  const focus = searchParams.get("focus") || ""
 
   const [people, setPeople] = useState(initialSeats.toString())
   const [whatsappPhone, setWhatsappPhone] = useState("")
@@ -107,6 +111,7 @@ function ClassCheckoutContent() {
             contactPhone: whatsappPhone.trim(),
             meetings,
             requiredMeetings,
+            focus,
           }),
         })
 
@@ -257,15 +262,24 @@ function ClassCheckoutContent() {
 
               {prepaid && (
                 <div className="rounded-lg border border-border bg-muted/35 p-4">
-                  <p className="text-sm font-semibold text-foreground">Workshop days</p>
+                  <p className="text-sm font-semibold text-foreground">{focus ? "Residency days" : "Workshop days"}</p>
                   <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
-                    These days were selected automatically from your starting day and time.
+                    {focus
+                      ? "These days reserve the studio slots shown below."
+                      : "These days were selected automatically from your starting day and time."}
                   </p>
+                  {focus && (
+                    <p className="mt-2 text-xs font-medium text-foreground">
+                      Focus: {focus}
+                    </p>
+                  )}
                   <div className="mt-3 space-y-2">
                     {meetings.map((meeting) => (
                       <div key={meeting.key} className="flex items-center justify-between gap-3 rounded-md border border-border bg-background/60 px-3 py-2 text-sm">
                         <span className="font-medium text-foreground">{meeting.dateLabel}</span>
-                        <span className="text-muted-foreground">{meeting.timeLabel}</span>
+                        <span className="text-right text-muted-foreground">
+                          {meeting.slotTitle ? `${meeting.slotTitle} · ` : ""}{meeting.timeLabel}
+                        </span>
                       </div>
                     ))}
                   </div>

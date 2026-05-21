@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server"
 import { auth } from "@/lib/auth"
 import { prisma } from "@/lib/prisma"
-import { formatPrice } from "@/lib/classes-data"
+import { formatPrice, workshops } from "@/lib/classes-data"
 import {
   getScheduleOffering,
   parseDateKey,
@@ -17,6 +17,9 @@ interface CheckoutMeeting {
   dateKey: string
   dateLabel?: string
   timeLabel: string
+  slotWorkshopId?: string
+  slotTitle?: string
+  focus?: string
 }
 
 function sanitizeReference(value: string) {
@@ -130,7 +133,7 @@ export async function POST(req: NextRequest) {
 
   const data = await req.json()
   const workshopId = String(data.workshopId || "")
-  const workshop = getScheduleOffering(workshopId)
+  const workshop = getScheduleOffering(workshopId) || workshops.find((item) => item.id === workshopId)
   if (!workshop) {
     return NextResponse.json({ error: "Workshop not found" }, { status: 404 })
   }
@@ -157,12 +160,18 @@ export async function POST(req: NextRequest) {
 
   const scheduleId = typeof data.scheduleId === "string" && data.scheduleId ? data.scheduleId : null
   for (const meeting of meetings) {
+    const slotWorkshopId = meeting.slotWorkshopId || workshopId
+    const slotWorkshop = getScheduleOffering(slotWorkshopId) || workshops.find((item) => item.id === slotWorkshopId)
+    if (!slotWorkshop) {
+      return NextResponse.json({ error: "Selected studio slot was not found" }, { status: 404 })
+    }
+
     const availableSeats = await getAvailableSeats({
-      workshopId,
+      workshopId: slotWorkshopId,
       scheduleId,
       dateKey: meeting.dateKey,
       timeLabel: meeting.timeLabel,
-      fallbackCapacity: maxParticipants,
+      fallbackCapacity: slotWorkshop.maxParticipants ?? maxParticipants,
     })
 
     if (participants > availableSeats) {
@@ -183,20 +192,22 @@ export async function POST(req: NextRequest) {
   const paymentNote = [
     `Payment required via Xendit.`,
     `Payment reference: ${referenceId}.`,
-    `Covers ${meetings.length} workshop ${meetings.length === 1 ? "day" : "days"}.`,
+    `Program: ${workshop.title}.`,
+    data.focus ? `Focus: ${data.focus}.` : "",
+    `Covers ${meetings.length} studio ${meetings.length === 1 ? "day" : "days"}.`,
     `Total due today: ${formatPrice(total)}.`,
-  ].join(" ")
+  ].filter(Boolean).join(" ")
 
   const createdBookings = await prisma.$transaction(
     meetings.map((meeting) =>
       prisma.classBooking.create({
         data: {
-          workshopId,
+          workshopId: meeting.slotWorkshopId || workshopId,
           scheduleId,
           userId: session.user.id,
           preferredDate: `${meeting.dateKey} · ${meeting.timeLabel}`,
           participants,
-          notes: paymentNote,
+          notes: meeting.slotTitle ? `${paymentNote} Reserved slot: ${meeting.slotTitle}.` : paymentNote,
           contactName: session.user.name || "",
           contactEmail: session.user.email || "",
           contactPhone: contactPhone || null,

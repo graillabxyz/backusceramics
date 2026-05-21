@@ -641,15 +641,20 @@ export default function ClassMonthBookingPage() {
               })}
             </div>
             <div className="space-y-4 p-4 md:hidden">
-              {calendarWeeks.map((week) => (
-                <div key={formatDateKey(week[0])} className="overflow-hidden rounded-lg border border-border/80 bg-background/25">
-                  <div className="border-b border-border/80 bg-secondary/10 px-3 py-2 text-xs font-semibold uppercase text-muted-foreground">
-                    Week of {week[0].toLocaleDateString("en-US", { month: "short", day: "numeric" })}
-                  </div>
-                  <div className="divide-y divide-border">
-                    {week
-                      .filter((date) => date.getMonth() === monthStart.getMonth())
-                      .map((date) => {
+              {calendarWeeks.map((week) => {
+                const visibleWeekDates = week.filter((date) => {
+                  return date.getMonth() === monthStart.getMonth() && isSameOrAfter(date, today)
+                })
+
+                if (visibleWeekDates.length === 0) return null
+
+                return (
+                  <div key={formatDateKey(visibleWeekDates[0])} className="overflow-hidden rounded-lg border border-border/80 bg-background/25">
+                    <div className="border-b border-border/80 bg-secondary/10 px-3 py-2 text-xs font-semibold uppercase text-muted-foreground">
+                      Week of {visibleWeekDates[0].toLocaleDateString("en-US", { month: "short", day: "numeric" })}
+                    </div>
+                    <div className="divide-y divide-border">
+                      {visibleWeekDates.map((date) => {
                         const dateKey = formatDateKey(date)
                         const daySessions = sessions.filter((session) => session.dateKey === dateKey)
                         const hasSessions = daySessions.length > 0
@@ -757,9 +762,10 @@ export default function ClassMonthBookingPage() {
                           </button>
                         )
                       })}
+                    </div>
                   </div>
-                </div>
-              ))}
+                )
+              })}
             </div>
           </CardContent>
         </Card>

@@ -28,6 +28,20 @@ function endOfMonth(date: Date) {
   return new Date(date.getFullYear(), date.getMonth() + 1, 0)
 }
 
+function mergeSessions(defaultSessions: ReturnType<typeof buildWeekSessions>, scheduledSessions: ReturnType<typeof buildWeekSessions>) {
+  const sessions = new Map<string, ReturnType<typeof buildWeekSessions>[number]>()
+
+  for (const session of defaultSessions) {
+    sessions.set(`${session.workshop.id}|${session.dateKey}|${session.timeLabel}`, session)
+  }
+
+  for (const session of scheduledSessions) {
+    sessions.set(`${session.workshop.id}|${session.dateKey}|${session.timeLabel}`, session)
+  }
+
+  return Array.from(sessions.values()).sort((a, b) => a.date.getTime() - b.date.getTime() || a.sortHour - b.sortHour)
+}
+
 function buildAvailabilityResponse(rangeStart: Date, sessions: ReturnType<typeof buildWeekSessions>, bookedSeats = new Map<string, number>(), heldSeats = new Map<string, number>(), holdDetails = new Map<string, { id: string; studentName: string; seats: number }[]>()) {
   const availability = sessions.map((session) => {
     const key = session.scheduleId || sessionKey(session.workshop.id, session.dateKey, session.timeLabel)
@@ -89,13 +103,15 @@ export async function GET(req: NextRequest) {
     )
   }
 
-  const sessions = schedules.length > 0
+  const defaultSessions = monthStartParam
+    ? buildDefaultRangeSessions(rangeStart, rangeEnd)
+    : buildWeekSessions(weekStart)
+  const scheduledSessions = schedules.length > 0
     ? monthStartParam
       ? buildRangeSessionsFromSchedules(rangeStart, rangeEnd, schedules)
       : buildWeekSessionsFromSchedules(weekStart, schedules)
-    : monthStartParam
-      ? buildDefaultRangeSessions(rangeStart, rangeEnd)
-      : buildWeekSessions(weekStart)
+    : []
+  const sessions = mergeSessions(defaultSessions, scheduledSessions)
   const dateKeys = Array.from(new Set(sessions.map((session) => session.dateKey)))
 
   let bookings = []
