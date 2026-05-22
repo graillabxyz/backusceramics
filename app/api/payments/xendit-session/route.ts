@@ -418,6 +418,7 @@ export async function POST(req: NextRequest) {
   ].filter(Boolean).join(" ")
 
   let createdBookings = []
+  let reservationWarning: string | null = null
   try {
     createdBookings = await prisma.$transaction(
       meetings.map((meeting) =>
@@ -465,13 +466,8 @@ export async function POST(req: NextRequest) {
         scheduleId,
         meetingCount: meetings.length,
       })
-      return NextResponse.json(
-        {
-          error: "Could not reserve those class seats before payment. Please refresh and try again.",
-          code: paymentErrorCodes.reservationFailed,
-        },
-        { status: 500 }
-      )
+      reservationWarning = "Booking reservation could not be written before payment. Payment metadata includes the selected class details."
+      createdBookings = []
     }
   }
 
@@ -506,8 +502,13 @@ export async function POST(req: NextRequest) {
         metadata: {
           booking_reference: referenceId,
           booking_ids: createdBookings.map((booking) => booking.id).join(","),
+          booking_reservation_status: createdBookings.length > 0 ? "reserved" : "not_reserved",
+          booking_reservation_warning: reservationWarning || undefined,
           workshop_id: workshop.id,
           workshop_days: meetings.map((meeting) => meeting.dateKey).join(","),
+          workshop_times: meetings.map((meeting) => meeting.timeLabel).join(","),
+          customer_email: session.user.email || undefined,
+          customer_phone: contactPhone || undefined,
         },
         ...(hasHttpsOrigin
           ? {
@@ -532,6 +533,7 @@ export async function POST(req: NextRequest) {
       paymentUrl,
       referenceId,
       bookingIds: createdBookings.map((booking) => booking.id),
+      reservationWarning,
     })
   } catch (error) {
     console.error("Could not start Xendit invoice payment", {
@@ -541,10 +543,12 @@ export async function POST(req: NextRequest) {
       bookingIds: createdBookings.map((booking) => booking.id),
     })
     try {
-      await prisma.classBooking.updateMany({
-        where: { id: { in: createdBookings.map((booking) => booking.id) } },
-        data: { status: "CANCELLED" },
-      })
+      if (createdBookings.length > 0) {
+        await prisma.classBooking.updateMany({
+          where: { id: { in: createdBookings.map((booking) => booking.id) } },
+          data: { status: "CANCELLED" },
+        })
+      }
     } catch (rollbackError) {
       console.error("Could not cancel reserved bookings after Xendit failure", rollbackError)
     }
