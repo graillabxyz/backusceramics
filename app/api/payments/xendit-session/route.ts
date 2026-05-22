@@ -19,6 +19,7 @@ const paymentErrorCodes = {
   availabilityCheckFailed: "PAYMENT_AVAILABILITY_CHECK_FAILED",
   reservationFailed: "PAYMENT_RESERVATION_FAILED",
   xenditInvoiceFailed: "PAYMENT_XENDIT_INVOICE_FAILED",
+  authFailed: "PAYMENT_AUTH_FAILED",
 } as const
 
 interface CheckoutMeeting {
@@ -130,12 +131,25 @@ async function getAvailableSeats({
 }
 
 export async function POST(req: NextRequest) {
-  const session = await auth()
+  let session: Awaited<ReturnType<typeof auth>>
+  try {
+    session = await auth()
+  } catch (error) {
+    console.error("Could not load authenticated user before Xendit payment", { error })
+    return NextResponse.json(
+      {
+        error: "Could not confirm your signed-in account before payment. Please refresh and try again.",
+        code: paymentErrorCodes.authFailed,
+      },
+      { status: 500 }
+    )
+  }
+
   if (!session) {
     return NextResponse.json({ error: "Must be signed in to pay for a booking" }, { status: 401 })
   }
 
-  const xenditKey = process.env.XENDIT_KEY
+  const xenditKey = process.env.XENDIT_SECRET_KEY ?? process.env.XENDIT_KEY
   if (!xenditKey) {
     return NextResponse.json(
       { error: "Xendit is not configured yet", code: paymentErrorCodes.configurationMissing },
