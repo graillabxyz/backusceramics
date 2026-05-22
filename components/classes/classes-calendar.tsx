@@ -752,7 +752,7 @@ export function ClassesCalendar({ initialClass }: ClassesCalendarProps) {
                   >
                     <Link href={buildCheckoutHref()} className={cn((!canContinue || availabilityLoading) && "pointer-events-none opacity-50")}>
                       <CalendarDays className="h-4 w-4" />
-                      {!canContinue ? "Choose another start time" : prepaidProgram ? "Continue to Payment" : "Book Now"}
+                      {!canContinue ? "Choose another start time" : "Continue to Payment"}
                     </Link>
                   </Button>
                 ) : (
@@ -762,7 +762,7 @@ export function ClassesCalendar({ initialClass }: ClassesCalendarProps) {
                     disabled={!canContinue || availabilityLoading}
                   >
                     <CalendarDays className="h-4 w-4" />
-                    {!canContinue ? "Choose another start time" : "Sign in to Book"}
+                    {!canContinue ? "Choose another start time" : "Sign in to Pay"}
                   </Button>
                 )}
               </CardContent>

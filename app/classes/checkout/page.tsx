@@ -10,7 +10,6 @@ import { BrandClosingSection } from "@/components/brand-closing-section"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
-import { Checkbox } from "@/components/ui/checkbox"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { CalendarExportButtons } from "@/components/calendar-export-buttons"
@@ -87,7 +86,6 @@ function ClassCheckoutContent() {
 
   const [people, setPeople] = useState(initialSeats.toString())
   const [whatsappPhone, setWhatsappPhone] = useState("")
-  const [payOnArrivalConfirmed, setPayOnArrivalConfirmed] = useState(false)
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [error, setError] = useState("")
   const [success, setSuccess] = useState("")
@@ -95,6 +93,17 @@ function ClassCheckoutContent() {
   const selectedSeatCount = Number(people || 1)
   const total = price * selectedSeatCount
   const participantOptions = Array.from({ length: maxSeats }, (_, index) => index + 1)
+  const paymentMeetings = prepaid
+    ? meetings
+    : dateKey && timeLabel
+      ? [{
+          key: `${dateKey}|${timeLabel}`,
+          dateKey,
+          dateLabel,
+          timeLabel,
+        }]
+      : []
+  const paymentRequiredMeetings = prepaid ? requiredMeetings : 1
 
   const handleSubmit = async () => {
     setError("")
@@ -110,82 +119,45 @@ function ClassCheckoutContent() {
       return
     }
 
-    if (prepaid) {
-      if (requiredMeetings > 0 && meetings.length !== requiredMeetings) {
-        setError(`This booking needs ${requiredMeetings} available program ${requiredMeetings === 1 ? "day" : "days"} before payment.`)
-        return
-      }
-
-      if (meetings.length === 0) {
-        setError("Return to the calendar and choose your program start day.")
-        return
-      }
-
-      setIsSubmitting(true)
-      try {
-        const res = await fetch("/api/payments/xendit-session", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            workshopId,
-            scheduleId: scheduleId || null,
-            participants: selectedSeatCount,
-            contactPhone: whatsappPhone.trim(),
-            meetings,
-            requiredMeetings,
-            focus,
-          }),
-        })
-
-        const data = await res.json().catch(() => ({}))
-        if (!res.ok) {
-          const code = typeof data.code === "string" ? ` (${data.code})` : ""
-          throw new Error(`${data.error || "Could not start payment"}${code}`)
-        }
-
-        if (!data.paymentUrl) {
-          throw new Error("Payment link was not returned")
-        }
-
-        window.location.href = data.paymentUrl
-      } catch (paymentError) {
-        setError(paymentError instanceof Error ? paymentError.message : "Could not start payment")
-        setIsSubmitting(false)
-      }
+    if (paymentRequiredMeetings > 0 && paymentMeetings.length !== paymentRequiredMeetings) {
+      setError(`This booking needs ${paymentRequiredMeetings} available ${paymentRequiredMeetings === 1 ? "class time" : "program days"} before payment.`)
       return
     }
 
-    if (!payOnArrivalConfirmed) {
-      setError("Confirm that you will pay the class total when you arrive.")
+    if (paymentMeetings.length === 0) {
+      setError("Return to the calendar and choose your class time.")
       return
     }
 
     setIsSubmitting(true)
     try {
-      const preferredDate = `${dateKey} · ${timeLabel}`
-      const res = await fetch("/api/bookings", {
+      const res = await fetch("/api/payments/xendit-session", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           workshopId,
           scheduleId: scheduleId || null,
-          preferredDate,
           participants: selectedSeatCount,
           contactPhone: whatsappPhone.trim(),
-          notes: `Pay on arrival confirmed. Total due on arrival: ${formatPrice(total)}.`,
+          meetings: paymentMeetings,
+          requiredMeetings: paymentRequiredMeetings,
+          focus,
         }),
       })
 
+      const data = await res.json().catch(() => ({}))
       if (!res.ok) {
-        const data = await res.json().catch(() => ({}))
-        throw new Error(data.error || "Could not create booking request")
+        const code = typeof data.code === "string" ? ` (${data.code})` : ""
+        throw new Error(`${data.error || "Could not start payment"}${code}`)
       }
 
-      setPayOnArrivalConfirmed(false)
-      setSuccess("Booking request sent. Backus Ceramics will confirm your spot by WhatsApp.")
-    } catch (bookingError) {
-      setError(bookingError instanceof Error ? bookingError.message : "Could not create booking request")
-    } finally {
+      if (!data.paymentUrl) {
+        throw new Error("Payment link was not returned")
+      }
+
+      window.location.href = data.paymentUrl
+    } catch (paymentError) {
+      setError(paymentError instanceof Error ? paymentError.message : "Could not start payment")
       setIsSubmitting(false)
     }
   }
@@ -210,9 +182,7 @@ function ClassCheckoutContent() {
                 Review your booking.
               </h1>
               <p className="mt-2 max-w-2xl text-sm leading-relaxed text-muted-foreground">
-                {prepaid
-                  ? "Check the details, add your WhatsApp number, then continue to secure payment."
-                  : "Check the details, add your WhatsApp number, then confirm the booking."}
+                Check the details, add your WhatsApp number, then continue to secure payment.
               </p>
             </div>
             <div className="flex w-fit rounded-md border border-border bg-background p-1 text-xs font-medium text-muted-foreground">
@@ -327,29 +297,15 @@ function ClassCheckoutContent() {
                     <span>x {selectedSeatCount}</span>
                   </div>
                   <div className="flex items-center justify-between gap-4 border-t border-border pt-2 font-semibold text-foreground">
-                    <span>{prepaid ? "Total due today" : "Total due on arrival"}</span>
+                    <span>Total due today</span>
                     <span>{formatPrice(total)}</span>
                   </div>
                 </div>
               </div>
 
-              {prepaid ? (
-                <p className="rounded-md bg-muted/50 p-3 text-sm leading-relaxed text-muted-foreground">
-                  Online payment is required to confirm this program. We will hold the selected workshop days while you complete secure payment through Xendit.
-                </p>
-              ) : (
-                <label className="flex items-start gap-3 text-sm leading-relaxed text-muted-foreground">
-                  <Checkbox
-                    checked={payOnArrivalConfirmed}
-                    onCheckedChange={(checked) => {
-                      setPayOnArrivalConfirmed(checked === true)
-                      setError("")
-                    }}
-                    className="mt-0.5"
-                  />
-                  <span>I understand this booking is held for me and I will pay {formatPrice(total)} when I arrive to class.</span>
-                </label>
-              )}
+              <p className="rounded-md bg-muted/50 p-3 text-sm leading-relaxed text-muted-foreground">
+                Online payment confirms your seat. We will hold the selected {paymentMeetings.length === 1 ? "class time" : "program days"} while you complete secure payment through Xendit.
+              </p>
 
               {error && <p className="text-sm text-destructive">{error}</p>}
               {success && <p className="text-sm font-medium text-emerald-600 dark:text-emerald-400">{success}</p>}
@@ -378,7 +334,7 @@ function ClassCheckoutContent() {
                 disabled={isSubmitting || maxSeats <= 0}
               >
                 {isSubmitting ? <Loader2 className="h-4 w-4 animate-spin" /> : <CalendarDays className="h-4 w-4" />}
-                {isSubmitting ? (prepaid ? "Starting Payment..." : "Booking...") : prepaid ? "Continue to Payment" : "Confirm Booking"}
+                {isSubmitting ? "Starting Payment..." : "Continue to Payment"}
               </Button>
             </CardContent>
           </Card>

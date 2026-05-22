@@ -904,7 +904,7 @@ export default function ClassMonthBookingPage() {
                       <CalendarDays className="h-4 w-4" />
                       {isMultiDaySelection && !canContinue
                         ? "Choose another start time"
-                        : "Book Now"}
+                        : "Continue to Payment"}
                     </Link>
                   </Button>
                 </>
