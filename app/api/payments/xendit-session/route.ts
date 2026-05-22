@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server"
 import { auth } from "@/lib/auth"
+import { createClient } from "@/lib/supabase/server"
 import { prisma } from "@/lib/prisma"
 import { formatPrice, workshops } from "@/lib/classes-data"
 import {
@@ -30,6 +31,16 @@ interface CheckoutMeeting {
   slotWorkshopId?: string
   slotTitle?: string
   focus?: string
+}
+
+interface PaymentSession {
+  user: {
+    id: string | null
+    email: string | null
+    name: string | null
+    image?: string | null
+    role?: string
+  }
 }
 
 function sanitizeReference(value: string) {
@@ -131,18 +142,37 @@ async function getAvailableSeats({
 }
 
 export async function POST(req: NextRequest) {
-  let session: Awaited<ReturnType<typeof auth>>
+  let session: PaymentSession | null
+  let attachLocalUserToBooking = true
   try {
     session = await auth()
   } catch (error) {
     console.error("Could not load authenticated user before Xendit payment", { error })
-    return NextResponse.json(
-      {
-        error: "Could not confirm your signed-in account before payment. Please refresh and try again.",
-        code: paymentErrorCodes.authFailed,
+    const supabase = await createClient()
+    const {
+      data: { user },
+    } = await supabase.auth.getUser()
+
+    if (!user) {
+      return NextResponse.json(
+        {
+          error: "Could not confirm your signed-in account before payment. Please refresh and try again.",
+          code: paymentErrorCodes.authFailed,
+        },
+        { status: 500 }
+      )
+    }
+
+    attachLocalUserToBooking = false
+    session = {
+      user: {
+        id: null,
+        email: user.email ?? null,
+        name: user.user_metadata?.full_name || user.user_metadata?.name || null,
+        image: user.user_metadata?.avatar_url || user.user_metadata?.picture || null,
+        role: "USER",
       },
-      { status: 500 }
-    )
+    }
   }
 
   if (!session) {
@@ -274,7 +304,7 @@ export async function POST(req: NextRequest) {
           data: {
             workshopId: meeting.slotWorkshopId || workshopId,
             scheduleId,
-            userId: session.user.id,
+            userId: attachLocalUserToBooking ? session.user.id : null,
             preferredDate: `${meeting.dateKey} · ${meeting.timeLabel}`,
             participants,
             notes: meeting.slotTitle ? `${paymentNote} Reserved slot: ${meeting.slotTitle}.` : paymentNote,
