@@ -92,25 +92,36 @@ async function getAvailableSeats({
   fallbackCapacity: number
 }) {
   const sessionDate = parseDateKey(dateKey)
-  const schedule = scheduleId
-    ? await prisma.classSchedule.findUnique({ where: { id: scheduleId } })
-    : null
+  let schedule = null
+  if (scheduleId) {
+    try {
+      schedule = await prisma.classSchedule.findUnique({ where: { id: scheduleId } })
+    } catch (error) {
+      console.error("Could not load schedule while checking payment availability", {
+        error,
+        workshopId,
+        scheduleId,
+      })
+    }
+  }
   const capacity = schedule?.maxParticipants ?? fallbackCapacity
 
-  const [existingBookings, holds] = await Promise.all([
-    prisma.classBooking.findMany({
-      where: {
-        workshopId,
-        status: { in: ["PENDING", "CONFIRMED"] },
-        preferredDate: { startsWith: dateKey },
-        ...(schedule ? { scheduleId: schedule.id } : {}),
-      },
-      select: {
-        preferredDate: true,
-        participants: true,
-      },
-    }),
-    prisma.classHold.findMany({
+  const existingBookings = await prisma.classBooking.findMany({
+    where: {
+      workshopId,
+      status: { in: ["PENDING", "CONFIRMED"] },
+      preferredDate: { startsWith: dateKey },
+      ...(schedule ? { scheduleId: schedule.id } : {}),
+    },
+    select: {
+      preferredDate: true,
+      participants: true,
+    },
+  })
+
+  let holds: { seats: number; weekdays: string }[] = []
+  try {
+    holds = await prisma.classHold.findMany({
       where: {
         workshopId,
         timeLabel,
@@ -122,8 +133,15 @@ async function getAvailableSeats({
         seats: true,
         weekdays: true,
       },
-    }),
-  ])
+    })
+  } catch (error) {
+    console.error("Could not load class holds while checking payment availability", {
+      error,
+      workshopId,
+      dateKey,
+      timeLabel,
+    })
+  }
 
   const key = sessionKey(workshopId, dateKey, timeLabel)
   const bookedSeats = existingBookings.reduce((sum, booking) => {
@@ -139,6 +157,21 @@ async function getAvailableSeats({
   }, 0)
 
   return capacity - bookedSeats - heldSeats
+}
+
+async function resolveScheduleIdForBooking(scheduleId: string | null) {
+  if (!scheduleId) return null
+
+  try {
+    const schedule = await prisma.classSchedule.findUnique({
+      where: { id: scheduleId },
+      select: { id: true },
+    })
+    return schedule?.id ?? null
+  } catch (error) {
+    console.error("Could not resolve schedule before payment booking reservation", { error, scheduleId })
+    return null
+  }
 }
 
 export async function POST(req: NextRequest) {
@@ -227,6 +260,7 @@ export async function POST(req: NextRequest) {
   }
 
   const scheduleId = typeof data.scheduleId === "string" && data.scheduleId ? data.scheduleId : null
+  const bookingScheduleId = await resolveScheduleIdForBooking(scheduleId)
   try {
     for (const meeting of meetings) {
       if (hasSessionStartPassed(meeting.dateKey, meeting.timeLabel)) {
@@ -303,7 +337,7 @@ export async function POST(req: NextRequest) {
         prisma.classBooking.create({
           data: {
             workshopId: meeting.slotWorkshopId || workshopId,
-            scheduleId,
+            ...(bookingScheduleId ? { scheduleId: bookingScheduleId } : {}),
             userId: attachLocalUserToBooking ? session.user.id : null,
             preferredDate: `${meeting.dateKey} · ${meeting.timeLabel}`,
             participants,
