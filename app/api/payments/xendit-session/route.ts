@@ -133,13 +133,22 @@ async function getAvailableSeats({
       dateKey,
       scheduleId: schedule?.id,
     })
-    existingBookings = await prisma.$queryRaw<ExistingBookingSeat[]>`
-      SELECT "preferredDate", "participants"
-      FROM "ClassBooking"
-      WHERE "workshopId" = ${workshopId}
-        AND "status" IN ('PENDING', 'CONFIRMED')
-        AND "preferredDate" LIKE ${`${dateKey}%`}
-    `
+    try {
+      existingBookings = await prisma.$queryRaw<ExistingBookingSeat[]>`
+        SELECT "preferredDate", "participants"
+        FROM "ClassBooking"
+        WHERE "workshopId" = ${workshopId}
+          AND "status" IN ('PENDING', 'CONFIRMED')
+          AND "preferredDate" LIKE ${`${dateKey}%`}
+      `
+    } catch (legacyError) {
+      console.error("Could not load bookings with legacy query while checking payment availability", {
+        error: legacyError,
+        workshopId,
+        dateKey,
+      })
+      return capacity
+    }
   }
 
   let holds: { seats: number; weekdays: string }[] = []
