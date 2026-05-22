@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server"
 import { auth } from "@/lib/auth"
 import { createClient } from "@/lib/supabase/server"
 import { prisma } from "@/lib/prisma"
+import { randomUUID } from "crypto"
 import { formatPrice, workshops } from "@/lib/classes-data"
 import {
   getScheduleOffering,
@@ -41,6 +42,11 @@ interface PaymentSession {
     image?: string | null
     role?: string
   }
+}
+
+interface ExistingBookingSeat {
+  preferredDate: string | null
+  participants: number
 }
 
 function sanitizeReference(value: string) {
@@ -106,18 +112,35 @@ async function getAvailableSeats({
   }
   const capacity = schedule?.maxParticipants ?? fallbackCapacity
 
-  const existingBookings = await prisma.classBooking.findMany({
-    where: {
+  let existingBookings: ExistingBookingSeat[] = []
+  try {
+    existingBookings = await prisma.classBooking.findMany({
+      where: {
+        workshopId,
+        status: { in: ["PENDING", "CONFIRMED"] },
+        preferredDate: { startsWith: dateKey },
+        ...(schedule ? { scheduleId: schedule.id } : {}),
+      },
+      select: {
+        preferredDate: true,
+        participants: true,
+      },
+    })
+  } catch (error) {
+    console.error("Could not load bookings with Prisma while checking payment availability", {
+      error,
       workshopId,
-      status: { in: ["PENDING", "CONFIRMED"] },
-      preferredDate: { startsWith: dateKey },
-      ...(schedule ? { scheduleId: schedule.id } : {}),
-    },
-    select: {
-      preferredDate: true,
-      participants: true,
-    },
-  })
+      dateKey,
+      scheduleId: schedule?.id,
+    })
+    existingBookings = await prisma.$queryRaw<ExistingBookingSeat[]>`
+      SELECT "preferredDate", "participants"
+      FROM "ClassBooking"
+      WHERE "workshopId" = ${workshopId}
+        AND "status" IN ('PENDING', 'CONFIRMED')
+        AND "preferredDate" LIKE ${`${dateKey}%`}
+    `
+  }
 
   let holds: { seats: number; weekdays: string }[] = []
   try {
@@ -172,6 +195,61 @@ async function resolveScheduleIdForBooking(scheduleId: string | null) {
     console.error("Could not resolve schedule before payment booking reservation", { error, scheduleId })
     return null
   }
+}
+
+async function createLegacyBookingRow({
+  workshopId,
+  userId,
+  preferredDate,
+  participants,
+  notes,
+  contactName,
+  contactEmail,
+  contactPhone,
+}: {
+  workshopId: string
+  userId: string | null
+  preferredDate: string
+  participants: number
+  notes: string
+  contactName: string
+  contactEmail: string
+  contactPhone: string | null
+}) {
+  const id = `booking_${randomUUID().replace(/-/g, "")}`
+  const now = new Date()
+
+  await prisma.$executeRaw`
+    INSERT INTO "ClassBooking" (
+      "id",
+      "userId",
+      "workshopId",
+      "status",
+      "preferredDate",
+      "participants",
+      "notes",
+      "contactName",
+      "contactEmail",
+      "contactPhone",
+      "createdAt",
+      "updatedAt"
+    ) VALUES (
+      ${id},
+      ${userId},
+      ${workshopId},
+      'PENDING',
+      ${preferredDate},
+      ${participants},
+      ${notes},
+      ${contactName},
+      ${contactEmail},
+      ${contactPhone},
+      ${now},
+      ${now}
+    )
+  `
+
+  return { id }
 }
 
 export async function POST(req: NextRequest) {
@@ -350,19 +428,42 @@ export async function POST(req: NextRequest) {
       )
     )
   } catch (error) {
-    console.error("Could not reserve booking before Xendit payment", {
+    console.error("Could not reserve booking before Xendit payment with Prisma", {
       error,
       workshopId,
       scheduleId,
       meetingCount: meetings.length,
     })
-    return NextResponse.json(
-      {
-        error: "Could not reserve those class seats before payment. Please refresh and try again.",
-        code: paymentErrorCodes.reservationFailed,
-      },
-      { status: 500 }
-    )
+
+    try {
+      createdBookings = []
+      for (const meeting of meetings) {
+        createdBookings.push(await createLegacyBookingRow({
+          workshopId: meeting.slotWorkshopId || workshopId,
+          userId: attachLocalUserToBooking ? session.user.id : null,
+          preferredDate: `${meeting.dateKey} · ${meeting.timeLabel}`,
+          participants,
+          notes: meeting.slotTitle ? `${paymentNote} Reserved slot: ${meeting.slotTitle}.` : paymentNote,
+          contactName: session.user.name || "",
+          contactEmail: session.user.email || "",
+          contactPhone: contactPhone || null,
+        }))
+      }
+    } catch (legacyError) {
+      console.error("Could not reserve booking before Xendit payment with legacy insert", {
+        error: legacyError,
+        workshopId,
+        scheduleId,
+        meetingCount: meetings.length,
+      })
+      return NextResponse.json(
+        {
+          error: "Could not reserve those class seats before payment. Please refresh and try again.",
+          code: paymentErrorCodes.reservationFailed,
+        },
+        { status: 500 }
+      )
+    }
   }
 
   try {
