@@ -466,7 +466,7 @@ export function ClassesCalendar({ initialClass }: ClassesCalendarProps) {
 
   const handleUnauthenticatedCheckout = () => {
     if (!isAuthenticated) {
-      openAuthModal()
+      openAuthModal(buildCheckoutHref())
     }
   }
   const canContinue = isMultiDaySelection

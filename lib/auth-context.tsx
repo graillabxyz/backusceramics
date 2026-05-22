@@ -20,7 +20,8 @@ interface AuthContextValue {
   isAuthenticated: boolean
   logout: () => Promise<void>
   isAuthModalOpen: boolean
-  openAuthModal: () => void
+  authRedirectPath: string | null
+  openAuthModal: (redirectPath?: string) => void
   closeAuthModal: () => void
 }
 
@@ -31,6 +32,7 @@ const AuthContext = createContext<AuthContextValue>({
   isAuthenticated: false,
   logout: async () => {},
   isAuthModalOpen: false,
+  authRedirectPath: null,
   openAuthModal: () => {},
   closeAuthModal: () => {},
 })
@@ -40,6 +42,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [appUser, setAppUser] = useState<AppUser | null>(null)
   const [isLoading, setIsLoading] = useState(true)
   const [isAuthModalOpen, setIsAuthModalOpen] = useState(false)
+  const [authRedirectPath, setAuthRedirectPath] = useState<string | null>(null)
   const supabase = createClient()
 
   useEffect(() => {
@@ -114,8 +117,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     window.location.href = "/"
   }
 
-  const openAuthModal = () => setIsAuthModalOpen(true)
-  const closeAuthModal = () => setIsAuthModalOpen(false)
+  const openAuthModal = (redirectPath?: string) => {
+    setAuthRedirectPath(redirectPath || null)
+    setIsAuthModalOpen(true)
+  }
+  const closeAuthModal = () => {
+    setIsAuthModalOpen(false)
+    setAuthRedirectPath(null)
+  }
 
   return (
     <AuthContext.Provider
@@ -126,6 +135,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         isAuthenticated: !!supabaseUser,
         logout,
         isAuthModalOpen,
+        authRedirectPath,
         openAuthModal,
         closeAuthModal,
       }}

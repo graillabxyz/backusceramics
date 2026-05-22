@@ -47,7 +47,7 @@ function FacebookIcon({ className }: { className?: string }) {
 }
 
 export function AuthModal() {
-  const { isAuthModalOpen, closeAuthModal } = useAuth()
+  const { isAuthModalOpen, authRedirectPath, closeAuthModal } = useAuth()
   const [isGoogleLoading, setIsGoogleLoading] = useState(false)
   const [isFacebookLoading, setIsFacebookLoading] = useState(false)
   const [error, setError] = useState("")
@@ -59,7 +59,7 @@ export function AuthModal() {
     setError("")
 
     // Save current path to redirect back here after successful sign-in
-    const callbackUrl = window.location.pathname + window.location.search
+    const callbackUrl = authRedirectPath || window.location.pathname + window.location.search
 
     const { error } = await supabase.auth.signInWithOAuth({
       provider,
