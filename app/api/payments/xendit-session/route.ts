@@ -13,6 +13,14 @@ import {
 
 export const runtime = "nodejs"
 
+const paymentErrorCodes = {
+  configurationMissing: "PAYMENT_CONFIGURATION_MISSING",
+  invalidRequest: "PAYMENT_INVALID_REQUEST",
+  availabilityCheckFailed: "PAYMENT_AVAILABILITY_CHECK_FAILED",
+  reservationFailed: "PAYMENT_RESERVATION_FAILED",
+  xenditInvoiceFailed: "PAYMENT_XENDIT_INVOICE_FAILED",
+} as const
+
 interface CheckoutMeeting {
   key?: string
   dateKey: string
@@ -129,14 +137,29 @@ export async function POST(req: NextRequest) {
 
   const xenditKey = process.env.XENDIT_KEY
   if (!xenditKey) {
-    return NextResponse.json({ error: "Xendit is not configured yet" }, { status: 503 })
+    return NextResponse.json(
+      { error: "Xendit is not configured yet", code: paymentErrorCodes.configurationMissing },
+      { status: 503 }
+    )
   }
 
-  const data = await req.json()
+  let data: Record<string, unknown>
+  try {
+    data = await req.json()
+  } catch {
+    return NextResponse.json(
+      { error: "Payment request was not valid JSON", code: paymentErrorCodes.invalidRequest },
+      { status: 400 }
+    )
+  }
+
   const workshopId = String(data.workshopId || "")
   const workshop = getScheduleOffering(workshopId) || workshops.find((item) => item.id === workshopId)
   if (!workshop) {
-    return NextResponse.json({ error: "Workshop not found" }, { status: 404 })
+    return NextResponse.json(
+      { error: "Workshop not found", code: paymentErrorCodes.invalidRequest },
+      { status: 404 }
+    )
   }
 
   const participants = Number(data.participants || 1)
@@ -160,36 +183,59 @@ export async function POST(req: NextRequest) {
   }
 
   const scheduleId = typeof data.scheduleId === "string" && data.scheduleId ? data.scheduleId : null
-  for (const meeting of meetings) {
-    if (hasSessionStartPassed(meeting.dateKey, meeting.timeLabel)) {
-      return NextResponse.json(
-        { error: `${meeting.dateLabel || meeting.dateKey} at ${meeting.timeLabel} has already started and can no longer be booked.` },
-        { status: 400 }
-      )
-    }
+  try {
+    for (const meeting of meetings) {
+      if (hasSessionStartPassed(meeting.dateKey, meeting.timeLabel)) {
+        return NextResponse.json(
+          {
+            error: `${meeting.dateLabel || meeting.dateKey} at ${meeting.timeLabel} has already started and can no longer be booked.`,
+            code: paymentErrorCodes.invalidRequest,
+          },
+          { status: 400 }
+        )
+      }
 
-    const slotWorkshopId = meeting.slotWorkshopId || workshopId
-    const slotWorkshop = getScheduleOffering(slotWorkshopId) || workshops.find((item) => item.id === slotWorkshopId)
-    if (!slotWorkshop) {
-      return NextResponse.json({ error: "Selected studio slot was not found" }, { status: 404 })
-    }
+      const slotWorkshopId = meeting.slotWorkshopId || workshopId
+      const slotWorkshop = getScheduleOffering(slotWorkshopId) || workshops.find((item) => item.id === slotWorkshopId)
+      if (!slotWorkshop) {
+        return NextResponse.json(
+          { error: "Selected studio slot was not found", code: paymentErrorCodes.invalidRequest },
+          { status: 404 }
+        )
+      }
 
-    const availableSeats = await getAvailableSeats({
-      workshopId: slotWorkshopId,
+      const availableSeats = await getAvailableSeats({
+        workshopId: slotWorkshopId,
+        scheduleId,
+        dateKey: meeting.dateKey,
+        timeLabel: meeting.timeLabel,
+        fallbackCapacity: slotWorkshop.maxParticipants ?? maxParticipants,
+      })
+
+      if (participants > availableSeats) {
+        return NextResponse.json(
+          {
+            error: `Only ${Math.max(availableSeats, 0)} ${availableSeats === 1 ? "seat is" : "seats are"} available for ${meeting.dateLabel || meeting.dateKey} at ${meeting.timeLabel}.`,
+            code: paymentErrorCodes.invalidRequest,
+          },
+          { status: 409 }
+        )
+      }
+    }
+  } catch (error) {
+    console.error("Could not validate availability before Xendit payment", {
+      error,
+      workshopId,
       scheduleId,
-      dateKey: meeting.dateKey,
-      timeLabel: meeting.timeLabel,
-      fallbackCapacity: slotWorkshop.maxParticipants ?? maxParticipants,
+      meetingCount: meetings.length,
     })
-
-    if (participants > availableSeats) {
-      return NextResponse.json(
-        {
-          error: `Only ${Math.max(availableSeats, 0)} ${availableSeats === 1 ? "seat is" : "seats are"} available for ${meeting.dateLabel || meeting.dateKey} at ${meeting.timeLabel}.`,
-        },
-        { status: 409 }
-      )
-    }
+    return NextResponse.json(
+      {
+        error: "Could not check class availability before payment. Please refresh and try again.",
+        code: paymentErrorCodes.availabilityCheckFailed,
+      },
+      { status: 500 }
+    )
   }
 
   const total = workshop.price * participants
@@ -226,9 +272,17 @@ export async function POST(req: NextRequest) {
       )
     )
   } catch (error) {
-    console.error("Could not reserve booking before Xendit payment", error)
+    console.error("Could not reserve booking before Xendit payment", {
+      error,
+      workshopId,
+      scheduleId,
+      meetingCount: meetings.length,
+    })
     return NextResponse.json(
-      { error: "Could not reserve those class seats before payment. Please refresh and try again." },
+      {
+        error: "Could not reserve those class seats before payment. Please refresh and try again.",
+        code: paymentErrorCodes.reservationFailed,
+      },
       { status: 500 }
     )
   }
@@ -292,7 +346,12 @@ export async function POST(req: NextRequest) {
       bookingIds: createdBookings.map((booking) => booking.id),
     })
   } catch (error) {
-    console.error("Could not start Xendit invoice payment", error)
+    console.error("Could not start Xendit invoice payment", {
+      error,
+      workshopId,
+      referenceId,
+      bookingIds: createdBookings.map((booking) => booking.id),
+    })
     try {
       await prisma.classBooking.updateMany({
         where: { id: { in: createdBookings.map((booking) => booking.id) } },
@@ -303,7 +362,10 @@ export async function POST(req: NextRequest) {
     }
 
     return NextResponse.json(
-      { error: error instanceof Error ? error.message : "Could not start payment" },
+      {
+        error: error instanceof Error ? error.message : "Could not start payment",
+        code: paymentErrorCodes.xenditInvoiceFailed,
+      },
       { status: 502 }
     )
   }

@@ -139,7 +139,8 @@ function ClassCheckoutContent() {
 
         const data = await res.json().catch(() => ({}))
         if (!res.ok) {
-          throw new Error(data.error || "Could not start payment")
+          const code = typeof data.code === "string" ? ` (${data.code})` : ""
+          throw new Error(`${data.error || "Could not start payment"}${code}`)
         }
 
         if (!data.paymentUrl) {
