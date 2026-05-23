@@ -191,6 +191,12 @@ function extractXenditCode(body: unknown) {
   return typeof code === "string" ? code : undefined
 }
 
+function getXenditTimeoutMs() {
+  const configured = Number(process.env.XENDIT_REQUEST_TIMEOUT_MS || 10000)
+  if (!Number.isFinite(configured)) return 10000
+  return Math.min(Math.max(configured, 3000), 25000)
+}
+
 async function parseXenditResponse(response: Response) {
   const bodyText = await response.text()
   if (!bodyText) return { body: null, bodyText: "" }
@@ -202,17 +208,41 @@ async function parseXenditResponse(response: Response) {
   }
 }
 
-export async function createXenditInvoice(payload: CreateXenditInvoiceInput) {
+async function postToXendit(endpoint: string, payload: unknown) {
   const secretKey = getXenditSecretKey()
+  const controller = new AbortController()
+  const timeout = setTimeout(() => controller.abort(), getXenditTimeoutMs())
+
+  try {
+    return await fetch(endpoint, {
+      method: "POST",
+      headers: {
+        Authorization: `Basic ${Buffer.from(`${secretKey}:`).toString("base64")}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(payload),
+      signal: controller.signal,
+    })
+  } catch (error) {
+    if (error instanceof Error && error.name === "AbortError") {
+      throw new XenditApiError({
+        status: 504,
+        message: "Xendit payment request timed out.",
+      })
+    }
+
+    throw new XenditApiError({
+      status: 502,
+      message: error instanceof Error ? error.message : "Could not reach Xendit payment API.",
+    })
+  } finally {
+    clearTimeout(timeout)
+  }
+}
+
+export async function createXenditInvoice(payload: CreateXenditInvoiceInput) {
   const endpoint = (process.env.XENDIT_INVOICE_ENDPOINT || "https://api.xendit.co/v2/invoices").trim()
-  const response = await fetch(endpoint, {
-    method: "POST",
-    headers: {
-      Authorization: `Basic ${Buffer.from(`${secretKey}:`).toString("base64")}`,
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify(compactInvoicePayload(payload)),
-  })
+  const response = await postToXendit(endpoint, compactInvoicePayload(payload))
 
   const { body, bodyText } = await parseXenditResponse(response)
 
@@ -238,16 +268,8 @@ export async function createXenditInvoice(payload: CreateXenditInvoiceInput) {
 }
 
 export async function createXenditPaymentSession(payload: CreateXenditPaymentSessionInput) {
-  const secretKey = getXenditSecretKey()
   const endpoint = (process.env.XENDIT_SESSION_ENDPOINT || "https://api.xendit.co/sessions").trim()
-  const response = await fetch(endpoint, {
-    method: "POST",
-    headers: {
-      Authorization: `Basic ${Buffer.from(`${secretKey}:`).toString("base64")}`,
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify(compactPaymentSessionPayload(payload)),
-  })
+  const response = await postToXendit(endpoint, compactPaymentSessionPayload(payload))
 
   const { body, bodyText } = await parseXenditResponse(response)
 

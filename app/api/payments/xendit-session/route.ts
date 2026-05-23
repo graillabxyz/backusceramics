@@ -28,6 +28,7 @@ const paymentErrorCodes = {
   reservationFailed: "PAYMENT_RESERVATION_FAILED",
   xenditInvoiceFailed: "PAYMENT_XENDIT_INVOICE_FAILED",
   authFailed: "PAYMENT_AUTH_FAILED",
+  unhandled: "PAYMENT_UNHANDLED_ERROR",
 } as const
 
 interface CheckoutMeeting {
@@ -361,7 +362,7 @@ async function ensureClassBookingStorage() {
   }
 }
 
-export async function POST(req: NextRequest) {
+async function handlePaymentSessionPost(req: NextRequest) {
   let session: PaymentSession | null
   let attachLocalUserToBooking = true
   try {
@@ -686,6 +687,27 @@ export async function POST(req: NextRequest) {
         xenditMessage: isXenditError ? error.message : undefined,
       },
       { status: isConfigError ? 503 : 502 }
+    )
+  }
+}
+
+export async function POST(req: NextRequest) {
+  try {
+    return await handlePaymentSessionPost(req)
+  } catch (error) {
+    console.error("Unhandled payment session route error", {
+      error,
+      message: error instanceof Error ? error.message : undefined,
+      stack: error instanceof Error ? error.stack : undefined,
+    })
+
+    return NextResponse.json(
+      {
+        error: "Payment could not be started right now. Please try again shortly or message us on WhatsApp.",
+        code: paymentErrorCodes.unhandled,
+        message: error instanceof Error ? error.message : undefined,
+      },
+      { status: 500 }
     )
   }
 }
