@@ -321,6 +321,42 @@ async function createLegacyBookingRows({
   return bookings
 }
 
+async function ensureClassBookingStorage() {
+  const statements = [
+    `CREATE TABLE IF NOT EXISTS "ClassBooking" (
+      "id" TEXT NOT NULL PRIMARY KEY,
+      "userId" TEXT,
+      "workshopId" TEXT NOT NULL,
+      "scheduleId" TEXT,
+      "status" TEXT NOT NULL DEFAULT 'PENDING',
+      "preferredDate" TEXT,
+      "participants" INTEGER NOT NULL DEFAULT 1,
+      "notes" TEXT,
+      "contactName" TEXT NOT NULL DEFAULT '',
+      "contactEmail" TEXT NOT NULL DEFAULT '',
+      "contactPhone" TEXT,
+      "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      "updatedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP
+    )`,
+    `ALTER TABLE "ClassBooking" ADD COLUMN IF NOT EXISTS "userId" TEXT`,
+    `ALTER TABLE "ClassBooking" ADD COLUMN IF NOT EXISTS "workshopId" TEXT`,
+    `ALTER TABLE "ClassBooking" ADD COLUMN IF NOT EXISTS "scheduleId" TEXT`,
+    `ALTER TABLE "ClassBooking" ADD COLUMN IF NOT EXISTS "status" TEXT NOT NULL DEFAULT 'PENDING'`,
+    `ALTER TABLE "ClassBooking" ADD COLUMN IF NOT EXISTS "preferredDate" TEXT`,
+    `ALTER TABLE "ClassBooking" ADD COLUMN IF NOT EXISTS "participants" INTEGER NOT NULL DEFAULT 1`,
+    `ALTER TABLE "ClassBooking" ADD COLUMN IF NOT EXISTS "notes" TEXT`,
+    `ALTER TABLE "ClassBooking" ADD COLUMN IF NOT EXISTS "contactName" TEXT NOT NULL DEFAULT ''`,
+    `ALTER TABLE "ClassBooking" ADD COLUMN IF NOT EXISTS "contactEmail" TEXT NOT NULL DEFAULT ''`,
+    `ALTER TABLE "ClassBooking" ADD COLUMN IF NOT EXISTS "contactPhone" TEXT`,
+    `ALTER TABLE "ClassBooking" ADD COLUMN IF NOT EXISTS "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP`,
+    `ALTER TABLE "ClassBooking" ADD COLUMN IF NOT EXISTS "updatedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP`,
+  ]
+
+  for (const statement of statements) {
+    await prisma.$executeRawUnsafe(statement)
+  }
+}
+
 export async function POST(req: NextRequest) {
   let session: PaymentSession | null
   let attachLocalUserToBooking = true
@@ -526,6 +562,7 @@ export async function POST(req: NextRequest) {
       })
 
       try {
+        await ensureClassBookingStorage()
         createdBookings = await createLegacyBookingRows({
           meetings,
           workshopId,
