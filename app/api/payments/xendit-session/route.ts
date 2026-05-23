@@ -5,6 +5,12 @@ import { prisma } from "@/lib/prisma"
 import { randomUUID } from "crypto"
 import { formatPrice, workshops } from "@/lib/classes-data"
 import {
+  createXenditInvoice,
+  getXenditSecretKey,
+  XenditApiError,
+  XenditConfigurationError,
+} from "@/lib/xendit"
+import {
   getScheduleOffering,
   hasSessionStartPassed,
   parseDateKey,
@@ -69,6 +75,18 @@ function getOrigin(req: NextRequest) {
 
 function isHttpsUrl(value: string) {
   return value.startsWith("https://")
+}
+
+function getPaymentOrigin(req: NextRequest) {
+  const configuredSiteUrl = process.env.NEXT_PUBLIC_SITE_URL?.trim().replace(/\/$/, "")
+  const vercelProductionUrl = process.env.VERCEL_PROJECT_PRODUCTION_URL
+    ? `https://${process.env.VERCEL_PROJECT_PRODUCTION_URL.trim().replace(/\/$/, "")}`
+    : ""
+  const origin = getOrigin(req).replace(/\/$/, "")
+
+  if (configuredSiteUrl && isHttpsUrl(configuredSiteUrl)) return configuredSiteUrl
+  if (vercelProductionUrl && isHttpsUrl(vercelProductionUrl)) return vercelProductionUrl
+  return origin
 }
 
 function parseMeetings(value: unknown): CheckoutMeeting[] {
@@ -299,10 +317,12 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Must be signed in to pay for a booking" }, { status: 401 })
   }
 
-  const xenditKey = process.env.XENDIT_SECRET_KEY ?? process.env.XENDIT_KEY
-  if (!xenditKey) {
+  try {
+    getXenditSecretKey()
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Xendit is not configured yet"
     return NextResponse.json(
-      { error: "Xendit is not configured yet", code: paymentErrorCodes.configurationMissing },
+      { error: message, code: paymentErrorCodes.configurationMissing },
       { status: 503 }
     )
   }
@@ -405,7 +425,7 @@ export async function POST(req: NextRequest) {
 
   const total = workshop.price * participants
   const referenceId = sanitizeReference(`bc_${Date.now()}_${workshop.id}`)
-  const origin = getOrigin(req)
+  const origin = getPaymentOrigin(req)
   const hasHttpsOrigin = isHttpsUrl(origin)
   const contactPhone = typeof data.contactPhone === "string" ? data.contactPhone.trim() : ""
   const paymentNote = [
@@ -417,8 +437,7 @@ export async function POST(req: NextRequest) {
     `Total due today: ${formatPrice(total)}.`,
   ].filter(Boolean).join(" ")
 
-  let createdBookings = []
-  let reservationWarning: string | null = null
+  let createdBookings: { id: string }[] = []
   try {
     createdBookings = await prisma.$transaction(
       meetings.map((meeting) =>
@@ -466,78 +485,73 @@ export async function POST(req: NextRequest) {
         scheduleId,
         meetingCount: meetings.length,
       })
-      reservationWarning = "Booking reservation could not be written before payment. Payment metadata includes the selected class details."
-      createdBookings = []
+      return NextResponse.json(
+        {
+          error: "Could not reserve those class seats before payment. Please refresh and try again.",
+          code: paymentErrorCodes.reservationFailed,
+        },
+        { status: 500 }
+      )
     }
   }
 
   try {
-    const xenditResponse = await fetch("https://api.xendit.co/v2/invoices", {
-      method: "POST",
-      headers: {
-        Authorization: `Basic ${Buffer.from(`${xenditKey}:`).toString("base64")}`,
-        "Content-Type": "application/json",
+    const invoice = await createXenditInvoice({
+      external_id: referenceId,
+      amount: total,
+      description: `${workshop.title} - ${participants} ${participants === 1 ? "seat" : "seats"}`,
+      invoice_duration: 1800,
+      should_send_email: false,
+      customer: {
+        given_names: sanitizeCustomerName(session.user.name),
+        email: session.user.email || undefined,
+        mobile_number: toE164OrUndefined(contactPhone),
       },
-      body: JSON.stringify({
-        external_id: referenceId,
-        amount: total,
-        description: `${workshop.title} - ${participants} ${participants === 1 ? "seat" : "seats"}`,
-        payer_email: session.user.email || undefined,
-        invoice_duration: 1800,
-        should_send_email: false,
-        customer: {
-          given_names: sanitizeCustomerName(session.user.name),
-          email: session.user.email || undefined,
-          mobile_number: toE164OrUndefined(contactPhone),
+      currency: "IDR",
+      items: [
+        {
+          name: workshop.title,
+          quantity: participants,
+          price: workshop.price,
+          category: "Ceramics class",
         },
-        currency: "IDR",
-        items: [
-          {
-            name: workshop.title,
-            quantity: participants,
-            price: workshop.price,
-            category: "Ceramics class",
-          },
-        ],
-        metadata: {
-          booking_reference: referenceId,
-          booking_ids: createdBookings.map((booking) => booking.id).join(","),
-          booking_reservation_status: createdBookings.length > 0 ? "reserved" : "not_reserved",
-          booking_reservation_warning: reservationWarning || undefined,
-          workshop_id: workshop.id,
-          workshop_days: meetings.map((meeting) => meeting.dateKey).join(","),
-          workshop_times: meetings.map((meeting) => meeting.timeLabel).join(","),
-          customer_email: session.user.email || undefined,
-          customer_phone: contactPhone || undefined,
-        },
-        ...(hasHttpsOrigin
-          ? {
-              success_redirect_url: `${origin}/account/bookings?payment=success&reference=${referenceId}`,
-              failure_redirect_url: `${origin}/classes/checkout?payment=cancelled`,
-            }
-          : {}),
-      }),
+      ],
+      metadata: {
+        booking_reference: referenceId,
+        booking_ids: createdBookings.map((booking) => booking.id).join(","),
+        booking_reservation_status: "reserved",
+        workshop_id: workshop.id,
+        workshop_title: workshop.title,
+        workshop_days: meetings.map((meeting) => meeting.dateKey).join(","),
+        workshop_times: meetings.map((meeting) => meeting.timeLabel).join(","),
+        schedule_id: scheduleId || undefined,
+        focus: typeof data.focus === "string" ? data.focus : undefined,
+        participants,
+        customer_email: session.user.email || undefined,
+        customer_phone: contactPhone || undefined,
+      },
+      ...(hasHttpsOrigin
+        ? {
+            success_redirect_url: `${origin}/account/bookings?payment=success&reference=${referenceId}`,
+            failure_redirect_url: `${origin}/classes/checkout?payment=cancelled`,
+          }
+        : {}),
     })
-
-    const xenditData = await xenditResponse.json().catch(() => ({}))
-    if (!xenditResponse.ok) {
-      throw new Error(xenditData?.message || xenditData?.error_code || "Could not start Xendit payment")
-    }
-
-    const paymentUrl = xenditData?.invoice_url
-    if (typeof paymentUrl !== "string" || !paymentUrl) {
-      throw new Error("Xendit did not return a payment link")
-    }
 
     return NextResponse.json({
-      paymentUrl,
+      paymentUrl: invoice.invoice_url,
       referenceId,
+      invoiceId: invoice.id,
       bookingIds: createdBookings.map((booking) => booking.id),
-      reservationWarning,
     })
   } catch (error) {
+    const isXenditError = error instanceof XenditApiError
+    const isConfigError = error instanceof XenditConfigurationError
     console.error("Could not start Xendit invoice payment", {
       error,
+      xenditStatus: isXenditError ? error.status : undefined,
+      xenditCode: isXenditError ? error.xenditCode : undefined,
+      xenditResponseBody: isXenditError ? error.responseBody : undefined,
       workshopId,
       referenceId,
       bookingIds: createdBookings.map((booking) => booking.id),
@@ -556,9 +570,9 @@ export async function POST(req: NextRequest) {
     return NextResponse.json(
       {
         error: error instanceof Error ? error.message : "Could not start payment",
-        code: paymentErrorCodes.xenditInvoiceFailed,
+        code: isConfigError ? paymentErrorCodes.configurationMissing : paymentErrorCodes.xenditInvoiceFailed,
       },
-      { status: 502 }
+      { status: isConfigError ? 503 : 502 }
     )
   }
 }
