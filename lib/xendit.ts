@@ -17,6 +17,7 @@ export interface CreateXenditInvoiceInput {
   external_id: string
   amount: number
   description: string
+  payer_email?: string
   invoice_duration?: number
   should_send_email?: boolean
   customer?: XenditInvoiceCustomer

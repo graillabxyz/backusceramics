@@ -597,6 +597,7 @@ export async function POST(req: NextRequest) {
       external_id: referenceId,
       amount: total,
       description: `${workshop.title} - ${participants} ${participants === 1 ? "seat" : "seats"}`,
+      payer_email: session.user.email || undefined,
       invoice_duration: 1800,
       should_send_email: false,
       customer: {
@@ -668,6 +669,9 @@ export async function POST(req: NextRequest) {
       {
         error: error instanceof Error ? error.message : "Could not start payment",
         code: isConfigError ? paymentErrorCodes.configurationMissing : paymentErrorCodes.xenditInvoiceFailed,
+        xenditStatus: isXenditError ? error.status : undefined,
+        xenditCode: isXenditError ? error.xenditCode : undefined,
+        xenditMessage: isXenditError ? error.message : undefined,
       },
       { status: isConfigError ? 503 : 502 }
     )

@@ -192,6 +192,18 @@ function ClassCheckoutContent() {
             source: bookingSource,
           },
         })
+        console.error("Payment start failed details", JSON.stringify({
+          status: res.status,
+          response: data,
+          request: {
+            workshopId,
+            scheduleId: scheduleId || null,
+            participants: selectedSeatCount,
+            meetingCount: paymentMeetings.length,
+            requiredMeetings: paymentRequiredMeetings,
+            source: bookingSource,
+          },
+        }, null, 2))
         throw new Error(friendlyPaymentError(res.status, data as Record<string, unknown>))
       }
 
@@ -206,6 +218,16 @@ function ClassCheckoutContent() {
             source: bookingSource,
           },
         })
+        console.error("Payment response missing paymentUrl details", JSON.stringify({
+          response: data,
+          request: {
+            workshopId,
+            scheduleId: scheduleId || null,
+            participants: selectedSeatCount,
+            meetingCount: paymentMeetings.length,
+            source: bookingSource,
+          },
+        }, null, 2))
         throw new Error("Payment could not be started right now. Please try again shortly or message us on WhatsApp.")
       }
 
