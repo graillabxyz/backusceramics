@@ -47,6 +47,33 @@ function parseMeetings(value: string | null) {
   }
 }
 
+function safeInternalPath(value: string | null, fallback = "/classes/calendar") {
+  if (!value || !value.startsWith("/") || value.startsWith("//")) return fallback
+  return value
+}
+
+function friendlyPaymentError(status: number, data: Record<string, unknown>) {
+  const code = typeof data.code === "string" ? data.code : ""
+
+  if (code === "PAYMENT_AUTH_FAILED") {
+    return "Please sign in again before continuing to payment."
+  }
+
+  if (code === "PAYMENT_AVAILABILITY_CHECK_FAILED") {
+    return "We could not confirm availability right now. Please refresh the calendar and try again."
+  }
+
+  if (code === "PAYMENT_RESERVATION_FAILED") {
+    return "We could not hold those seats just now. Please refresh the calendar and choose the time again."
+  }
+
+  if (code === "PAYMENT_CONFIGURATION_MISSING" || code === "PAYMENT_XENDIT_INVOICE_FAILED" || status >= 500) {
+    return "Payment could not be started right now. Please try again shortly or message us on WhatsApp."
+  }
+
+  return "We could not start this booking. Please refresh and try again."
+}
+
 function ClassCheckoutContent() {
   const searchParams = useSearchParams()
   const { isAuthenticated, openAuthModal } = useAuth()
@@ -63,6 +90,9 @@ function ClassCheckoutContent() {
   const requiredMeetings = Math.max(Number(searchParams.get("requiredMeetings") || 0), 0)
   const meetings = useMemo(() => parseMeetings(searchParams.get("meetings")), [searchParams])
   const focus = searchParams.get("focus") || ""
+  const returnTo = safeInternalPath(searchParams.get("returnTo"))
+  const returnLabel = searchParams.get("returnLabel") || "Back to calendar"
+  const bookingSource = searchParams.get("source") || ""
   const calendarEvents = useMemo(() => {
     if (prepaid) {
       return meetings
@@ -104,6 +134,9 @@ function ClassCheckoutContent() {
         }]
       : []
   const paymentRequiredMeetings = prepaid ? requiredMeetings : 1
+  const startingMeeting = prepaid ? meetings[0] : null
+  const uniqueMeetingTimes = useMemo(() => Array.from(new Set(meetings.map((meeting) => meeting.timeLabel))), [meetings])
+  const hasMixedMeetingTimes = prepaid && uniqueMeetingTimes.length > 1
 
   const handleSubmit = async () => {
     setError("")
@@ -147,17 +180,39 @@ function ClassCheckoutContent() {
 
       const data = await res.json().catch(() => ({}))
       if (!res.ok) {
-        const code = typeof data.code === "string" ? ` (${data.code})` : ""
-        throw new Error(`${data.error || "Could not start payment"}${code}`)
+        console.error("Payment start failed", {
+          status: res.status,
+          response: data,
+          request: {
+            workshopId,
+            scheduleId: scheduleId || null,
+            participants: selectedSeatCount,
+            meetingCount: paymentMeetings.length,
+            requiredMeetings: paymentRequiredMeetings,
+            source: bookingSource,
+          },
+        })
+        throw new Error(friendlyPaymentError(res.status, data as Record<string, unknown>))
       }
 
       if (!data.paymentUrl) {
-        throw new Error("Payment link was not returned")
+        console.error("Payment response missing paymentUrl", {
+          response: data,
+          request: {
+            workshopId,
+            scheduleId: scheduleId || null,
+            participants: selectedSeatCount,
+            meetingCount: paymentMeetings.length,
+            source: bookingSource,
+          },
+        })
+        throw new Error("Payment could not be started right now. Please try again shortly or message us on WhatsApp.")
       }
 
       window.location.href = data.paymentUrl
     } catch (paymentError) {
-      setError(paymentError instanceof Error ? paymentError.message : "Could not start payment")
+      console.error("Payment checkout error", paymentError)
+      setError(paymentError instanceof Error ? paymentError.message : "We could not start this booking. Please refresh and try again.")
       setIsSubmitting(false)
     }
   }
@@ -169,9 +224,9 @@ function ClassCheckoutContent() {
         <div className="mx-auto max-w-5xl px-4 sm:px-6 lg:px-8">
           <div className="mb-4">
             <Button variant="ghost" asChild className="gap-2 px-0">
-              <Link href="/classes/calendar">
+              <Link href={returnTo}>
                 <ArrowLeft className="h-4 w-4" />
-                Back to calendar
+                {returnLabel}
               </Link>
             </Button>
           </div>
@@ -259,8 +314,20 @@ function ClassCheckoutContent() {
                   <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
                     {focus
                       ? "These days reserve the studio slots shown below."
-                      : "These days were selected automatically from your starting day and time."}
+                      : "You chose the starting day. We automatically selected the required workshop dates below, so please review every date and time before continuing."}
                   </p>
+                  {!focus && startingMeeting && (
+                    <p className="mt-2 text-xs font-medium text-foreground">
+                      Starting day: {startingMeeting.dateLabel} · {startingMeeting.timeLabel}
+                    </p>
+                  )}
+                  {!focus && (
+                    <p className="mt-2 text-xs leading-relaxed text-muted-foreground">
+                      {hasMixedMeetingTimes
+                        ? "Some days use a different time because the original time slot was not available for the full workshop sequence."
+                        : "All selected workshop days are at the same time."}
+                    </p>
+                  )}
                   {focus && (
                     <p className="mt-2 text-xs font-medium text-foreground">
                       Focus: {focus}

@@ -448,6 +448,9 @@ export function ClassesCalendar({ initialClass }: ClassesCalendarProps) {
       price: String(activeWorkshop.price),
       maxSeats: String(purchasableSeats),
       prepaid: prepaidProgram ? "true" : "false",
+      returnTo: "/classes/calendar",
+      returnLabel: "Back to weekly calendar",
+      source: "weekly-calendar",
     })
 
     if (isMultiDaySelection) params.set("requiredMeetings", String(requiredProgramDays))

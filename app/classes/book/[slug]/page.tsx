@@ -444,6 +444,9 @@ export default function ClassMonthBookingPage() {
       maxSeats: String(purchasableSeats),
       seats,
       prepaid: prepaid ? "true" : "false",
+      returnTo: `/classes/book/${slug}`,
+      returnLabel: `Back to ${workshop.title}`,
+      source: "class-month",
     })
 
     if (isMultiDaySelection) params.set("requiredMeetings", String(requiredProgramDays))
