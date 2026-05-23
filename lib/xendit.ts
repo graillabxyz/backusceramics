@@ -35,6 +35,50 @@ export interface XenditInvoiceResponse {
   status?: string
 }
 
+export interface XenditPaymentSessionItem {
+  reference_id: string
+  type: "DIGITAL_SERVICE" | "PHYSICAL_SERVICE" | "DIGITAL_PRODUCT" | "PHYSICAL_PRODUCT" | "FEE"
+  name: string
+  net_unit_amount: number
+  quantity: number
+  category: string
+}
+
+export interface XenditPaymentSessionCustomer {
+  reference_id: string
+  type: "INDIVIDUAL"
+  email?: string
+  mobile_number?: string
+  individual_detail: {
+    given_names: string
+    surname?: string
+  }
+}
+
+export interface CreateXenditPaymentSessionInput {
+  reference_id: string
+  session_type: "PAY"
+  mode: "PAYMENT_LINK"
+  amount: number
+  currency: "IDR"
+  country: "ID"
+  customer: XenditPaymentSessionCustomer
+  success_return_url?: string
+  cancel_return_url?: string
+  description?: string
+  items?: XenditPaymentSessionItem[]
+  metadata?: Record<string, MetadataValue | null | undefined>
+  allow_save_payment_method?: "DISABLED" | "OPTIONAL" | "FORCED"
+  locale?: "en" | "id"
+}
+
+export interface XenditPaymentSessionResponse {
+  payment_session_id: string
+  reference_id: string
+  payment_link_url: string
+  status?: string
+}
+
 export class XenditConfigurationError extends Error {
   public readonly code = "XENDIT_CONFIGURATION_ERROR"
 
@@ -120,6 +164,18 @@ function compactInvoicePayload(payload: CreateXenditInvoiceInput) {
   })
 }
 
+function compactPaymentSessionPayload(payload: CreateXenditPaymentSessionInput) {
+  return compactObject({
+    ...payload,
+    customer: compactObject({
+      ...payload.customer,
+      individual_detail: compactObject(payload.customer.individual_detail),
+    }),
+    items: payload.items?.map((item) => compactObject(item)),
+    metadata: payload.metadata ? compactObject(payload.metadata) : undefined,
+  })
+}
+
 function extractXenditMessage(body: unknown, fallback: string) {
   if (!body || typeof body !== "object") return fallback
   const record = body as Record<string, unknown>
@@ -179,4 +235,39 @@ export async function createXenditInvoice(payload: CreateXenditInvoiceInput) {
   }
 
   return invoice as XenditInvoiceResponse
+}
+
+export async function createXenditPaymentSession(payload: CreateXenditPaymentSessionInput) {
+  const secretKey = getXenditSecretKey()
+  const endpoint = (process.env.XENDIT_SESSION_ENDPOINT || "https://api.xendit.co/sessions").trim()
+  const response = await fetch(endpoint, {
+    method: "POST",
+    headers: {
+      Authorization: `Basic ${Buffer.from(`${secretKey}:`).toString("base64")}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(compactPaymentSessionPayload(payload)),
+  })
+
+  const { body, bodyText } = await parseXenditResponse(response)
+
+  if (!response.ok) {
+    throw new XenditApiError({
+      status: response.status,
+      message: extractXenditMessage(body, bodyText || "Could not start Xendit payment session"),
+      xenditCode: extractXenditCode(body),
+      responseBody: bodyText.slice(0, 1000),
+    })
+  }
+
+  const session = body as Partial<XenditPaymentSessionResponse> | null
+  if (!session || typeof session.payment_link_url !== "string" || !session.payment_link_url) {
+    throw new XenditApiError({
+      status: response.status,
+      message: "Xendit did not return a payment_link_url.",
+      responseBody: bodyText.slice(0, 1000),
+    })
+  }
+
+  return session as XenditPaymentSessionResponse
 }

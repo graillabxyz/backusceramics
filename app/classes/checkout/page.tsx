@@ -178,7 +178,13 @@ function ClassCheckoutContent() {
         }),
       })
 
-      const data = await res.json().catch(() => ({}))
+      const responseText = await res.text()
+      let data: Record<string, unknown> = {}
+      try {
+        data = responseText ? JSON.parse(responseText) : {}
+      } catch {
+        data = { rawResponse: responseText.slice(0, 1000) }
+      }
       if (!res.ok) {
         console.error("Payment start failed", {
           status: res.status,

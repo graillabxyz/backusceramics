@@ -5,7 +5,7 @@ import { prisma } from "@/lib/prisma"
 import { randomUUID } from "crypto"
 import { formatPrice, workshops } from "@/lib/classes-data"
 import {
-  createXenditInvoice,
+  createXenditPaymentSession,
   getXenditSecretKey,
   XenditApiError,
   XenditConfigurationError,
@@ -61,6 +61,10 @@ function sanitizeReference(value: string) {
 
 function sanitizeCustomerName(value?: string | null) {
   return (value || "BackusCustomer").replace(/[^a-zA-Z0-9]/g, "").slice(0, 50) || "BackusCustomer"
+}
+
+function sanitizeCustomerReference(value?: string | null) {
+  return (value || "BackusCustomer").replace(/[^a-zA-Z0-9]/g, "").slice(0, 255) || "BackusCustomer"
 }
 
 function toE164OrUndefined(value?: string) {
@@ -593,24 +597,32 @@ export async function POST(req: NextRequest) {
   }
 
   try {
-    const invoice = await createXenditInvoice({
-      external_id: referenceId,
+    const paymentSession = await createXenditPaymentSession({
+      reference_id: referenceId,
+      session_type: "PAY",
+      mode: "PAYMENT_LINK",
       amount: total,
+      currency: "IDR",
+      country: "ID",
       description: `${workshop.title} - ${participants} ${participants === 1 ? "seat" : "seats"}`,
-      payer_email: session.user.email || undefined,
-      invoice_duration: 1800,
-      should_send_email: false,
+      allow_save_payment_method: "DISABLED",
+      locale: "en",
       customer: {
-        given_names: sanitizeCustomerName(session.user.name),
+        reference_id: sanitizeCustomerReference(session.user.id || session.user.email || referenceId),
+        type: "INDIVIDUAL",
         email: session.user.email || undefined,
         mobile_number: toE164OrUndefined(contactPhone),
+        individual_detail: {
+          given_names: sanitizeCustomerName(session.user.name || session.user.email || "BackusCustomer"),
+        },
       },
-      currency: "IDR",
       items: [
         {
+          reference_id: workshop.id,
+          type: "PHYSICAL_SERVICE",
           name: workshop.title,
+          net_unit_amount: workshop.price,
           quantity: participants,
-          price: workshop.price,
           category: "Ceramics class",
         },
       ],
@@ -630,16 +642,16 @@ export async function POST(req: NextRequest) {
       },
       ...(hasHttpsOrigin
         ? {
-            success_redirect_url: `${origin}/account/bookings?payment=success&reference=${referenceId}`,
-            failure_redirect_url: `${origin}/classes/checkout?payment=cancelled`,
+            success_return_url: `${origin}/account/bookings?payment=success&reference=${referenceId}`,
+            cancel_return_url: `${origin}/classes/checkout?payment=cancelled`,
           }
         : {}),
     })
 
     return NextResponse.json({
-      paymentUrl: invoice.invoice_url,
+      paymentUrl: paymentSession.payment_link_url,
       referenceId,
-      invoiceId: invoice.id,
+      paymentSessionId: paymentSession.payment_session_id,
       bookingIds: createdBookings.map((booking) => booking.id),
     })
   } catch (error) {
