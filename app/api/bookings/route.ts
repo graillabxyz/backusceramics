@@ -18,7 +18,12 @@ export async function GET() {
   }
 
   const bookings = await prisma.classBooking.findMany({
-    where: { userId: session.user.id },
+    where: {
+      OR: [
+        { userId: session.user.id },
+        ...(session.user.email ? [{ contactEmail: session.user.email }] : []),
+      ],
+    },
     orderBy: { createdAt: "desc" },
   })
   return NextResponse.json(bookings)

@@ -233,6 +233,7 @@ async function createLegacyBookingRow({
   contactName,
   contactEmail,
   contactPhone,
+  anonymous = false,
 }: {
   workshopId: string
   userId: string | null
@@ -242,6 +243,7 @@ async function createLegacyBookingRow({
   contactName: string
   contactEmail: string
   contactPhone: string | null
+  anonymous?: boolean
 }) {
   const id = `booking_${randomUUID().replace(/-/g, "")}`
   const now = new Date()
@@ -262,7 +264,7 @@ async function createLegacyBookingRow({
       "updatedAt"
     ) VALUES (
       ${id},
-      ${userId},
+      ${anonymous ? null : userId},
       ${workshopId},
       'PENDING',
       ${preferredDate},
@@ -277,6 +279,46 @@ async function createLegacyBookingRow({
   `
 
   return { id }
+}
+
+async function createLegacyBookingRows({
+  meetings,
+  workshopId,
+  userId,
+  participants,
+  paymentNote,
+  contactName,
+  contactEmail,
+  contactPhone,
+  anonymous = false,
+}: {
+  meetings: CheckoutMeeting[]
+  workshopId: string
+  userId: string | null
+  participants: number
+  paymentNote: string
+  contactName: string
+  contactEmail: string
+  contactPhone: string | null
+  anonymous?: boolean
+}) {
+  const bookings: { id: string }[] = []
+
+  for (const meeting of meetings) {
+    bookings.push(await createLegacyBookingRow({
+      workshopId: meeting.slotWorkshopId || workshopId,
+      userId,
+      preferredDate: `${meeting.dateKey} · ${meeting.timeLabel}`,
+      participants,
+      notes: meeting.slotTitle ? `${paymentNote} Reserved slot: ${meeting.slotTitle}.` : paymentNote,
+      contactName,
+      contactEmail,
+      contactPhone,
+      anonymous,
+    }))
+  }
+
+  return bookings
 }
 
 export async function POST(req: NextRequest) {
@@ -465,19 +507,16 @@ export async function POST(req: NextRequest) {
     })
 
     try {
-      createdBookings = []
-      for (const meeting of meetings) {
-        createdBookings.push(await createLegacyBookingRow({
-          workshopId: meeting.slotWorkshopId || workshopId,
-          userId: attachLocalUserToBooking ? session.user.id : null,
-          preferredDate: `${meeting.dateKey} · ${meeting.timeLabel}`,
-          participants,
-          notes: meeting.slotTitle ? `${paymentNote} Reserved slot: ${meeting.slotTitle}.` : paymentNote,
-          contactName: session.user.name || "",
-          contactEmail: session.user.email || "",
-          contactPhone: contactPhone || null,
-        }))
-      }
+      createdBookings = await createLegacyBookingRows({
+        meetings,
+        workshopId,
+        userId: attachLocalUserToBooking ? session.user.id : null,
+        participants,
+        paymentNote,
+        contactName: session.user.name || "",
+        contactEmail: session.user.email || "",
+        contactPhone: contactPhone || null,
+      })
     } catch (legacyError) {
       console.error("Could not reserve booking before Xendit payment with legacy insert", {
         error: legacyError,
@@ -485,13 +524,34 @@ export async function POST(req: NextRequest) {
         scheduleId,
         meetingCount: meetings.length,
       })
-      return NextResponse.json(
-        {
-          error: "Could not reserve those class seats before payment. Please refresh and try again.",
-          code: paymentErrorCodes.reservationFailed,
-        },
-        { status: 500 }
-      )
+
+      try {
+        createdBookings = await createLegacyBookingRows({
+          meetings,
+          workshopId,
+          userId: null,
+          participants,
+          paymentNote: `${paymentNote} Reservation is linked by customer email.`,
+          contactName: session.user.name || "",
+          contactEmail: session.user.email || "",
+          contactPhone: contactPhone || null,
+          anonymous: true,
+        })
+      } catch (anonymousLegacyError) {
+        console.error("Could not reserve booking before Xendit payment with anonymous legacy insert", {
+          error: anonymousLegacyError,
+          workshopId,
+          scheduleId,
+          meetingCount: meetings.length,
+        })
+        return NextResponse.json(
+          {
+            error: "Could not reserve those class seats before payment. Please refresh and try again.",
+            code: paymentErrorCodes.reservationFailed,
+          },
+          { status: 500 }
+        )
+      }
     }
   }
 

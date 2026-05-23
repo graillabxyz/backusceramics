@@ -5,16 +5,27 @@ import { getXenditCallbackToken } from "@/lib/xendit"
 export const runtime = "nodejs"
 
 type XenditInvoiceWebhook = {
+  event?: string
   external_id?: string
+  reference_id?: string
   status?: string
   metadata?: {
     booking_ids?: string
     booking_reference?: string
   }
+  data?: {
+    external_id?: string
+    reference_id?: string
+    status?: string
+    metadata?: {
+      booking_ids?: string
+      booking_reference?: string
+    }
+  }
 }
 
 function extractBookingIds(payload: XenditInvoiceWebhook) {
-  const bookingIds = payload.metadata?.booking_ids
+  const bookingIds = payload.metadata?.booking_ids || payload.data?.metadata?.booking_ids
   if (typeof bookingIds !== "string") return []
 
   return bookingIds
@@ -28,6 +39,26 @@ function mapInvoiceStatusToBookingStatus(status?: string) {
   if (normalized === "PAID" || normalized === "SETTLED") return "CONFIRMED"
   if (normalized === "EXPIRED" || normalized === "CANCELLED" || normalized === "CANCELED") return "CANCELLED"
   return null
+}
+
+function getWebhookStatus(payload: XenditInvoiceWebhook) {
+  if (payload.event === "payment_session_completed") return "PAID"
+  if (payload.event === "payment_session_expired") return "EXPIRED"
+  const status = payload.status || payload.data?.status
+  if (status) return status
+  return undefined
+}
+
+function getWebhookReference(payload: XenditInvoiceWebhook) {
+  return (
+    payload.external_id ||
+    payload.reference_id ||
+    payload.metadata?.booking_reference ||
+    payload.data?.external_id ||
+    payload.data?.reference_id ||
+    payload.data?.metadata?.booking_reference ||
+    ""
+  )
 }
 
 export async function POST(req: NextRequest) {
@@ -49,13 +80,14 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Invalid webhook JSON" }, { status: 400 })
   }
 
-  const bookingStatus = mapInvoiceStatusToBookingStatus(payload.status)
+  const webhookStatus = getWebhookStatus(payload)
+  const bookingStatus = mapInvoiceStatusToBookingStatus(webhookStatus)
   if (!bookingStatus) {
-    return NextResponse.json({ ok: true, ignored: true, status: payload.status || null })
+    return NextResponse.json({ ok: true, ignored: true, status: webhookStatus || null })
   }
 
   const bookingIds = extractBookingIds(payload)
-  const externalId = payload.external_id || payload.metadata?.booking_reference || ""
+  const externalId = getWebhookReference(payload)
   const where = bookingIds.length > 0
     ? { id: { in: bookingIds } }
     : externalId
@@ -65,7 +97,7 @@ export async function POST(req: NextRequest) {
   if (!where) {
     console.error("Received Xendit webhook without booking ids or reference", {
       externalId,
-      status: payload.status,
+      status: webhookStatus,
     })
     return NextResponse.json({ ok: true, updated: 0 })
   }
