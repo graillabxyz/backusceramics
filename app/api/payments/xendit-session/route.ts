@@ -71,6 +71,13 @@ function getPaymentRouteTimeoutMs() {
   return Math.min(Math.max(configured, 3000), 25000)
 }
 
+function tagPaymentResponse(response: NextResponse, trace: PaymentTrace) {
+  response.headers.set("x-payment-route-version", process.env.VERCEL_GIT_COMMIT_SHA || "local")
+  response.headers.set("x-payment-route-step", trace.step)
+  response.headers.set("x-payment-route-elapsed-ms", String(Date.now() - trace.startedAt))
+  return response
+}
+
 function sanitizeReference(value: string) {
   return value.replace(/[^a-zA-Z0-9_-]/g, "").slice(0, 64) || "booking"
 }
@@ -727,7 +734,7 @@ export async function POST(req: NextRequest) {
   let timeout: ReturnType<typeof setTimeout> | null = null
 
   try {
-    return await Promise.race([
+    const response = await Promise.race([
       handlePaymentSessionPost(req, trace),
       new Promise<NextResponse>((resolve) => {
         timeout = setTimeout(() => {
@@ -748,6 +755,7 @@ export async function POST(req: NextRequest) {
         }, timeoutMs)
       }),
     ])
+    return tagPaymentResponse(response, trace)
   } catch (error) {
     console.error("Unhandled payment session route error", {
       error,
@@ -757,7 +765,7 @@ export async function POST(req: NextRequest) {
       elapsedMs: Date.now() - trace.startedAt,
     })
 
-    return NextResponse.json(
+    return tagPaymentResponse(NextResponse.json(
       {
         error: "Payment could not be started right now. Please try again shortly or message us on WhatsApp.",
         code: paymentErrorCodes.unhandled,
@@ -766,7 +774,7 @@ export async function POST(req: NextRequest) {
         elapsedMs: Date.now() - trace.startedAt,
       },
       { status: 500 }
-    )
+    ), trace)
   } finally {
     if (timeout) clearTimeout(timeout)
   }
