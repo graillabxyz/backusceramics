@@ -56,6 +56,21 @@ interface ExistingBookingSeat {
   participants: number
 }
 
+interface PaymentTrace {
+  step: string
+  startedAt: number
+}
+
+function markPaymentStep(trace: PaymentTrace | undefined, step: string) {
+  if (trace) trace.step = step
+}
+
+function getPaymentRouteTimeoutMs() {
+  const configured = Number(process.env.PAYMENT_ROUTE_TIMEOUT_MS || 8000)
+  if (!Number.isFinite(configured)) return 8000
+  return Math.min(Math.max(configured, 3000), 25000)
+}
+
 function sanitizeReference(value: string) {
   return value.replace(/[^a-zA-Z0-9_-]/g, "").slice(0, 64) || "booking"
 }
@@ -362,13 +377,15 @@ async function ensureClassBookingStorage() {
   }
 }
 
-async function handlePaymentSessionPost(req: NextRequest) {
+async function handlePaymentSessionPost(req: NextRequest, trace?: PaymentTrace) {
   let session: PaymentSession | null
   let attachLocalUserToBooking = true
   try {
+    markPaymentStep(trace, "auth")
     session = await auth()
   } catch (error) {
     console.error("Could not load authenticated user before Xendit payment", { error })
+    markPaymentStep(trace, "supabase-auth-fallback")
     const supabase = await createClient()
     const {
       data: { user },
@@ -401,6 +418,7 @@ async function handlePaymentSessionPost(req: NextRequest) {
   }
 
   try {
+    markPaymentStep(trace, "xendit-config")
     getXenditSecretKey()
   } catch (error) {
     const message = error instanceof Error ? error.message : "Xendit is not configured yet"
@@ -412,6 +430,7 @@ async function handlePaymentSessionPost(req: NextRequest) {
 
   let data: Record<string, unknown>
   try {
+    markPaymentStep(trace, "parse-body")
     data = await req.json()
   } catch {
     return NextResponse.json(
@@ -450,8 +469,10 @@ async function handlePaymentSessionPost(req: NextRequest) {
   }
 
   const scheduleId = typeof data.scheduleId === "string" && data.scheduleId ? data.scheduleId : null
+  markPaymentStep(trace, "resolve-schedule")
   const bookingScheduleId = await resolveScheduleIdForBooking(scheduleId)
   try {
+    markPaymentStep(trace, "availability")
     for (const meeting of meetings) {
       if (hasSessionStartPassed(meeting.dateKey, meeting.timeLabel)) {
         return NextResponse.json(
@@ -522,6 +543,7 @@ async function handlePaymentSessionPost(req: NextRequest) {
 
   let createdBookings: { id: string }[] = []
   try {
+    markPaymentStep(trace, "reservation-prisma")
     createdBookings = await prisma.$transaction(
       meetings.map((meeting) =>
         prisma.classBooking.create({
@@ -548,6 +570,7 @@ async function handlePaymentSessionPost(req: NextRequest) {
     })
 
     try {
+      markPaymentStep(trace, "reservation-legacy")
       createdBookings = await createLegacyBookingRows({
         meetings,
         workshopId,
@@ -567,7 +590,9 @@ async function handlePaymentSessionPost(req: NextRequest) {
       })
 
       try {
+        markPaymentStep(trace, "reservation-storage-repair")
         await ensureClassBookingStorage()
+        markPaymentStep(trace, "reservation-anonymous-legacy")
         createdBookings = await createLegacyBookingRows({
           meetings,
           workshopId,
@@ -598,6 +623,7 @@ async function handlePaymentSessionPost(req: NextRequest) {
   }
 
   try {
+    markPaymentStep(trace, "xendit-session")
     const paymentSession = await createXenditPaymentSession({
       reference_id: referenceId,
       session_type: "PAY",
@@ -669,6 +695,7 @@ async function handlePaymentSessionPost(req: NextRequest) {
     })
     try {
       if (createdBookings.length > 0) {
+        markPaymentStep(trace, "reservation-rollback")
         await prisma.classBooking.updateMany({
           where: { id: { in: createdBookings.map((booking) => booking.id) } },
           data: { status: "CANCELLED" },
@@ -692,13 +719,42 @@ async function handlePaymentSessionPost(req: NextRequest) {
 }
 
 export async function POST(req: NextRequest) {
+  const trace: PaymentTrace = {
+    step: "received",
+    startedAt: Date.now(),
+  }
+  const timeoutMs = getPaymentRouteTimeoutMs()
+  let timeout: ReturnType<typeof setTimeout> | null = null
+
   try {
-    return await handlePaymentSessionPost(req)
+    return await Promise.race([
+      handlePaymentSessionPost(req, trace),
+      new Promise<NextResponse>((resolve) => {
+        timeout = setTimeout(() => {
+          console.error("Payment route timed out before completion", {
+            step: trace.step,
+            elapsedMs: Date.now() - trace.startedAt,
+            timeoutMs,
+          })
+          resolve(NextResponse.json(
+            {
+              error: "Payment is taking too long to start. Please try again in a moment.",
+              code: paymentErrorCodes.unhandled,
+              step: trace.step,
+              elapsedMs: Date.now() - trace.startedAt,
+            },
+            { status: 504 }
+          ))
+        }, timeoutMs)
+      }),
+    ])
   } catch (error) {
     console.error("Unhandled payment session route error", {
       error,
       message: error instanceof Error ? error.message : undefined,
       stack: error instanceof Error ? error.stack : undefined,
+      step: trace.step,
+      elapsedMs: Date.now() - trace.startedAt,
     })
 
     return NextResponse.json(
@@ -706,8 +762,12 @@ export async function POST(req: NextRequest) {
         error: "Payment could not be started right now. Please try again shortly or message us on WhatsApp.",
         code: paymentErrorCodes.unhandled,
         message: error instanceof Error ? error.message : undefined,
+        step: trace.step,
+        elapsedMs: Date.now() - trace.startedAt,
       },
       { status: 500 }
     )
+  } finally {
+    if (timeout) clearTimeout(timeout)
   }
 }
