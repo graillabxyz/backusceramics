@@ -143,7 +143,7 @@ function ClassCheckoutContent() {
     setSuccess("")
 
     if (!isAuthenticated) {
-      openAuthModal()
+      openAuthModal(`/classes/checkout?${searchParams.toString()}`)
       return
     }
 

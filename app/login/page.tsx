@@ -49,19 +49,23 @@ function LoginForm() {
   const router = useRouter()
   const searchParams = useSearchParams()
   const { isAuthenticated, user, isLoading: authLoading } = useAuth()
-  const callbackUrl = searchParams.get("callbackUrl") || "/account"
+  const requestedCallbackUrl = searchParams.get("callbackUrl")
+  const callbackUrl =
+    requestedCallbackUrl && requestedCallbackUrl.startsWith("/") && !requestedCallbackUrl.startsWith("//")
+      ? requestedCallbackUrl
+      : "/account"
   const supabase = createClient()
 
   // Redirect if already authenticated
   useEffect(() => {
     if (!authLoading && isAuthenticated) {
-      if (canAccessAdmin(user?.role)) {
+      if (canAccessAdmin(user?.role) && !requestedCallbackUrl) {
         router.push("/admin")
       } else {
         router.push(callbackUrl)
       }
     }
-  }, [isAuthenticated, authLoading, user, router, callbackUrl])
+  }, [isAuthenticated, authLoading, user, router, callbackUrl, requestedCallbackUrl])
 
   // Check for error in URL
   useEffect(() => {

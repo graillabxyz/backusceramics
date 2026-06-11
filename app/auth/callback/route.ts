@@ -4,7 +4,10 @@ import { createServerClient } from "@supabase/ssr"
 export async function GET(request: NextRequest) {
   const { searchParams } = new URL(request.url)
   const code = searchParams.get("code")
-  const next = searchParams.get("next") ?? "/account"
+  const requestedNext = searchParams.get("next")
+  const next = requestedNext && requestedNext.startsWith("/") && !requestedNext.startsWith("//")
+    ? requestedNext
+    : "/account"
 
   // Dynamically resolve correct public origin using headers to prevent localhost redirect
   const host = request.headers.get("x-forwarded-host") || request.headers.get("host") || "backusceramics.com"
@@ -48,4 +51,3 @@ export async function GET(request: NextRequest) {
   // Auth error — redirect back to login with error
   return NextResponse.redirect(`${origin}/login?error=auth_failed`)
 }
-
