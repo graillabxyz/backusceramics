@@ -164,6 +164,16 @@ function compactInvoicePayload(payload: CreateXenditInvoiceInput) {
   })
 }
 
+function compactStringMetadata(metadata?: Record<string, MetadataValue | null | undefined>) {
+  if (!metadata) return undefined
+
+  return Object.fromEntries(
+    Object.entries(metadata)
+      .filter(([, entryValue]) => entryValue !== undefined && entryValue !== null && entryValue !== "")
+      .map(([key, entryValue]) => [key, String(entryValue)])
+  )
+}
+
 function compactPaymentSessionPayload(payload: CreateXenditPaymentSessionInput) {
   return compactObject({
     ...payload,
@@ -172,7 +182,7 @@ function compactPaymentSessionPayload(payload: CreateXenditPaymentSessionInput) 
       individual_detail: compactObject(payload.customer.individual_detail),
     }),
     items: payload.items?.map((item) => compactObject(item)),
-    metadata: payload.metadata ? compactObject(payload.metadata) : undefined,
+    metadata: compactStringMetadata(payload.metadata),
   })
 }
 
