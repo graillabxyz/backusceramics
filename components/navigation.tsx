@@ -19,7 +19,7 @@ const navLinks = [
 export function Navigation() {
   const [isOpen, setIsOpen] = useState(false)
   const [userMenuOpen, setUserMenuOpen] = useState(false)
-  const { user, isLoading, isAuthenticated, logout, openAuthModal } = useAuth()
+  const { user, isAuthenticated, logout, openAuthModal } = useAuth()
 
   const isLoggedIn = isAuthenticated && user
   const isAdmin = canAccessAdmin(user?.role)
@@ -52,9 +52,7 @@ export function Navigation() {
             <ThemeToggle />
 
             {/* Auth Button */}
-            {isLoading ? (
-              <div className="w-8 h-8 rounded-full bg-muted animate-pulse" />
-            ) : isLoggedIn ? (
+            {isLoggedIn ? (
               <div className="relative">
                 <button
                   onClick={() => setUserMenuOpen(!userMenuOpen)}
@@ -150,7 +148,7 @@ export function Navigation() {
           {/* Mobile: Auth + Menu */}
           <div className="flex items-center gap-2 md:hidden">
             <ThemeToggle />
-            {!isLoading && !isLoggedIn && (
+            {!isLoggedIn && (
               <Button variant="outline" size="sm" className="rounded-full px-4 text-xs" onClick={openAuthModal}>
                 Sign In
               </Button>
