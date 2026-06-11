@@ -4,6 +4,7 @@ import React, { useState, useEffect, Suspense } from "react"
 import { useRouter, useSearchParams } from "next/navigation"
 import { createClient } from "@/lib/supabase/client"
 import { useAuth } from "@/lib/auth-context"
+import { sanitizeAuthReturnTo, setAuthReturnToCookie } from "@/lib/auth-redirect"
 import { canAccessAdmin } from "@/lib/permissions"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
@@ -50,10 +51,7 @@ function LoginForm() {
   const searchParams = useSearchParams()
   const { isAuthenticated, user, isLoading: authLoading } = useAuth()
   const requestedCallbackUrl = searchParams.get("callbackUrl")
-  const callbackUrl =
-    requestedCallbackUrl && requestedCallbackUrl.startsWith("/") && !requestedCallbackUrl.startsWith("//")
-      ? requestedCallbackUrl
-      : "/account"
+  const callbackUrl = sanitizeAuthReturnTo(requestedCallbackUrl, "/account")
   const supabase = createClient()
 
   // Redirect if already authenticated
@@ -79,6 +77,7 @@ function LoginForm() {
     if (provider === "google") setIsGoogleLoading(true)
     if (provider === "facebook") setIsFacebookLoading(true)
     setError("")
+    setAuthReturnToCookie(callbackUrl)
 
     const { error } = await supabase.auth.signInWithOAuth({
       provider,

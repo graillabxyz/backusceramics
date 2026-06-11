@@ -2,6 +2,7 @@
 
 import React, { createContext, useContext, useEffect, useState } from "react"
 import { createClient } from "@/lib/supabase/client"
+import { consumeAuthReturnToCookie } from "@/lib/auth-redirect"
 import type { AppRole } from "@/lib/permissions"
 import type { User as SupabaseUser } from "@supabase/supabase-js"
 
@@ -45,6 +46,19 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [authRedirectPath, setAuthRedirectPath] = useState<string | null>(null)
   const supabase = createClient()
 
+  const redirectToStoredAuthReturn = () => {
+    const returnTo = consumeAuthReturnToCookie(null)
+    if (!returnTo) return false
+
+    const currentPath = window.location.pathname + window.location.search
+    if (returnTo !== currentPath) {
+      window.location.assign(returnTo)
+      return true
+    }
+
+    return false
+  }
+
   useEffect(() => {
     // Get initial session
     const getSession = async () => {
@@ -56,6 +70,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       if (user) {
         // Fetch our app-level user data (with role) from our API
         await fetchAppUser(user.email!)
+        redirectToStoredAuthReturn()
       }
       setIsLoading(false)
     }
@@ -72,6 +87,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       if (user) {
         await fetchAppUser(user.email!)
         setIsAuthModalOpen(false) // Close modal upon successful sign-in
+        redirectToStoredAuthReturn()
       } else {
         setAppUser(null)
       }

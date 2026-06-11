@@ -1,13 +1,21 @@
 import { NextResponse, type NextRequest } from "next/server"
 import { createServerClient } from "@supabase/ssr"
+import { AUTH_RETURN_TO_COOKIE, sanitizeAuthReturnTo } from "@/lib/auth-redirect"
 
 export async function GET(request: NextRequest) {
   const { searchParams } = new URL(request.url)
   const code = searchParams.get("code")
   const requestedNext = searchParams.get("next")
-  const next = requestedNext && requestedNext.startsWith("/") && !requestedNext.startsWith("//")
-    ? requestedNext
-    : "/account"
+  const cookieNextValue = request.cookies.get(AUTH_RETURN_TO_COOKIE)?.value
+  let cookieNext: string | null = null
+  if (cookieNextValue) {
+    try {
+      cookieNext = decodeURIComponent(cookieNextValue)
+    } catch {
+      cookieNext = cookieNextValue
+    }
+  }
+  const next = sanitizeAuthReturnTo(requestedNext || cookieNext, "/account")
 
   // Dynamically resolve correct public origin using headers to prevent localhost redirect
   const host = request.headers.get("x-forwarded-host") || request.headers.get("host") || "backusceramics.com"
@@ -18,6 +26,7 @@ export async function GET(request: NextRequest) {
   if (code) {
     // Create the redirect response object first so we can attach cookies directly to it
     const supabaseResponse = NextResponse.redirect(`${origin}${next}`)
+    supabaseResponse.cookies.delete(AUTH_RETURN_TO_COOKIE)
 
     const supabase = createServerClient(
       process.env.NEXT_PUBLIC_SUPABASE_URL || "https://placeholder.supabase.co",

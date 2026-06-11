@@ -13,6 +13,7 @@ import { Alert, AlertDescription } from "@/components/ui/alert"
 import { Loader2 } from "lucide-react"
 import { useAuth } from "@/lib/auth-context"
 import { createClient } from "@/lib/supabase/client"
+import { setAuthReturnToCookie } from "@/lib/auth-redirect"
 import Link from "next/link"
 
 function GoogleIcon({ className }: { className?: string }) {
@@ -60,6 +61,7 @@ export function AuthModal() {
 
     // Save current path to redirect back here after successful sign-in
     const callbackUrl = authRedirectPath || window.location.pathname + window.location.search
+    setAuthReturnToCookie(callbackUrl)
 
     const { error } = await supabase.auth.signInWithOAuth({
       provider,
