@@ -15,7 +15,7 @@ export async function GET(request: NextRequest) {
       cookieNext = cookieNextValue
     }
   }
-  const next = sanitizeAuthReturnTo(requestedNext || cookieNext, "/account")
+  const next = sanitizeAuthReturnTo(requestedNext || cookieNext, "/account") || "/account"
 
   // Dynamically resolve correct public origin using headers to prevent localhost redirect
   const host = request.headers.get("x-forwarded-host") || request.headers.get("host") || "backusceramics.com"
