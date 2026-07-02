@@ -4,7 +4,7 @@ import { useState, useEffect } from "react"
 import { Card, CardContent, CardDescription, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { Users as UsersIcon, Loader2, Shield } from "lucide-react"
+import { Users as UsersIcon, Loader2, Shield, AlertCircle } from "lucide-react"
 import { useAuth } from "@/lib/auth-context"
 import { appRoles, canManageAdmins, roleLabels, type AppRole } from "@/lib/permissions"
 
@@ -15,6 +15,10 @@ interface UserData {
   role: string
   image: string | null
   createdAt: string
+  hasSupabaseAuth?: boolean
+  authCreatedAt?: string | null
+  lastSignInAt?: string | null
+  authProvider?: string | null
   _count: {
     orders: number
     classBookings: number
@@ -22,10 +26,27 @@ interface UserData {
   }
 }
 
+interface UsersApiResponse {
+  users: UserData[]
+  authSync?: {
+    enabled: boolean
+    error: string | null
+    authUserCount: number
+    createdFromAuth: number
+  }
+}
+
+function formatDate(value?: string | null) {
+  if (!value) return null
+  return new Date(value).toLocaleDateString()
+}
+
 export default function AdminUsersPage() {
   const { user: currentUser } = useAuth()
   const [users, setUsers] = useState<UserData[]>([])
   const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
+  const [authSync, setAuthSync] = useState<UsersApiResponse["authSync"]>(undefined)
   const canEditRoles = canManageAdmins(currentUser?.role)
 
   useEffect(() => {
@@ -35,9 +56,20 @@ export default function AdminUsersPage() {
   const fetchUsers = async () => {
     try {
       const res = await fetch("/api/users")
-      if (res.ok) setUsers(await res.json())
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.error || "Could not load users")
+
+      if (Array.isArray(data)) {
+        setUsers(data)
+        setAuthSync(undefined)
+      } else {
+        const payload = data as UsersApiResponse
+        setUsers(payload.users || [])
+        setAuthSync(payload.authSync)
+      }
     } catch (err) {
       console.error("Failed to fetch users:", err)
+      setError("Could not load users.")
     } finally {
       setLoading(false)
     }
@@ -74,8 +106,41 @@ export default function AdminUsersPage() {
       <div>
         <h1 className="font-heading font-bold text-3xl text-foreground">Users</h1>
         <p className="text-muted-foreground mt-1">
-          Manage user accounts{canEditRoles ? " and roles" : ". Owner admin controls role changes."}
+          Manage every account that has gone through site auth{canEditRoles ? " and roles" : ". Owner admin controls role changes."}
         </p>
+      </div>
+
+      {error && (
+        <div className="rounded-md border border-destructive/30 bg-destructive/10 px-4 py-3 text-sm text-destructive">
+          {error}
+        </div>
+      )}
+
+      {authSync?.error && (
+        <div className="flex gap-3 rounded-md border border-amber-300/40 bg-amber-50 px-4 py-3 text-sm text-amber-900 dark:bg-amber-950/30 dark:text-amber-200">
+          <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
+          <div>
+            <p className="font-medium">Supabase Auth sync did not fully complete.</p>
+            <p className="mt-1">
+              Showing local users only where auth records could not be read. {authSync.error}
+            </p>
+          </div>
+        </div>
+      )}
+
+      <div className="grid gap-3 sm:grid-cols-3">
+        <div className="rounded-md border border-border bg-background p-4">
+          <p className="text-sm text-muted-foreground">Visible users</p>
+          <p className="mt-1 text-2xl font-semibold text-foreground">{users.length}</p>
+        </div>
+        <div className="rounded-md border border-border bg-background p-4">
+          <p className="text-sm text-muted-foreground">Supabase auth users</p>
+          <p className="mt-1 text-2xl font-semibold text-foreground">{authSync?.authUserCount ?? "—"}</p>
+        </div>
+        <div className="rounded-md border border-border bg-background p-4">
+          <p className="text-sm text-muted-foreground">Backfilled this load</p>
+          <p className="mt-1 text-2xl font-semibold text-foreground">{authSync?.createdFromAuth ?? 0}</p>
+        </div>
       </div>
 
       {users.length === 0 ? (
@@ -112,13 +177,24 @@ export default function AdminUsersPage() {
                         {user.role !== "USER" && (
                           <Shield className="h-4 w-4 text-primary" />
                         )}
+                        {user.authProvider && (
+                          <Badge variant="outline" className="capitalize">
+                            {user.authProvider}
+                          </Badge>
+                        )}
+                        {user.hasSupabaseAuth === false && (
+                          <Badge variant="secondary">Local only</Badge>
+                        )}
                       </div>
                       <p className="text-sm text-muted-foreground truncate">{user.email}</p>
                       <div className="flex items-center gap-3 mt-1 text-xs text-muted-foreground">
                         <span>{user._count.orders} orders</span>
                         <span>{user._count.classBookings} bookings</span>
                         <span>{user._count.residencyApps} applications</span>
-                        <span>· Joined {new Date(user.createdAt).toLocaleDateString()}</span>
+                        <span>· Joined {formatDate(user.authCreatedAt || user.createdAt)}</span>
+                        {formatDate(user.lastSignInAt) && (
+                          <span>Last sign-in {formatDate(user.lastSignInAt)}</span>
+                        )}
                       </div>
                     </div>
                   </div>

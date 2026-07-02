@@ -1,6 +1,7 @@
 import { NextResponse, type NextRequest } from "next/server"
 import { createServerClient } from "@supabase/ssr"
 import { AUTH_RETURN_TO_COOKIE, sanitizeAuthReturnTo } from "@/lib/auth-redirect"
+import { ensureLocalUserFromSupabaseAuthUser } from "@/lib/auth-user-sync"
 
 function getSupabaseCallbackConfig() {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL
@@ -62,9 +63,17 @@ export async function GET(request: NextRequest) {
       }
     )
 
-    const { error } = await supabase.auth.exchangeCodeForSession(code)
+    const { data, error } = await supabase.auth.exchangeCodeForSession(code)
 
     if (!error) {
+      if (data.user) {
+        try {
+          await ensureLocalUserFromSupabaseAuthUser(data.user)
+        } catch (syncError) {
+          console.error("Failed to sync authenticated user after OAuth callback", syncError)
+        }
+      }
+
       return supabaseResponse
     }
   }
