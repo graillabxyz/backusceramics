@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server"
 import { auth } from "@/lib/auth"
 import { createClient } from "@/lib/supabase/server"
+import { getDefaultRole } from "@/lib/permissions"
 
 export async function GET() {
   try {
@@ -29,7 +30,7 @@ export async function GET() {
         email: user.email,
         name: user.user_metadata?.full_name || user.user_metadata?.name || null,
         image: user.user_metadata?.avatar_url || user.user_metadata?.picture || null,
-        role: "USER",
+        role: getDefaultRole(user.email),
       },
     })
   }

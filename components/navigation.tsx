@@ -38,6 +38,10 @@ export function Navigation() {
     null
   const displayInitial = (displayName || displayEmail || "U").charAt(0).toUpperCase()
   const isResolvingProfile = isLoggedIn && isLoading && !user
+  const closeUserMenus = () => {
+    setUserMenuOpen(false)
+    setIsOpen(false)
+  }
 
   return (
     <header className="fixed top-0 left-0 right-0 z-50 bg-background/95 backdrop-blur-sm border-b border-border">
@@ -113,7 +117,7 @@ export function Navigation() {
                       <Link
                         href="/account"
                         className="flex items-center gap-3 px-4 py-2 text-sm text-foreground hover:bg-muted transition-colors"
-                        onClick={() => setUserMenuOpen(false)}
+                        onClick={closeUserMenus}
                       >
                         <ShoppingBag className="w-4 h-4 text-muted-foreground" />
                         My Orders
@@ -122,7 +126,7 @@ export function Navigation() {
                       <Link
                         href="/account/profile"
                         className="flex items-center gap-3 px-4 py-2 text-sm text-foreground hover:bg-muted transition-colors"
-                        onClick={() => setUserMenuOpen(false)}
+                        onClick={closeUserMenus}
                       >
                         <User className="w-4 h-4 text-muted-foreground" />
                         Profile
@@ -132,7 +136,7 @@ export function Navigation() {
                         <Link
                           href="/admin/pos"
                           className="flex items-center gap-3 px-4 py-2 text-sm text-foreground hover:bg-muted transition-colors"
-                          onClick={() => setUserMenuOpen(false)}
+                          onClick={closeUserMenus}
                         >
                           <Store className="w-4 h-4 text-muted-foreground" />
                           POS Register
@@ -143,7 +147,7 @@ export function Navigation() {
                         <Link
                           href="/admin"
                           className="flex items-center gap-3 px-4 py-2 text-sm text-foreground hover:bg-muted transition-colors"
-                          onClick={() => setUserMenuOpen(false)}
+                          onClick={closeUserMenus}
                         >
                           <LayoutDashboard className="w-4 h-4 text-muted-foreground" />
                           Admin Dashboard
@@ -184,7 +188,15 @@ export function Navigation() {
               </Button>
             )}
             {isLoggedIn && (
-              <Link href="/account" className="flex items-center">
+              <button
+                type="button"
+                onClick={() => {
+                  setUserMenuOpen((open) => !open)
+                  setIsOpen(false)
+                }}
+                className="flex items-center"
+                aria-label="User menu"
+              >
                 {isResolvingProfile ? (
                   <div className="w-7 h-7 rounded-full bg-muted flex items-center justify-center">
                     <Loader2 className="h-3.5 w-3.5 animate-spin text-muted-foreground" />
@@ -198,18 +210,84 @@ export function Navigation() {
                     </span>
                   </div>
                 )}
-              </Link>
+              </button>
             )}
             <Button
               variant="ghost"
               size="icon"
-              onClick={() => setIsOpen(!isOpen)}
+              onClick={() => {
+                setIsOpen(!isOpen)
+                setUserMenuOpen(false)
+              }}
               aria-label="Toggle menu"
             >
               {isOpen ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}
             </Button>
           </div>
         </div>
+
+        {isLoggedIn && userMenuOpen && (
+          <div className="absolute right-4 top-16 z-50 w-56 rounded-xl border border-border bg-background py-1.5 shadow-lg md:hidden">
+            <div className="border-b border-border px-4 py-2.5">
+              <p className="truncate text-sm font-semibold text-foreground">
+                {isResolvingProfile ? "Finishing sign in..." : displayName}
+              </p>
+              <p className="truncate text-xs text-muted-foreground">
+                {displayEmail || "Loading your account"}
+              </p>
+            </div>
+            <div className="py-1">
+              <Link
+                href="/account"
+                className="flex items-center gap-3 px-4 py-2 text-sm text-foreground transition-colors hover:bg-muted"
+                onClick={closeUserMenus}
+              >
+                <ShoppingBag className="h-4 w-4 text-muted-foreground" />
+                My Orders
+              </Link>
+              <Link
+                href="/account/profile"
+                className="flex items-center gap-3 px-4 py-2 text-sm text-foreground transition-colors hover:bg-muted"
+                onClick={closeUserMenus}
+              >
+                <User className="h-4 w-4 text-muted-foreground" />
+                Profile
+              </Link>
+              {canOpenPos && (
+                <Link
+                  href="/admin/pos"
+                  className="flex items-center gap-3 px-4 py-2 text-sm text-foreground transition-colors hover:bg-muted"
+                  onClick={closeUserMenus}
+                >
+                  <Store className="h-4 w-4 text-muted-foreground" />
+                  POS Register
+                </Link>
+              )}
+              {isAdmin && (
+                <Link
+                  href="/admin"
+                  className="flex items-center gap-3 px-4 py-2 text-sm text-foreground transition-colors hover:bg-muted"
+                  onClick={closeUserMenus}
+                >
+                  <LayoutDashboard className="h-4 w-4 text-muted-foreground" />
+                  Admin Dashboard
+                </Link>
+              )}
+            </div>
+            <div className="border-t border-border pt-1">
+              <button
+                onClick={() => {
+                  closeUserMenus()
+                  logout()
+                }}
+                className="flex w-full items-center gap-3 px-4 py-2 text-left text-sm text-destructive transition-colors hover:bg-muted"
+              >
+                <LogOut className="h-4 w-4" />
+                Sign Out
+              </button>
+            </div>
+          </div>
+        )}
 
         {/* Mobile Navigation */}
         {isOpen && (
@@ -246,27 +324,25 @@ export function Navigation() {
                       <User className="w-4 h-4" />
                       Profile
                     </Link>
+                    {canOpenPos && (
+                      <Link
+                        href="/admin/pos"
+                        className="flex items-center gap-3 text-sm font-medium text-muted-foreground hover:text-foreground transition-colors py-2"
+                        onClick={closeUserMenus}
+                      >
+                        <Store className="w-4 h-4" />
+                        POS Register
+                      </Link>
+                    )}
                     {isAdmin && (
-                      <>
-                        {canOpenPos && (
-                          <Link
-                            href="/admin/pos"
-                            className="flex items-center gap-3 text-sm font-medium text-muted-foreground hover:text-foreground transition-colors py-2"
-                            onClick={() => setIsOpen(false)}
-                          >
-                            <Store className="w-4 h-4" />
-                            POS Register
-                          </Link>
-                        )}
                       <Link
                         href="/admin"
                         className="flex items-center gap-3 text-sm font-medium text-muted-foreground hover:text-foreground transition-colors py-2"
-                        onClick={() => setIsOpen(false)}
+                        onClick={closeUserMenus}
                       >
                         <LayoutDashboard className="w-4 h-4" />
                         Admin Dashboard
                       </Link>
-                      </>
                     )}
                     <button
                       onClick={() => { logout(); setIsOpen(false) }}

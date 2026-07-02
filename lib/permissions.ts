@@ -1,4 +1,6 @@
-export const OWNER_ADMIN_EMAIL = "backusceramics@gmail.com"
+const FALLBACK_OWNER_ADMIN_EMAIL = "backusceramics@gmail.com"
+
+export const OWNER_ADMIN_EMAIL = process.env.OWNER_ADMIN_EMAIL || FALLBACK_OWNER_ADMIN_EMAIL
 
 export const appRoles = ["USER", "ADMIN", "OWNER", "POS_OPERATOR"] as const
 
@@ -16,11 +18,19 @@ export function normalizeRole(role?: string | null): AppRole {
 }
 
 export function getDefaultRole(email?: string | null): AppRole {
-  return email?.toLowerCase() === OWNER_ADMIN_EMAIL ? "OWNER" : "USER"
+  return isOwnerEmail(email) ? "OWNER" : "USER"
 }
 
 export function isOwnerEmail(email?: string | null) {
-  return email?.toLowerCase() === OWNER_ADMIN_EMAIL
+  const normalizedEmail = email?.trim().toLowerCase()
+  if (!normalizedEmail) return false
+
+  const ownerEmails = (process.env.OWNER_ADMIN_EMAILS || OWNER_ADMIN_EMAIL)
+    .split(",")
+    .map((value) => value.trim().toLowerCase())
+    .filter(Boolean)
+
+  return ownerEmails.includes(normalizedEmail)
 }
 
 export function isOwnerRole(role?: string | null) {
