@@ -76,7 +76,7 @@ function friendlyPaymentError(status: number, data: Record<string, unknown>) {
 
 function ClassCheckoutContent() {
   const searchParams = useSearchParams()
-  const { isAuthenticated, openAuthModal } = useAuth()
+  const { isAuthenticated, isLoading: authLoading, openAuthModal } = useAuth()
   const workshopId = searchParams.get("workshopId") || ""
   const scheduleId = searchParams.get("scheduleId") || ""
   const title = searchParams.get("title") || "Class booking"
@@ -137,10 +137,16 @@ function ClassCheckoutContent() {
   const startingMeeting = prepaid ? meetings[0] : null
   const uniqueMeetingTimes = useMemo(() => Array.from(new Set(meetings.map((meeting) => meeting.timeLabel))), [meetings])
   const hasMixedMeetingTimes = prepaid && uniqueMeetingTimes.length > 1
+  const isCheckingSignIn = authLoading && !isAuthenticated
 
   const handleSubmit = async () => {
     setError("")
     setSuccess("")
+
+    if (isCheckingSignIn) {
+      setError("We are finishing your sign-in. Please wait a moment.")
+      return
+    }
 
     if (!isAuthenticated) {
       openAuthModal(`/classes/checkout?${searchParams.toString()}`)
@@ -429,10 +435,10 @@ function ClassCheckoutContent() {
               <Button
                 onClick={handleSubmit}
                 className="h-12 w-full gap-2 text-base"
-                disabled={isSubmitting || maxSeats <= 0}
+                disabled={isSubmitting || isCheckingSignIn || maxSeats <= 0}
               >
-                {isSubmitting ? <Loader2 className="h-4 w-4 animate-spin" /> : <CalendarDays className="h-4 w-4" />}
-                {isSubmitting ? "Starting Payment..." : "Continue to Payment"}
+                {isSubmitting || isCheckingSignIn ? <Loader2 className="h-4 w-4 animate-spin" /> : <CalendarDays className="h-4 w-4" />}
+                {isSubmitting ? "Starting Payment..." : isCheckingSignIn ? "Checking sign-in..." : "Continue to Payment"}
               </Button>
             </CardContent>
           </Card>

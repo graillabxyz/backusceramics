@@ -4,7 +4,7 @@ import Link from "next/link"
 import { useState } from "react"
 import { useAuth } from "@/lib/auth-context"
 import { canAccessAdmin, canUsePos } from "@/lib/permissions"
-import { Menu, X, User, LogOut, LayoutDashboard, ShoppingBag, Store } from "lucide-react"
+import { Loader2, Menu, X, User, LogOut, LayoutDashboard, ShoppingBag, Store } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { ThemeToggle } from "@/components/theme-toggle"
 
@@ -19,11 +19,25 @@ const navLinks = [
 export function Navigation() {
   const [isOpen, setIsOpen] = useState(false)
   const [userMenuOpen, setUserMenuOpen] = useState(false)
-  const { user, isAuthenticated, logout, openAuthModal } = useAuth()
+  const { user, supabaseUser, isAuthenticated, isLoading, logout, openAuthModal } = useAuth()
 
-  const isLoggedIn = isAuthenticated && user
+  const isLoggedIn = isAuthenticated || !!supabaseUser
   const isAdmin = canAccessAdmin(user?.role)
   const canOpenPos = canUsePos(user?.role)
+  const displayEmail = user?.email || supabaseUser?.email || ""
+  const displayName =
+    user?.name ||
+    supabaseUser?.user_metadata?.full_name ||
+    supabaseUser?.user_metadata?.name ||
+    displayEmail?.split("@")[0] ||
+    "Account"
+  const displayImage =
+    user?.image ||
+    supabaseUser?.user_metadata?.avatar_url ||
+    supabaseUser?.user_metadata?.picture ||
+    null
+  const displayInitial = (displayName || displayEmail || "U").charAt(0).toUpperCase()
+  const isResolvingProfile = isLoggedIn && isLoading && !user
 
   return (
     <header className="fixed top-0 left-0 right-0 z-50 bg-background/95 backdrop-blur-sm border-b border-border">
@@ -62,18 +76,22 @@ export function Navigation() {
                   aria-label="User menu"
                 >
                   <span className="text-sm font-medium text-foreground max-w-[100px] truncate hidden lg:block">
-                    {user.name || user.email?.split("@")[0]}
+                    {isResolvingProfile ? "Signing in..." : displayName}
                   </span>
-                  {user.image ? (
+                  {isResolvingProfile ? (
+                    <div className="w-7 h-7 rounded-full bg-muted flex items-center justify-center">
+                      <Loader2 className="h-3.5 w-3.5 animate-spin text-muted-foreground" />
+                    </div>
+                  ) : displayImage ? (
                     <img
-                      src={user.image}
+                      src={displayImage}
                       alt=""
                       className="w-7 h-7 rounded-full object-cover"
                     />
                   ) : (
                     <div className="w-7 h-7 rounded-full bg-primary flex items-center justify-center">
                       <span className="text-xs font-bold text-primary-foreground">
-                        {(user.name || user.email || "U").charAt(0).toUpperCase()}
+                        {displayInitial}
                       </span>
                     </div>
                   )}
@@ -84,10 +102,10 @@ export function Navigation() {
                   <div className="absolute right-0 top-full mt-2 w-52 bg-background rounded-xl border border-border shadow-lg py-1.5 z-50 animate-in fade-in slide-in-from-top-2 duration-200">
                     <div className="px-4 py-2.5 border-b border-border">
                       <p className="text-sm font-semibold text-foreground truncate">
-                        {user.name || "User"}
+                        {isResolvingProfile ? "Finishing sign in..." : displayName}
                       </p>
                       <p className="text-xs text-muted-foreground truncate">
-                        {user.email}
+                        {displayEmail || "Loading your account"}
                       </p>
                     </div>
 
@@ -167,12 +185,16 @@ export function Navigation() {
             )}
             {isLoggedIn && (
               <Link href="/account" className="flex items-center">
-                {user.image ? (
-                  <img src={user.image} alt="" className="w-7 h-7 rounded-full object-cover" />
+                {isResolvingProfile ? (
+                  <div className="w-7 h-7 rounded-full bg-muted flex items-center justify-center">
+                    <Loader2 className="h-3.5 w-3.5 animate-spin text-muted-foreground" />
+                  </div>
+                ) : displayImage ? (
+                  <img src={displayImage} alt="" className="w-7 h-7 rounded-full object-cover" />
                 ) : (
                   <div className="w-7 h-7 rounded-full bg-primary flex items-center justify-center">
                     <span className="text-xs font-bold text-primary-foreground">
-                      {(user.name || user.email || "U").charAt(0).toUpperCase()}
+                      {displayInitial}
                     </span>
                   </div>
                 )}

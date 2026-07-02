@@ -41,7 +41,7 @@ export function BookingModal({ workshop, children }: BookingModalProps) {
   const [success, setSuccess] = useState("")
   const [whatsappPhone, setWhatsappPhone] = useState("")
   const [payOnArrivalConfirmed, setPayOnArrivalConfirmed] = useState(false)
-  const { isAuthenticated, openAuthModal } = useAuth()
+  const { isAuthenticated, isLoading: authLoading, openAuthModal } = useAuth()
   const maxParticipants = workshop.maxParticipants ?? 8
   const participantOptions = Array.from({ length: maxParticipants }, (_, index) => index + 1)
   const selectedSeatCount = parseInt(people || "1")
@@ -69,6 +69,11 @@ export function BookingModal({ workshop, children }: BookingModalProps) {
 
     if (!date) {
       setError("Choose a class date from the calendar.")
+      return
+    }
+
+    if (authLoading && !isAuthenticated) {
+      setError("We are finishing your sign-in. Please wait a moment.")
       return
     }
 
@@ -260,10 +265,10 @@ export function BookingModal({ workshop, children }: BookingModalProps) {
           <Button 
             onClick={handleBooking}
             className="w-full h-12 text-lg gap-2"
-            disabled={isSubmitting}
+            disabled={isSubmitting || (authLoading && !isAuthenticated)}
           >
-            {isSubmitting ? <Loader2 className="h-5 w-5 animate-spin" /> : <CalendarIcon className="h-5 w-5" />}
-            {isSubmitting ? "Booking..." : isAuthenticated ? "Book Now" : "Sign in to Book"}
+            {isSubmitting || (authLoading && !isAuthenticated) ? <Loader2 className="h-5 w-5 animate-spin" /> : <CalendarIcon className="h-5 w-5" />}
+            {isSubmitting ? "Booking..." : authLoading && !isAuthenticated ? "Checking sign-in..." : isAuthenticated ? "Book Now" : "Sign in to Book"}
           </Button>
         </DialogFooter>
       </DialogContent>

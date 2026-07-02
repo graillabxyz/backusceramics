@@ -8,6 +8,7 @@ import {
   ChevronLeft,
   ChevronRight,
   Clock,
+  Loader2,
   Users,
 } from "lucide-react"
 import { Badge } from "@/components/ui/badge"
@@ -187,7 +188,7 @@ export function ClassesCalendar({ initialClass }: ClassesCalendarProps) {
   const [availability, setAvailability] = useState<Record<string, CalendarAvailability>>({})
   const [availabilityLoading, setAvailabilityLoading] = useState(true)
   const [success, setSuccess] = useState("")
-  const { isAuthenticated, openAuthModal } = useAuth()
+  const { isAuthenticated, isLoading: authLoading, openAuthModal } = useAuth()
 
   const studioDays = useMemo(() => Array.from({ length: 6 }, (_, index) => addDays(weekStart, index)), [weekStart])
   const weekLabel = `${weekStart.toLocaleDateString("en-US", { month: "short", day: "numeric" })} - ${addDays(weekStart, 6).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}`
@@ -468,10 +469,11 @@ export function ClassesCalendar({ initialClass }: ClassesCalendarProps) {
   }
 
   const handleUnauthenticatedCheckout = () => {
-    if (!isAuthenticated) {
+    if (!isAuthenticated && !authLoading) {
       openAuthModal(buildCheckoutHref())
     }
   }
+  const isCheckingSignIn = authLoading && !isAuthenticated
   const canContinue = isMultiDaySelection
     ? Boolean(selectedSequence?.isComplete && purchasableSeats > 0)
     : Boolean(activeSession && purchasableSeats > 0)
@@ -762,10 +764,10 @@ export function ClassesCalendar({ initialClass }: ClassesCalendarProps) {
                   <Button
                     onClick={handleUnauthenticatedCheckout}
                     className="h-12 w-full gap-2 text-base"
-                    disabled={!canContinue || availabilityLoading}
+                    disabled={!canContinue || availabilityLoading || isCheckingSignIn}
                   >
-                    <CalendarDays className="h-4 w-4" />
-                    {!canContinue ? "Choose another start time" : "Sign in to Pay"}
+                    {isCheckingSignIn ? <Loader2 className="h-4 w-4 animate-spin" /> : <CalendarDays className="h-4 w-4" />}
+                    {!canContinue ? "Choose another start time" : isCheckingSignIn ? "Checking sign-in..." : "Sign in to Pay"}
                   </Button>
                 )}
               </CardContent>

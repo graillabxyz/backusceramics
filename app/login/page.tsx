@@ -49,21 +49,26 @@ function LoginForm() {
   const [error, setError] = useState("")
   const router = useRouter()
   const searchParams = useSearchParams()
-  const { isAuthenticated, user, isLoading: authLoading } = useAuth()
+  const { isAuthenticated, supabaseUser, user, isLoading: authLoading } = useAuth()
   const requestedCallbackUrl = searchParams.get("callbackUrl")
   const callbackUrl = sanitizeAuthReturnTo(requestedCallbackUrl, "/account") || "/account"
   const supabase = createClient()
 
   // Redirect if already authenticated
   useEffect(() => {
+    if (requestedCallbackUrl && (isAuthenticated || supabaseUser)) {
+      router.replace(callbackUrl)
+      return
+    }
+
     if (!authLoading && isAuthenticated) {
       if (canAccessAdmin(user?.role) && !requestedCallbackUrl) {
-        router.push("/admin")
+        router.replace("/admin")
       } else {
-        router.push(callbackUrl)
+        router.replace(callbackUrl)
       }
     }
-  }, [isAuthenticated, authLoading, user, router, callbackUrl, requestedCallbackUrl])
+  }, [isAuthenticated, supabaseUser, authLoading, user, router, callbackUrl, requestedCallbackUrl])
 
   // Check for error in URL
   useEffect(() => {
@@ -94,9 +99,17 @@ function LoginForm() {
   }
 
   if (authLoading) {
+    const loadingMessage = supabaseUser
+      ? "Finishing sign in..."
+      : "Checking your sign-in..."
+
     return (
       <main className="min-h-screen bg-secondary/30 flex items-center justify-center p-4">
-        <Loader2 className="h-8 w-8 animate-spin text-primary" />
+        <div className="text-center">
+          <Loader2 className="h-8 w-8 animate-spin text-primary mx-auto" />
+          <p className="mt-4 text-sm font-medium text-foreground">{loadingMessage}</p>
+          <p className="mt-1 text-xs text-muted-foreground">You will be returned to your booking automatically.</p>
+        </div>
       </main>
     )
   }

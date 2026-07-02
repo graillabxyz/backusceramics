@@ -1,6 +1,6 @@
 "use client"
 
-import React, { createContext, useContext, useEffect, useState } from "react"
+import React, { createContext, useContext, useEffect, useMemo, useState } from "react"
 import { createClient } from "@/lib/supabase/client"
 import { consumeAuthReturnToCookie } from "@/lib/auth-redirect"
 import type { AppRole } from "@/lib/permissions"
@@ -56,7 +56,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [isLoading, setIsLoading] = useState(true)
   const [isAuthModalOpen, setIsAuthModalOpen] = useState(false)
   const [authRedirectPath, setAuthRedirectPath] = useState<string | null>(null)
-  const supabase = createClient()
+  const supabase = useMemo(() => createClient(), [])
 
   const redirectToStoredAuthReturn = () => {
     const returnTo = consumeAuthReturnToCookie(null)
@@ -71,50 +71,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     return false
   }
 
-  useEffect(() => {
-    // Get initial session
-    const getSession = async () => {
-      try {
-        const {
-          data: { user },
-        } = await withTimeout(supabase.auth.getUser(), "Supabase auth")
-        setSupabaseUser(user)
-
-        if (user) {
-          await fetchAppUser(user)
-          redirectToStoredAuthReturn()
-        }
-      } catch (error) {
-        console.error("Failed to initialize auth state", error)
-        setSupabaseUser(null)
-        setAppUser(null)
-      } finally {
-        setIsLoading(false)
-      }
-    }
-
-    getSession()
-
-    // Listen for auth changes
-    const {
-      data: { subscription },
-    } = supabase.auth.onAuthStateChange(async (_event, session) => {
-      const user = session?.user ?? null
-      setSupabaseUser(user)
-
-      if (user) {
-        await fetchAppUser(user)
-        setIsAuthModalOpen(false) // Close modal upon successful sign-in
-        redirectToStoredAuthReturn()
-      } else {
-        setAppUser(null)
-      }
-      setIsLoading(false)
-    })
-
-    return () => subscription.unsubscribe()
-  }, []) // eslint-disable-line react-hooks/exhaustive-deps
-
   const getFallbackUser = (user: SupabaseUser): AppUser => ({
     id: user.id,
     email: user.email ?? "",
@@ -125,6 +81,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const fetchAppUser = async (supabaseUser: SupabaseUser) => {
     const email = supabaseUser.email ?? ""
+    if (email) {
+      setAppUser((current) => current?.id === supabaseUser.id ? current : getFallbackUser(supabaseUser))
+    }
+
     try {
       const controller = new AbortController()
       const timeout = window.setTimeout(() => controller.abort(), AUTH_REQUEST_TIMEOUT_MS)
@@ -145,6 +105,72 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       setAppUser(getFallbackUser(supabaseUser))
     }
   }
+
+  useEffect(() => {
+    // Get initial session. Reading the local session first gives the UI an
+    // immediate signed-in state while the trusted profile/role lookup finishes.
+    const getSession = async () => {
+      let quickUser: SupabaseUser | null = null
+
+      try {
+        const {
+          data: { session },
+        } = await withTimeout(supabase.auth.getSession(), "Supabase session", 2500)
+
+        quickUser = session?.user ?? null
+        if (quickUser) {
+          setSupabaseUser(quickUser)
+          setAppUser(getFallbackUser(quickUser))
+        }
+      } catch (error) {
+        console.warn("Fast auth session check did not complete", error)
+      }
+
+      try {
+        const {
+          data: { user },
+        } = await withTimeout(supabase.auth.getUser(), "Supabase auth")
+        setSupabaseUser(user)
+
+        if (user) {
+          await fetchAppUser(user)
+          redirectToStoredAuthReturn()
+        } else {
+          setAppUser(null)
+        }
+      } catch (error) {
+        console.error("Failed to initialize auth state", error)
+        if (!quickUser) {
+          setSupabaseUser(null)
+          setAppUser(null)
+        }
+      } finally {
+        setIsLoading(false)
+      }
+    }
+
+    getSession()
+
+    // Listen for auth changes
+    const {
+      data: { subscription },
+    } = supabase.auth.onAuthStateChange(async (_event, session) => {
+      const user = session?.user ?? null
+      setSupabaseUser(user)
+
+      if (user) {
+        setAppUser(getFallbackUser(user))
+        setIsAuthModalOpen(false)
+        await fetchAppUser(user)
+        redirectToStoredAuthReturn()
+      } else {
+        setAppUser(null)
+      }
+      setIsLoading(false)
+    })
+
+    return () => subscription.unsubscribe()
+  }, [supabase]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const logout = async () => {
     await supabase.auth.signOut()
