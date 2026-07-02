@@ -39,6 +39,7 @@ const AuthContext = createContext<AuthContextValue>({
 })
 
 const AUTH_REQUEST_TIMEOUT_MS = 8000
+const APP_USER_CACHE_KEY = "bc_app_user"
 
 function timeoutAfter<T>(ms: number, label: string): Promise<T> {
   return new Promise((_, reject) => {
@@ -48,6 +49,34 @@ function timeoutAfter<T>(ms: number, label: string): Promise<T> {
 
 async function withTimeout<T>(promise: Promise<T>, label: string, ms = AUTH_REQUEST_TIMEOUT_MS) {
   return Promise.race([promise, timeoutAfter<T>(ms, label)])
+}
+
+function readCachedAppUser(user: SupabaseUser): AppUser | null {
+  try {
+    const rawValue = window.localStorage.getItem(APP_USER_CACHE_KEY)
+    if (!rawValue) return null
+
+    const cachedUser = JSON.parse(rawValue) as AppUser
+    if (cachedUser.id === user.id || (user.email && cachedUser.email === user.email)) {
+      return cachedUser
+    }
+  } catch {
+    // Ignore malformed or blocked storage; auth still resolves from Supabase.
+  }
+
+  return null
+}
+
+function writeCachedAppUser(user: AppUser | null) {
+  try {
+    if (user) {
+      window.localStorage.setItem(APP_USER_CACHE_KEY, JSON.stringify(user))
+    } else {
+      window.localStorage.removeItem(APP_USER_CACHE_KEY)
+    }
+  } catch {
+    // Storage is only a UI speed-up, not part of auth correctness.
+  }
 }
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
@@ -81,8 +110,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const fetchAppUser = async (supabaseUser: SupabaseUser) => {
     const email = supabaseUser.email ?? ""
+    const cachedUser = readCachedAppUser(supabaseUser)
+
+    if (cachedUser) {
+      setAppUser(cachedUser)
+    }
+
     if (email) {
-      setAppUser((current) => current?.id === supabaseUser.id ? current : getFallbackUser(supabaseUser))
+      setAppUser((current) => current?.id === supabaseUser.id ? current : cachedUser || getFallbackUser(supabaseUser))
     }
 
     try {
@@ -95,13 +130,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       if (res.ok) {
         const data = await res.json()
         setAppUser(data.user)
+        writeCachedAppUser(data.user)
         return
       }
     } catch (error) {
       console.error("Failed to load app user", error)
     }
 
-    if (email) {
+    if (email && !cachedUser) {
       setAppUser(getFallbackUser(supabaseUser))
     }
   }
@@ -120,7 +156,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         quickUser = session?.user ?? null
         if (quickUser) {
           setSupabaseUser(quickUser)
-          setAppUser(getFallbackUser(quickUser))
+          setAppUser(readCachedAppUser(quickUser) || getFallbackUser(quickUser))
         }
       } catch (error) {
         console.warn("Fast auth session check did not complete", error)
@@ -159,7 +195,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       setSupabaseUser(user)
 
       if (user) {
-        setAppUser(getFallbackUser(user))
+        setAppUser(readCachedAppUser(user) || getFallbackUser(user))
         setIsAuthModalOpen(false)
         await fetchAppUser(user)
         redirectToStoredAuthReturn()
@@ -176,6 +212,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     await supabase.auth.signOut()
     setSupabaseUser(null)
     setAppUser(null)
+    writeCachedAppUser(null)
     window.location.href = "/"
   }
 
