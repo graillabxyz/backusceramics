@@ -231,7 +231,10 @@ function buildEmailHTML(data: OrderPayload): string {
 export async function POST(req: NextRequest) {
   try {
     const data: OrderPayload = await req.json()
-    console.log('Received order data:', JSON.stringify(data, null, 2))
+    console.log('Received order inquiry', {
+      pieceCount: Array.isArray(data.pieces) ? data.pieces.length : 0,
+      hasEmail: Boolean(data.contact?.email),
+    })
 
     if (!data.contact?.name || !data.contact?.email) {
       return NextResponse.json({ error: 'Missing required contact fields' }, { status: 400 })
@@ -263,7 +266,7 @@ export async function POST(req: NextRequest) {
     const { error } = await resend.emails.send({
       from: fromEmail,
       to: 'backusceramics@gmail.com',
-      reply_to: data.contact.email,
+      replyTo: data.contact.email,
       subject: `NEW ORDER INQUIRY: ${data.contact.name}`,
       html: buildEmailHTML(data),
       attachments: [
@@ -276,7 +279,7 @@ export async function POST(req: NextRequest) {
 
     if (error) {
       console.error('Resend email error:', error)
-      return NextResponse.json({ error: 'Failed to send email', details: error }, { status: 500 })
+      return NextResponse.json({ error: 'Failed to send email' }, { status: 500 })
     }
 
     console.log('Order inquiry sent successfully')
@@ -284,8 +287,7 @@ export async function POST(req: NextRequest) {
   } catch (err) {
     console.error('Submit order overall error:', err)
     return NextResponse.json({ 
-      error: 'Internal server error', 
-      message: err instanceof Error ? err.message : String(err) 
+      error: 'Internal server error',
     }, { status: 500 })
   }
 }

@@ -58,7 +58,7 @@ export async function POST(req: NextRequest) {
     await resend.emails.send({
       from: fromEmail,
       to: "backusceramics@gmail.com",
-      reply_to: contact.email,
+      replyTo: contact.email,
       subject: `NEW ORDER INQUIRY: ${contact.name}`,
       html: `
         <div style="font-family: sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">

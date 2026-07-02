@@ -38,6 +38,18 @@ const AuthContext = createContext<AuthContextValue>({
   closeAuthModal: () => {},
 })
 
+const AUTH_REQUEST_TIMEOUT_MS = 8000
+
+function timeoutAfter<T>(ms: number, label: string): Promise<T> {
+  return new Promise((_, reject) => {
+    window.setTimeout(() => reject(new Error(`${label} timed out`)), ms)
+  })
+}
+
+async function withTimeout<T>(promise: Promise<T>, label: string, ms = AUTH_REQUEST_TIMEOUT_MS) {
+  return Promise.race([promise, timeoutAfter<T>(ms, label)])
+}
+
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [supabaseUser, setSupabaseUser] = useState<SupabaseUser | null>(null)
   const [appUser, setAppUser] = useState<AppUser | null>(null)
@@ -62,17 +74,23 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     // Get initial session
     const getSession = async () => {
-      const {
-        data: { user },
-      } = await supabase.auth.getUser()
-      setSupabaseUser(user)
+      try {
+        const {
+          data: { user },
+        } = await withTimeout(supabase.auth.getUser(), "Supabase auth")
+        setSupabaseUser(user)
 
-      if (user) {
-        // Fetch our app-level user data (with role) from our API
-        await fetchAppUser(user.email!)
-        redirectToStoredAuthReturn()
+        if (user) {
+          await fetchAppUser(user)
+          redirectToStoredAuthReturn()
+        }
+      } catch (error) {
+        console.error("Failed to initialize auth state", error)
+        setSupabaseUser(null)
+        setAppUser(null)
+      } finally {
+        setIsLoading(false)
       }
-      setIsLoading(false)
     }
 
     getSession()
@@ -85,7 +103,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       setSupabaseUser(user)
 
       if (user) {
-        await fetchAppUser(user.email!)
+        await fetchAppUser(user)
         setIsAuthModalOpen(false) // Close modal upon successful sign-in
         redirectToStoredAuthReturn()
       } else {
@@ -105,9 +123,15 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     role: "USER",
   })
 
-  const fetchAppUser = async (email: string) => {
+  const fetchAppUser = async (supabaseUser: SupabaseUser) => {
+    const email = supabaseUser.email ?? ""
     try {
-      const res = await fetch("/api/me")
+      const controller = new AbortController()
+      const timeout = window.setTimeout(() => controller.abort(), AUTH_REQUEST_TIMEOUT_MS)
+      const res = await fetch("/api/me", { signal: controller.signal }).finally(() => {
+        window.clearTimeout(timeout)
+      })
+
       if (res.ok) {
         const data = await res.json()
         setAppUser(data.user)
@@ -117,12 +141,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       console.error("Failed to load app user", error)
     }
 
-    const {
-      data: { user },
-    } = await supabase.auth.getUser()
-
-    if (user?.email === email) {
-      setAppUser(getFallbackUser(user))
+    if (email) {
+      setAppUser(getFallbackUser(supabaseUser))
     }
   }
 

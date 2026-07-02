@@ -3,8 +3,8 @@
 import Link from "next/link"
 import { useState } from "react"
 import { useAuth } from "@/lib/auth-context"
-import { canAccessAdmin } from "@/lib/permissions"
-import { Menu, X, User, LogOut, LayoutDashboard, ShoppingBag } from "lucide-react"
+import { canAccessAdmin, canUsePos } from "@/lib/permissions"
+import { Menu, X, User, LogOut, LayoutDashboard, ShoppingBag, Store } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { ThemeToggle } from "@/components/theme-toggle"
 
@@ -23,6 +23,7 @@ export function Navigation() {
 
   const isLoggedIn = isAuthenticated && user
   const isAdmin = canAccessAdmin(user?.role)
+  const canOpenPos = canUsePos(user?.role)
 
   return (
     <header className="fixed top-0 left-0 right-0 z-50 bg-background/95 backdrop-blur-sm border-b border-border">
@@ -109,6 +110,17 @@ export function Navigation() {
                         Profile
                       </Link>
 
+                      {canOpenPos && (
+                        <Link
+                          href="/admin/pos"
+                          className="flex items-center gap-3 px-4 py-2 text-sm text-foreground hover:bg-muted transition-colors"
+                          onClick={() => setUserMenuOpen(false)}
+                        >
+                          <Store className="w-4 h-4 text-muted-foreground" />
+                          POS Register
+                        </Link>
+                      )}
+
                       {isAdmin && (
                         <Link
                           href="/admin"
@@ -138,7 +150,7 @@ export function Navigation() {
                 variant="outline"
                 size="sm"
                 className="rounded-full px-5 border-foreground/20 hover:bg-foreground hover:text-background transition-all duration-300"
-                onClick={openAuthModal}
+                onClick={() => openAuthModal()}
               >
                 Sign In
               </Button>
@@ -149,7 +161,7 @@ export function Navigation() {
           <div className="flex items-center gap-2 md:hidden">
             <ThemeToggle />
             {!isLoggedIn && (
-              <Button variant="outline" size="sm" className="rounded-full px-4 text-xs" onClick={openAuthModal}>
+              <Button variant="outline" size="sm" className="rounded-full px-4 text-xs" onClick={() => openAuthModal()}>
                 Sign In
               </Button>
             )}
@@ -213,6 +225,17 @@ export function Navigation() {
                       Profile
                     </Link>
                     {isAdmin && (
+                      <>
+                        {canOpenPos && (
+                          <Link
+                            href="/admin/pos"
+                            className="flex items-center gap-3 text-sm font-medium text-muted-foreground hover:text-foreground transition-colors py-2"
+                            onClick={() => setIsOpen(false)}
+                          >
+                            <Store className="w-4 h-4" />
+                            POS Register
+                          </Link>
+                        )}
                       <Link
                         href="/admin"
                         className="flex items-center gap-3 text-sm font-medium text-muted-foreground hover:text-foreground transition-colors py-2"
@@ -221,6 +244,7 @@ export function Navigation() {
                         <LayoutDashboard className="w-4 h-4" />
                         Admin Dashboard
                       </Link>
+                      </>
                     )}
                     <button
                       onClick={() => { logout(); setIsOpen(false) }}

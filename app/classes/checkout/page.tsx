@@ -164,6 +164,7 @@ function ClassCheckoutContent() {
 
     setIsSubmitting(true)
     try {
+      const returnPath = `${window.location.pathname}${window.location.search}`
       const res = await fetch("/api/payments/xendit-session", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -175,6 +176,7 @@ function ClassCheckoutContent() {
           meetings: paymentMeetings,
           requiredMeetings: paymentRequiredMeetings,
           focus,
+          returnPath,
         }),
       })
 
@@ -213,7 +215,8 @@ function ClassCheckoutContent() {
         throw new Error(friendlyPaymentError(res.status, data as Record<string, unknown>))
       }
 
-      if (!data.paymentUrl) {
+      const paymentUrl = typeof data.paymentUrl === "string" ? data.paymentUrl : ""
+      if (!paymentUrl) {
         console.error("Payment response missing paymentUrl", {
           response: data,
           request: {
@@ -237,7 +240,7 @@ function ClassCheckoutContent() {
         throw new Error("Payment could not be started right now. Please try again shortly or message us on WhatsApp.")
       }
 
-      window.location.href = data.paymentUrl
+      window.location.href = paymentUrl
     } catch (paymentError) {
       console.error("Payment checkout error", paymentError)
       setError(paymentError instanceof Error ? paymentError.message : "We could not start this booking. Please refresh and try again.")

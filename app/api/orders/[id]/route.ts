@@ -3,6 +3,19 @@ import { auth } from "@/lib/auth"
 import { prisma } from "@/lib/prisma"
 import { isFullAdminRole } from "@/lib/permissions"
 
+const orderStatuses = [
+  "INQUIRY",
+  "REVIEWING",
+  "QUOTED",
+  "ACCEPTED",
+  "IN_PROGRESS",
+  "GLAZING",
+  "FIRING",
+  "COMPLETED",
+  "SHIPPED",
+  "CANCELLED",
+] as const
+
 export async function GET(
   req: NextRequest,
   { params }: { params: Promise<{ id: string }> }
@@ -46,7 +59,12 @@ export async function PATCH(
   const data = await req.json()
   const updateData: Record<string, string> = {}
 
-  if (data.status) updateData.status = data.status
+  if (data.status) {
+    if (!orderStatuses.includes(data.status)) {
+      return NextResponse.json({ error: "Invalid order status" }, { status: 400 })
+    }
+    updateData.status = data.status
+  }
 
   const order = await prisma.order.update({
     where: { id },

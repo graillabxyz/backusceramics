@@ -1,0 +1,223 @@
+import { NextRequest, NextResponse } from "next/server"
+import { auth } from "@/lib/auth"
+import { prisma } from "@/lib/prisma"
+import { canUsePos } from "@/lib/permissions"
+import { formatPrice } from "@/lib/pos-catalog"
+import {
+  createXenditPaymentSession,
+  XenditApiError,
+  XenditConfigurationError,
+} from "@/lib/xendit"
+
+interface SaleItemRequest {
+  productId: string
+  quantity: number
+}
+
+interface RawSaleItemRequest {
+  productId?: unknown
+  quantity?: unknown
+}
+
+function sanitizeReference(value: string) {
+  return value.replace(/[^a-zA-Z0-9_-]/g, "").slice(0, 64) || "pos_sale"
+}
+
+function sanitizeCustomerName(value?: string | null) {
+  return (value || "BackusCustomer").replace(/[^a-zA-Z0-9]/g, "").slice(0, 50) || "BackusCustomer"
+}
+
+function getOrigin(req: NextRequest) {
+  const configuredSiteUrl = process.env.NEXT_PUBLIC_SITE_URL?.trim().replace(/\/$/, "")
+  const requestOrigin = (req.headers.get("origin") || req.nextUrl.origin).replace(/\/$/, "")
+  return configuredSiteUrl?.startsWith("https://") ? configuredSiteUrl : requestOrigin
+}
+
+async function restorePendingSaleInventory(saleId: string) {
+  const sale = await prisma.posSale.findUnique({
+    where: { id: saleId },
+    include: { items: true },
+  })
+
+  if (!sale) return
+
+  await prisma.$transaction([
+    ...sale.items
+      .filter((item) => item.productId)
+      .map((item) =>
+        prisma.posProduct.update({
+          where: { id: item.productId! },
+          data: {
+            quantity: { increment: item.quantity },
+            status: "AVAILABLE",
+          },
+        })
+      ),
+    prisma.posSale.update({
+      where: { id: saleId },
+      data: { status: "CANCELLED" },
+    }),
+  ])
+}
+
+export async function POST(req: NextRequest) {
+  const session = await auth()
+  if (!session || !canUsePos(session.user.role)) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
+  }
+
+  const data = await req.json()
+  const items = Array.isArray(data.items) ? data.items : []
+  const receiptEmail = typeof data.receiptEmail === "string" ? data.receiptEmail.trim() : ""
+  const customerName = typeof data.customerName === "string" ? data.customerName.trim() : ""
+  const saleItems: SaleItemRequest[] = items.map((item: RawSaleItemRequest) => ({
+    productId: String(item.productId || ""),
+    quantity: Number(item.quantity || 0),
+  }))
+
+  if (saleItems.length === 0 || saleItems.some((item) => !item.productId || !Number.isInteger(item.quantity) || item.quantity < 1)) {
+    return NextResponse.json({ error: "Online payment needs at least one valid item" }, { status: 400 })
+  }
+
+  const paymentReference = sanitizeReference(`pos_${Date.now()}`)
+  let createdSaleId = ""
+
+  try {
+    const sale = await prisma.$transaction(async (tx) => {
+      const snapshots = []
+      let total = 0
+
+      for (const item of saleItems) {
+        const product = await tx.posProduct.findUnique({ where: { id: item.productId } })
+        if (!product || product.status !== "AVAILABLE") {
+          throw new Error(`${product?.name || "Product"} is not available`)
+        }
+        if (product.quantity < item.quantity) {
+          throw new Error(`Only ${product.quantity} ${product.name} available`)
+        }
+
+        const updated = await tx.posProduct.updateMany({
+          where: {
+            id: item.productId,
+            status: "AVAILABLE",
+            quantity: { gte: item.quantity },
+          },
+          data: {
+            quantity: { decrement: item.quantity },
+          },
+        })
+
+        if (updated.count !== 1) throw new Error(`${product.name} changed while starting payment`)
+
+        const remaining = product.quantity - item.quantity
+        if (remaining === 0) {
+          await tx.posProduct.update({
+            where: { id: item.productId },
+            data: { status: "SOLD", showInShop: false, featured: false },
+          })
+        }
+
+        const lineTotal = product.price * item.quantity
+        total += lineTotal
+        snapshots.push({
+          productId: product.id,
+          nameSnapshot: product.name,
+          skuSnapshot: product.sku,
+          categorySnapshot: product.category,
+          unitPrice: product.price,
+          quantity: item.quantity,
+          lineTotal,
+        })
+      }
+
+      return tx.posSale.create({
+        data: {
+          operatorId: session.user.id,
+          total,
+          status: "PENDING_PAYMENT",
+          paymentMethod: "ONLINE",
+          paymentReference,
+          receiptEmail: receiptEmail || null,
+          notes: data.notes ? String(data.notes).trim() : null,
+          items: { create: snapshots },
+        },
+        include: { items: true },
+      })
+    })
+
+    createdSaleId = sale.id
+    const origin = getOrigin(req)
+    const paymentSession = await createXenditPaymentSession({
+      reference_id: paymentReference,
+      session_type: "PAY",
+      mode: "PAYMENT_LINK",
+      amount: sale.total,
+      currency: "IDR",
+      country: "ID",
+      description: `Backus Ceramics POS sale ${sale.id} - ${formatPrice(sale.total)}`,
+      allow_save_payment_method: "DISABLED",
+      locale: "en",
+      customer: {
+        reference_id: receiptEmail || sale.id,
+        type: "INDIVIDUAL",
+        email: receiptEmail || undefined,
+        individual_detail: {
+          given_names: sanitizeCustomerName(customerName || receiptEmail || "BackusCustomer"),
+        },
+      },
+      items: sale.items.map((item) => ({
+        reference_id: item.productId || item.id,
+        type: "PHYSICAL_PRODUCT",
+        name: item.nameSnapshot,
+        net_unit_amount: item.unitPrice,
+        quantity: item.quantity,
+        category: item.categorySnapshot,
+      })),
+      metadata: {
+        pos_sale_id: sale.id,
+        pos_payment_reference: paymentReference,
+        receipt_email: receiptEmail || undefined,
+      },
+      success_return_url: `${origin}/admin/pos?posPayment=success&sale=${sale.id}`,
+      cancel_return_url: `${origin}/admin/pos?posPayment=cancelled&sale=${sale.id}`,
+    })
+
+    const updatedSale = await prisma.posSale.update({
+      where: { id: sale.id },
+      data: { paymentSessionId: paymentSession.payment_session_id },
+      include: { items: true },
+    })
+
+    return NextResponse.json({
+      sale: updatedSale,
+      paymentUrl: paymentSession.payment_link_url,
+    }, { status: 201 })
+  } catch (error) {
+    if (createdSaleId) {
+      try {
+        await restorePendingSaleInventory(createdSaleId)
+      } catch (restoreError) {
+        console.error("Could not restore POS inventory after online payment failure", { restoreError, createdSaleId })
+      }
+    }
+
+    const isXenditError = error instanceof XenditApiError
+    const isConfigError = error instanceof XenditConfigurationError
+    console.error("Could not start POS online payment", {
+      error,
+      xenditStatus: isXenditError ? error.status : undefined,
+      xenditCode: isXenditError ? error.xenditCode : undefined,
+    })
+
+    return NextResponse.json(
+      {
+        error: isConfigError
+          ? "Online payment is not configured yet."
+          : error instanceof Error
+            ? error.message
+            : "Online payment could not be started.",
+      },
+      { status: isConfigError ? 503 : 409 }
+    )
+  }
+}

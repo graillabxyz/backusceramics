@@ -2,6 +2,11 @@ import { NextRequest, NextResponse } from "next/server"
 import { auth } from "@/lib/auth"
 import { prisma } from "@/lib/prisma"
 import { canUsePos } from "@/lib/permissions"
+import {
+  normalizeProductCategory,
+  POS_PRODUCT_STATUSES,
+  serializeProductImageUrls,
+} from "@/lib/pos-catalog"
 
 function slugify(value: string) {
   return value
@@ -31,7 +36,10 @@ export async function GET() {
   }
 
   const products = await prisma.posProduct.findMany({
-    orderBy: { createdAt: "desc" },
+    orderBy: [
+      { sortOrder: "asc" },
+      { createdAt: "desc" },
+    ],
   })
 
   return NextResponse.json(products)
@@ -45,9 +53,13 @@ export async function POST(req: NextRequest) {
 
   const data = await req.json()
   const name = String(data.name || "").trim()
-  const category = String(data.category || "Studio pieces").trim()
+  const category = normalizeProductCategory(data.category)
   const price = Number(data.price)
   const quantity = Number(data.quantity || 1)
+  const status = data.status || "AVAILABLE"
+  const cafeOnly = Boolean(data.cafeOnly)
+  const showInShop = cafeOnly ? false : Boolean(data.showInShop)
+  const sortOrder = Number(data.sortOrder || 0)
 
   if (!name) {
     return NextResponse.json({ error: "Product name is required" }, { status: 400 })
@@ -61,6 +73,14 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Quantity must be zero or higher" }, { status: 400 })
   }
 
+  if (!POS_PRODUCT_STATUSES.includes(status)) {
+    return NextResponse.json({ error: "Invalid product status" }, { status: 400 })
+  }
+
+  if (!Number.isInteger(sortOrder)) {
+    return NextResponse.json({ error: "Sort order must be a whole number" }, { status: 400 })
+  }
+
   const product = await prisma.posProduct.create({
     data: {
       createdBy: session.user.id,
@@ -68,11 +88,15 @@ export async function POST(req: NextRequest) {
       slug: await uniqueSlug(name),
       sku: data.sku ? String(data.sku).trim() : null,
       description: data.description ? String(data.description).trim() : null,
+      imageUrls: serializeProductImageUrls(data.imageUrls),
       price,
       category,
       quantity,
-      status: data.status || "AVAILABLE",
-      showInShop: Boolean(data.showInShop),
+      status,
+      cafeOnly,
+      showInShop,
+      featured: Boolean(data.featured),
+      sortOrder,
     },
   })
 

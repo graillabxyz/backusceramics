@@ -3,6 +3,8 @@ import { auth } from "@/lib/auth"
 import { prisma } from "@/lib/prisma"
 import { isFullAdminRole } from "@/lib/permissions"
 
+const holdStatuses = ["ACTIVE", "PAUSED", "CANCELLED"] as const
+
 export async function PATCH(
   req: NextRequest,
   { params }: { params: Promise<{ id: string }> }
@@ -14,6 +16,10 @@ export async function PATCH(
   }
 
   const data = await req.json()
+  if (!holdStatuses.includes(data.status)) {
+    return NextResponse.json({ error: "Invalid hold status" }, { status: 400 })
+  }
+
   const hold = await prisma.classHold.update({
     where: { id },
     data: {

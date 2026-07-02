@@ -29,7 +29,7 @@ export function isOwnerRole(role?: string | null) {
 
 export function isFullAdminRole(role?: string | null) {
   const normalized = normalizeRole(role)
-  return normalized === "OWNER" || normalized === "ADMIN"
+  return normalized === "OWNER" || normalized === "ADMIN" || normalized === "POS_OPERATOR"
 }
 
 export function canAccessAdmin(role?: string | null) {

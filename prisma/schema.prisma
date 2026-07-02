@@ -28,6 +28,7 @@ model User {
   classHolds    ClassHold[]
   classSchedules ClassSchedule[]
   posProducts    PosProduct[] @relation("PosProductCreator")
+  posSales       PosSale[] @relation("PosSaleOperator")
   residencyApps ResidencyApplication[]
 
   createdAt DateTime @default(now())
@@ -126,6 +127,11 @@ model ClassBooking {
   preferredDate String?
   participants  Int     @default(1)
   notes         String?
+  paymentReference String?
+  paymentSessionId String?
+  holdExpiresAt DateTime?
+  confirmedAt DateTime?
+  cancelledAt DateTime?
 
   // Contact snapshot
   contactName  String
@@ -134,6 +140,10 @@ model ClassBooking {
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+
+  @@index([paymentReference])
+  @@index([paymentSessionId])
+  @@index([status, holdExpiresAt])
 }
 
 model ClassSchedule {
@@ -195,20 +205,73 @@ model PosProduct {
   slug        String  @unique
   sku         String?
   description String?
+  imageUrls   String? // JSON array of image URLs
   price       Int
   currency    String  @default("IDR")
   category    String
   quantity    Int     @default(1)
   status      String  @default("AVAILABLE")
   // Status values: AVAILABLE, SOLD, DRAFT, ARCHIVED
+  cafeOnly   Boolean @default(false)
   showInShop  Boolean @default(false)
+  featured   Boolean @default(false)
+  sortOrder  Int     @default(0)
+
+  saleItems PosSaleItem[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
   @@index([status])
   @@index([showInShop])
+  @@index([cafeOnly])
   @@index([category])
+  @@index([sortOrder])
+}
+
+model PosSale {
+  id         String @id @default(cuid())
+  operatorId String?
+  operator  User?  @relation("PosSaleOperator", fields: [operatorId], references: [id])
+
+  total         Int
+  currency      String @default("IDR")
+  status        String @default("PAID")
+  // Status values: PAID, PENDING_PAYMENT, CANCELLED
+  paymentMethod String @default("CARD_MACHINE")
+  paymentReference String?
+  paymentSessionId String?
+  receiptEmail String?
+  receiptSentAt DateTime?
+  notes         String?
+
+  items PosSaleItem[]
+
+  createdAt DateTime @default(now())
+
+  @@index([operatorId])
+  @@index([createdAt])
+  @@index([status])
+  @@index([paymentReference])
+  @@index([paymentSessionId])
+}
+
+model PosSaleItem {
+  id        String @id @default(cuid())
+  saleId    String
+  sale      PosSale @relation(fields: [saleId], references: [id], onDelete: Cascade)
+  productId String?
+  product   PosProduct? @relation(fields: [productId], references: [id])
+
+  nameSnapshot     String
+  skuSnapshot      String?
+  categorySnapshot String
+  unitPrice        Int
+  quantity         Int
+  lineTotal        Int
+
+  @@index([saleId])
+  @@index([productId])
 }
 
 model AdminNotification {

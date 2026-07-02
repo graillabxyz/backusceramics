@@ -6,6 +6,7 @@ import {
   buildRangeSessionsFromSchedules,
   buildWeekSessions,
   buildWeekSessionsFromSchedules,
+  type CalendarSession,
   formatDateKey,
   hasSessionStartPassed,
   parseDateKey,
@@ -29,8 +30,8 @@ function endOfMonth(date: Date) {
   return new Date(date.getFullYear(), date.getMonth() + 1, 0)
 }
 
-function mergeSessions(defaultSessions: ReturnType<typeof buildWeekSessions>, scheduledSessions: ReturnType<typeof buildWeekSessions>) {
-  const sessions = new Map<string, ReturnType<typeof buildWeekSessions>[number]>()
+function mergeSessions(defaultSessions: CalendarSession[], scheduledSessions: CalendarSession[]) {
+  const sessions = new Map<string, CalendarSession>()
 
   for (const session of defaultSessions) {
     sessions.set(`${session.workshop.id}|${session.dateKey}|${session.timeLabel}`, session)
@@ -43,11 +44,11 @@ function mergeSessions(defaultSessions: ReturnType<typeof buildWeekSessions>, sc
   return Array.from(sessions.values()).sort((a, b) => a.date.getTime() - b.date.getTime() || a.sortHour - b.sortHour)
 }
 
-function removeStartedSessions(sessions: ReturnType<typeof buildWeekSessions>) {
+function removeStartedSessions(sessions: CalendarSession[]) {
   return sessions.filter((session) => !hasSessionStartPassed(session.dateKey, session.timeLabel))
 }
 
-function buildAvailabilityResponse(rangeStart: Date, sessions: ReturnType<typeof buildWeekSessions>, bookedSeats = new Map<string, number>(), heldSeats = new Map<string, number>(), holdDetails = new Map<string, { id: string; studentName: string; seats: number }[]>()) {
+function buildAvailabilityResponse(rangeStart: Date, sessions: CalendarSession[], bookedSeats = new Map<string, number>(), heldSeats = new Map<string, number>(), holdDetails = new Map<string, { id: string; studentName: string; seats: number }[]>()) {
   const availability = sessions.map((session) => {
     const key = session.scheduleId || sessionKey(session.workshop.id, session.dateKey, session.timeLabel)
     const maxParticipants = session.maxParticipants ?? session.workshop.maxParticipants ?? 8
@@ -87,6 +88,21 @@ function buildAvailabilityResponse(rangeStart: Date, sessions: ReturnType<typeof
   return NextResponse.json({ rangeStart: formatDateKey(rangeStart), sessions: serializedSessions, availability })
 }
 
+function activeBookingStatusWhere(now = new Date()) {
+  return {
+    OR: [
+      { status: "CONFIRMED" },
+      {
+        status: "PENDING",
+        OR: [
+          { holdExpiresAt: null },
+          { holdExpiresAt: { gt: now } },
+        ],
+      },
+    ],
+  }
+}
+
 export async function GET(req: NextRequest) {
   const monthStartParam = req.nextUrl.searchParams.get("monthStart")
   const weekStart = parseWeekStart(req.nextUrl.searchParams.get("weekStart"))
@@ -101,11 +117,9 @@ export async function GET(req: NextRequest) {
         OR: [{ endDate: null }, { endDate: { gte: rangeStart } }],
       },
     })
-  } catch {
-    return buildAvailabilityResponse(
-      rangeStart,
-      removeStartedSessions(monthStartParam ? buildDefaultRangeSessions(rangeStart, rangeEnd) : buildWeekSessions(weekStart))
-    )
+  } catch (error) {
+    console.error("Could not load class schedules for availability", error)
+    return NextResponse.json({ error: "Could not load class availability" }, { status: 503 })
   }
 
   const defaultSessions = monthStartParam
@@ -125,7 +139,7 @@ export async function GET(req: NextRequest) {
     ;[bookings, holds] = await Promise.all([
       prisma.classBooking.findMany({
         where: {
-          status: { in: ["PENDING", "CONFIRMED"] },
+          ...activeBookingStatusWhere(),
           OR: dateKeys.map((dateKey) => ({
             preferredDate: { startsWith: dateKey },
           })),
@@ -155,8 +169,9 @@ export async function GET(req: NextRequest) {
         },
       }),
     ])
-  } catch {
-    return buildAvailabilityResponse(rangeStart, sessions)
+  } catch (error) {
+    console.error("Could not load bookings or holds for availability", error)
+    return NextResponse.json({ error: "Could not load class availability" }, { status: 503 })
   }
 
   const bookedSeats = new Map<string, number>()

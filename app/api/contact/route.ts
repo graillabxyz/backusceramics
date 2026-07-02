@@ -16,7 +16,7 @@ export async function POST(req: NextRequest) {
     const { error } = await resend.emails.send({
       from: fromEmail,
       to: 'backusceramics@gmail.com',
-      reply_to: email,
+      replyTo: email,
       subject: `Contact Form: ${subject || 'New Message'}`,
       html: `
         <div style="font-family: sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #eee; border-radius: 10px;">

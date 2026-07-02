@@ -2,7 +2,6 @@ import { NextRequest, NextResponse } from "next/server"
 import { auth } from "@/lib/auth"
 import { createClient } from "@/lib/supabase/server"
 import { prisma } from "@/lib/prisma"
-import { randomUUID } from "crypto"
 import { formatPrice, workshops } from "@/lib/classes-data"
 import {
   createXenditPaymentSession,
@@ -65,17 +64,30 @@ function markPaymentStep(trace: PaymentTrace | undefined, step: string) {
   if (trace) trace.step = step
 }
 
-function getPaymentRouteTimeoutMs() {
-  const configured = Number(process.env.PAYMENT_ROUTE_TIMEOUT_MS || 8000)
-  if (!Number.isFinite(configured)) return 8000
-  return Math.min(Math.max(configured, 3000), 25000)
-}
-
 function tagPaymentResponse(response: NextResponse, trace: PaymentTrace) {
   response.headers.set("x-payment-route-version", process.env.VERCEL_GIT_COMMIT_SHA || "local")
   response.headers.set("x-payment-route-step", trace.step)
   response.headers.set("x-payment-route-elapsed-ms", String(Date.now() - trace.startedAt))
   return response
+}
+
+function getPaymentHoldExpiresAt() {
+  return new Date(Date.now() + 5 * 60 * 1000)
+}
+
+function activeBookingStatusWhere(now = new Date()) {
+  return {
+    OR: [
+      { status: "CONFIRMED" },
+      {
+        status: "PENDING",
+        OR: [
+          { holdExpiresAt: null },
+          { holdExpiresAt: { gt: now } },
+        ],
+      },
+    ],
+  }
 }
 
 function sanitizeReference(value: string) {
@@ -114,6 +126,19 @@ function getPaymentOrigin(req: NextRequest) {
   if (configuredSiteUrl && isHttpsUrl(configuredSiteUrl)) return configuredSiteUrl
   if (vercelProductionUrl && isHttpsUrl(vercelProductionUrl)) return vercelProductionUrl
   return origin
+}
+
+function safeInternalPath(value: unknown, fallback = "/classes/calendar") {
+  if (typeof value !== "string") return fallback
+  const trimmed = value.trim()
+  if (!trimmed || !trimmed.startsWith("/") || trimmed.startsWith("//")) return fallback
+  if (trimmed.startsWith("/auth/callback")) return fallback
+  return trimmed
+}
+
+function appendQueryParam(path: string, key: string, value: string) {
+  const separator = path.includes("?") ? "&" : "?"
+  return `${path}${separator}${encodeURIComponent(key)}=${encodeURIComponent(value)}`
 }
 
 function parseMeetings(value: unknown): CheckoutMeeting[] {
@@ -162,7 +187,7 @@ async function getAvailableSeats({
     existingBookings = await prisma.classBooking.findMany({
       where: {
         workshopId,
-        status: { in: ["PENDING", "CONFIRMED"] },
+        ...activeBookingStatusWhere(),
         preferredDate: { startsWith: dateKey },
         ...(schedule ? { scheduleId: schedule.id } : {}),
       },
@@ -178,22 +203,7 @@ async function getAvailableSeats({
       dateKey,
       scheduleId: schedule?.id,
     })
-    try {
-      existingBookings = await prisma.$queryRaw<ExistingBookingSeat[]>`
-        SELECT "preferredDate", "participants"
-        FROM "ClassBooking"
-        WHERE "workshopId" = ${workshopId}
-          AND "status" IN ('PENDING', 'CONFIRMED')
-          AND "preferredDate" LIKE ${`${dateKey}%`}
-      `
-    } catch (legacyError) {
-      console.error("Could not load bookings with legacy query while checking payment availability", {
-        error: legacyError,
-        workshopId,
-        dateKey,
-      })
-      return capacity
-    }
+    throw error
   }
 
   let holds: { seats: number; weekdays: string }[] = []
@@ -248,139 +258,6 @@ async function resolveScheduleIdForBooking(scheduleId: string | null) {
   } catch (error) {
     console.error("Could not resolve schedule before payment booking reservation", { error, scheduleId })
     return null
-  }
-}
-
-async function createLegacyBookingRow({
-  workshopId,
-  userId,
-  preferredDate,
-  participants,
-  notes,
-  contactName,
-  contactEmail,
-  contactPhone,
-  anonymous = false,
-}: {
-  workshopId: string
-  userId: string | null
-  preferredDate: string
-  participants: number
-  notes: string
-  contactName: string
-  contactEmail: string
-  contactPhone: string | null
-  anonymous?: boolean
-}) {
-  const id = `booking_${randomUUID().replace(/-/g, "")}`
-  const now = new Date()
-
-  await prisma.$executeRaw`
-    INSERT INTO "ClassBooking" (
-      "id",
-      "userId",
-      "workshopId",
-      "status",
-      "preferredDate",
-      "participants",
-      "notes",
-      "contactName",
-      "contactEmail",
-      "contactPhone",
-      "createdAt",
-      "updatedAt"
-    ) VALUES (
-      ${id},
-      ${anonymous ? null : userId},
-      ${workshopId},
-      'PENDING',
-      ${preferredDate},
-      ${participants},
-      ${notes},
-      ${contactName},
-      ${contactEmail},
-      ${contactPhone},
-      ${now},
-      ${now}
-    )
-  `
-
-  return { id }
-}
-
-async function createLegacyBookingRows({
-  meetings,
-  workshopId,
-  userId,
-  participants,
-  paymentNote,
-  contactName,
-  contactEmail,
-  contactPhone,
-  anonymous = false,
-}: {
-  meetings: CheckoutMeeting[]
-  workshopId: string
-  userId: string | null
-  participants: number
-  paymentNote: string
-  contactName: string
-  contactEmail: string
-  contactPhone: string | null
-  anonymous?: boolean
-}) {
-  const bookings: { id: string }[] = []
-
-  for (const meeting of meetings) {
-    bookings.push(await createLegacyBookingRow({
-      workshopId: meeting.slotWorkshopId || workshopId,
-      userId,
-      preferredDate: `${meeting.dateKey} · ${meeting.timeLabel}`,
-      participants,
-      notes: meeting.slotTitle ? `${paymentNote} Reserved slot: ${meeting.slotTitle}.` : paymentNote,
-      contactName,
-      contactEmail,
-      contactPhone,
-      anonymous,
-    }))
-  }
-
-  return bookings
-}
-
-async function ensureClassBookingStorage() {
-  const statements = [
-    `CREATE TABLE IF NOT EXISTS "ClassBooking" (
-      "id" TEXT NOT NULL PRIMARY KEY,
-      "userId" TEXT,
-      "workshopId" TEXT NOT NULL,
-      "scheduleId" TEXT,
-      "status" TEXT NOT NULL DEFAULT 'PENDING',
-      "preferredDate" TEXT,
-      "participants" INTEGER NOT NULL DEFAULT 1,
-      "notes" TEXT,
-      "contactName" TEXT NOT NULL DEFAULT '',
-      "contactEmail" TEXT NOT NULL DEFAULT '',
-      "contactPhone" TEXT,
-      "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
-      "updatedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP
-    )`,
-    `ALTER TABLE "ClassBooking" ADD COLUMN IF NOT EXISTS "userId" TEXT`,
-    `ALTER TABLE "ClassBooking" ADD COLUMN IF NOT EXISTS "workshopId" TEXT`,
-    `ALTER TABLE "ClassBooking" ADD COLUMN IF NOT EXISTS "scheduleId" TEXT`,
-    `ALTER TABLE "ClassBooking" ADD COLUMN IF NOT EXISTS "status" TEXT NOT NULL DEFAULT 'PENDING'`,
-    `ALTER TABLE "ClassBooking" ADD COLUMN IF NOT EXISTS "preferredDate" TEXT`,
-    `ALTER TABLE "ClassBooking" ADD COLUMN IF NOT EXISTS "participants" INTEGER NOT NULL DEFAULT 1`,
-    `ALTER TABLE "ClassBooking" ADD COLUMN IF NOT EXISTS "notes" TEXT`,
-    `ALTER TABLE "ClassBooking" ADD COLUMN IF NOT EXISTS "contactName" TEXT NOT NULL DEFAULT ''`,
-    `ALTER TABLE "ClassBooking" ADD COLUMN IF NOT EXISTS "contactEmail" TEXT NOT NULL DEFAULT ''`,
-    `ALTER TABLE "ClassBooking" ADD COLUMN IF NOT EXISTS "contactPhone" TEXT`,
-    `ALTER TABLE "ClassBooking" ADD COLUMN IF NOT EXISTS "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP`,
-    `ALTER TABLE "ClassBooking" ADD COLUMN IF NOT EXISTS "updatedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP`,
-  ]
-
-  for (const statement of statements) {
-    await prisma.$executeRawUnsafe(statement)
   }
 }
 
@@ -536,8 +413,10 @@ async function handlePaymentSessionPost(req: NextRequest, trace?: PaymentTrace) 
 
   const total = workshop.price * participants
   const referenceId = sanitizeReference(`bc_${Date.now()}_${workshop.id}`)
+  const holdExpiresAt = getPaymentHoldExpiresAt()
   const origin = getPaymentOrigin(req)
   const hasHttpsOrigin = isHttpsUrl(origin)
+  const returnPath = safeInternalPath(data.returnPath, "/classes/calendar")
   const contactPhone = typeof data.contactPhone === "string" ? data.contactPhone.trim() : ""
   const paymentNote = [
     `Payment required via Xendit.`,
@@ -561,6 +440,8 @@ async function handlePaymentSessionPost(req: NextRequest, trace?: PaymentTrace) 
             preferredDate: `${meeting.dateKey} · ${meeting.timeLabel}`,
             participants,
             notes: meeting.slotTitle ? `${paymentNote} Reserved slot: ${meeting.slotTitle}.` : paymentNote,
+            paymentReference: referenceId,
+            holdExpiresAt,
             contactName: session.user.name || "",
             contactEmail: session.user.email || "",
             contactPhone: contactPhone || null,
@@ -575,58 +456,13 @@ async function handlePaymentSessionPost(req: NextRequest, trace?: PaymentTrace) 
       scheduleId,
       meetingCount: meetings.length,
     })
-
-    try {
-      markPaymentStep(trace, "reservation-legacy")
-      createdBookings = await createLegacyBookingRows({
-        meetings,
-        workshopId,
-        userId: attachLocalUserToBooking ? session.user.id : null,
-        participants,
-        paymentNote,
-        contactName: session.user.name || "",
-        contactEmail: session.user.email || "",
-        contactPhone: contactPhone || null,
-      })
-    } catch (legacyError) {
-      console.error("Could not reserve booking before Xendit payment with legacy insert", {
-        error: legacyError,
-        workshopId,
-        scheduleId,
-        meetingCount: meetings.length,
-      })
-
-      try {
-        markPaymentStep(trace, "reservation-storage-repair")
-        await ensureClassBookingStorage()
-        markPaymentStep(trace, "reservation-anonymous-legacy")
-        createdBookings = await createLegacyBookingRows({
-          meetings,
-          workshopId,
-          userId: null,
-          participants,
-          paymentNote: `${paymentNote} Reservation is linked by customer email.`,
-          contactName: session.user.name || "",
-          contactEmail: session.user.email || "",
-          contactPhone: contactPhone || null,
-          anonymous: true,
-        })
-      } catch (anonymousLegacyError) {
-        console.error("Could not reserve booking before Xendit payment with anonymous legacy insert", {
-          error: anonymousLegacyError,
-          workshopId,
-          scheduleId,
-          meetingCount: meetings.length,
-        })
-        return NextResponse.json(
-          {
-            error: "Could not reserve those class seats before payment. Please refresh and try again.",
-            code: paymentErrorCodes.reservationFailed,
-          },
-          { status: 500 }
-        )
-      }
-    }
+    return NextResponse.json(
+      {
+        error: "Could not reserve those class seats before payment. Please refresh and try again.",
+        code: paymentErrorCodes.reservationFailed,
+      },
+      { status: 500 }
+    )
   }
 
   try {
@@ -677,16 +513,31 @@ async function handlePaymentSessionPost(req: NextRequest, trace?: PaymentTrace) 
       ...(hasHttpsOrigin
         ? {
             success_return_url: `${origin}/account/bookings?payment=success&reference=${referenceId}`,
-            cancel_return_url: `${origin}/classes/checkout?payment=cancelled`,
+            cancel_return_url: `${origin}${appendQueryParam(returnPath, "payment", "cancelled")}`,
           }
         : {}),
     })
+
+    try {
+      await prisma.classBooking.updateMany({
+        where: { id: { in: createdBookings.map((booking) => booking.id) } },
+        data: { paymentSessionId: paymentSession.payment_session_id },
+      })
+    } catch (paymentSessionLinkError) {
+      console.error("Could not attach Xendit payment session id to reserved bookings", {
+        error: paymentSessionLinkError,
+        referenceId,
+        paymentSessionId: paymentSession.payment_session_id,
+        bookingIds: createdBookings.map((booking) => booking.id),
+      })
+    }
 
     return NextResponse.json({
       paymentUrl: paymentSession.payment_link_url,
       referenceId,
       paymentSessionId: paymentSession.payment_session_id,
       bookingIds: createdBookings.map((booking) => booking.id),
+      holdExpiresAt: holdExpiresAt.toISOString(),
     })
   } catch (error) {
     const isXenditError = error instanceof XenditApiError
@@ -705,7 +556,7 @@ async function handlePaymentSessionPost(req: NextRequest, trace?: PaymentTrace) 
         markPaymentStep(trace, "reservation-rollback")
         await prisma.classBooking.updateMany({
           where: { id: { in: createdBookings.map((booking) => booking.id) } },
-          data: { status: "CANCELLED" },
+          data: { status: "CANCELLED", cancelledAt: new Date(), holdExpiresAt: null },
         })
       }
     } catch (rollbackError) {
@@ -730,31 +581,9 @@ export async function POST(req: NextRequest) {
     step: "received",
     startedAt: Date.now(),
   }
-  const timeoutMs = getPaymentRouteTimeoutMs()
-  let timeout: ReturnType<typeof setTimeout> | null = null
 
   try {
-    const response = await Promise.race([
-      handlePaymentSessionPost(req, trace),
-      new Promise<NextResponse>((resolve) => {
-        timeout = setTimeout(() => {
-          console.error("Payment route timed out before completion", {
-            step: trace.step,
-            elapsedMs: Date.now() - trace.startedAt,
-            timeoutMs,
-          })
-          resolve(NextResponse.json(
-            {
-              error: "Payment is taking too long to start. Please try again in a moment.",
-              code: paymentErrorCodes.unhandled,
-              step: trace.step,
-              elapsedMs: Date.now() - trace.startedAt,
-            },
-            { status: 504 }
-          ))
-        }, timeoutMs)
-      }),
-    ])
+    const response = await handlePaymentSessionPost(req, trace)
     return tagPaymentResponse(response, trace)
   } catch (error) {
     console.error("Unhandled payment session route error", {
@@ -775,7 +604,5 @@ export async function POST(req: NextRequest) {
       },
       { status: 500 }
     ), trace)
-  } finally {
-    if (timeout) clearTimeout(timeout)
   }
 }

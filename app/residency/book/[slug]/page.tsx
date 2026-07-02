@@ -317,6 +317,9 @@ export default function ResidencyBookingPage() {
       requiredMeetings: String(requiredDays),
       meetings: JSON.stringify(meetings),
       focus: focusLabel(focus),
+      returnTo: `/residency/book/${slug}`,
+      returnLabel: `Back to ${program.title}`,
+      source: "residency-booking",
     })
     return `/classes/checkout?${params.toString()}`
   })()

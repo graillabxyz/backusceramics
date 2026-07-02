@@ -3,6 +3,8 @@ import { auth } from "@/lib/auth"
 import { prisma } from "@/lib/prisma"
 import { isFullAdminRole } from "@/lib/permissions"
 
+const scheduleStatuses = ["ACTIVE", "PAUSED", "CANCELLED"] as const
+
 export async function PATCH(
   req: NextRequest,
   { params }: { params: Promise<{ id: string }> }
@@ -14,6 +16,10 @@ export async function PATCH(
   }
 
   const data = await req.json()
+  if (!scheduleStatuses.includes(data.status)) {
+    return NextResponse.json({ error: "Invalid schedule status" }, { status: 400 })
+  }
+
   const schedule = await prisma.classSchedule.update({
     where: { id },
     data: {

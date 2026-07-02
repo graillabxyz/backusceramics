@@ -1,18 +1,56 @@
 # Backus Ceramics
 
-Market Validation Platform for Backus Ceramics.
+Production website and booking system for Backus Ceramics. The app includes the public site, class and residency checkout, customer accounts, admin tools, POS products, custom order inquiries, Supabase auth, and Xendit online payments.
 
-## Tech Stack
-- Next.js
-- Tailwind CSS
-- Lucide React
-- Framer Motion
+## Stack
+
+- Next.js App Router
+- React and TypeScript
+- Tailwind CSS and Radix UI
+- Prisma with Postgres
+- Supabase Auth
+- Supabase/Vercel hosting environment
+- Xendit payment sessions
+- Resend email
 
 ## Development
-This project is set up for automatic deployment to Vercel via GitHub.
 
-## Environment Variables
+Use npm as the package manager.
 
-- `XENDIT_SECRET_KEY` - server-side Xendit secret API key used to create hosted invoices. This must be the secret key, not the `xnd_public_...` browser key. `XENDIT_KEY` is also supported for backwards compatibility.
-- `NEXT_PUBLIC_XENDIT_PUBLIC_KEY` - public Xendit key reserved for future client-side or embedded payment flows. `XENDIT_PUBLIC_KEY` is also supported for backwards compatibility. Do not use the secret key in browser code.
-- `XENDIT_CALLBACK_TOKEN` - Xendit webhook verification token. Configure the invoice webhook in Xendit to call `/api/payments/xendit-webhook`.
+```bash
+npm install
+npm run dev
+```
+
+Generate the Prisma client after schema changes:
+
+```bash
+npm run build
+```
+
+## Environment
+
+Copy `.env.example` and fill in real values locally or in Vercel. Do not commit real `.env*` files.
+
+Required production services:
+
+- `DATABASE_URL` or one of the Postgres aliases used by `prisma.config.ts`
+- `NEXT_PUBLIC_SUPABASE_URL`
+- `NEXT_PUBLIC_SUPABASE_ANON_KEY`
+- `NEXT_PUBLIC_SITE_URL`
+- `XENDIT_SECRET_KEY`
+- `XENDIT_CALLBACK_TOKEN`
+- `RESEND_API_KEY`
+- `RESEND_FROM_EMAIL`
+
+## Payments
+
+All class and residency bookings require online payment through Xendit. Checkout reserves seats for 5 minutes while the payment session is active. Xendit webhooks confirm or cancel the reservation by payment reference, payment session id, or booking ids from metadata.
+
+Configure Xendit payment-session webhooks to call:
+
+```text
+https://www.backusceramics.com/api/payments/xendit-webhook
+```
+
+The webhook must send the same `X-CALLBACK-TOKEN` value stored in `XENDIT_CALLBACK_TOKEN`.

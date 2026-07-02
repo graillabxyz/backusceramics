@@ -14,7 +14,7 @@ export function sanitizeAuthReturnTo(value: string | null | undefined, fallback:
 export function setAuthReturnToCookie(value: string | null | undefined) {
   if (typeof document === "undefined") return
 
-  const returnTo = sanitizeAuthReturnTo(value, "/")
+  const returnTo = sanitizeAuthReturnTo(value, "/") || "/"
   const secure = window.location.protocol === "https:" ? "; Secure" : ""
   document.cookie = `${AUTH_RETURN_TO_COOKIE}=${encodeURIComponent(returnTo)}; Max-Age=${AUTH_RETURN_TO_MAX_AGE_SECONDS}; Path=/; SameSite=Lax${secure}`
 

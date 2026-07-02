@@ -51,7 +51,7 @@ function LoginForm() {
   const searchParams = useSearchParams()
   const { isAuthenticated, user, isLoading: authLoading } = useAuth()
   const requestedCallbackUrl = searchParams.get("callbackUrl")
-  const callbackUrl = sanitizeAuthReturnTo(requestedCallbackUrl, "/account")
+  const callbackUrl = sanitizeAuthReturnTo(requestedCallbackUrl, "/account") || "/account"
   const supabase = createClient()
 
   // Redirect if already authenticated

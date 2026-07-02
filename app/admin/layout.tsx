@@ -2,7 +2,7 @@
 
 import React from "react"
 import Link from "next/link"
-import { usePathname, useRouter } from "next/navigation"
+import { usePathname } from "next/navigation"
 import { cn } from "@/lib/utils"
 import { useAuth } from "@/lib/auth-context"
 import { canAccessAdmin, canUsePos, isFullAdminRole, roleLabels } from "@/lib/permissions"
@@ -21,6 +21,7 @@ import {
   Users,
   BarChart3,
   Store,
+  Eye,
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { AdminNotifications } from "@/components/admin-notifications"
@@ -33,6 +34,7 @@ const navItems = [
   { href: "/admin/applications", label: "Residency Apps", icon: Calendar, access: "admin" },
   { href: "/admin/pos", label: "Point of Sale", icon: Store, access: "pos" },
   { href: "/admin/products", label: "Products", icon: ShoppingBag, access: "admin" },
+  { href: "/admin/wares", label: "Wares Preview", icon: Eye, access: "admin" },
   { href: "/admin/users", label: "Users", icon: Users, access: "admin" },
   { href: "/admin/analytics", label: "Analytics", icon: BarChart3, access: "admin" },
   { href: "/admin/settings", label: "Settings", icon: Settings, access: "admin" },
@@ -44,15 +46,8 @@ export default function AdminLayout({
   children: React.ReactNode
 }) {
   const pathname = usePathname()
-  const router = useRouter()
   const { user, isLoading, isAuthenticated, logout } = useAuth()
   const [sidebarOpen, setSidebarOpen] = useState(false)
-
-  React.useEffect(() => {
-    if (!isLoading && isAuthenticated && user?.role === "POS_OPERATOR" && pathname !== "/admin/pos") {
-      router.replace("/admin/pos")
-    }
-  }, [isAuthenticated, isLoading, pathname, router, user?.role])
 
   if (isLoading) {
     return (
@@ -67,14 +62,6 @@ export default function AdminLayout({
 
   if (!isAuthenticated || !canAccessAdmin(user?.role)) {
     return null // Middleware handles the redirect
-  }
-
-  if (user?.role === "POS_OPERATOR" && pathname !== "/admin/pos") {
-    return (
-      <div className="min-h-screen bg-muted/30 flex items-center justify-center">
-        <Loader2 className="h-8 w-8 animate-spin text-primary" />
-      </div>
-    )
   }
 
   const visibleNavItems = navItems.filter((item) => {

@@ -2,6 +2,17 @@ import { NextResponse, type NextRequest } from "next/server"
 import { createServerClient } from "@supabase/ssr"
 import { AUTH_RETURN_TO_COOKIE, sanitizeAuthReturnTo } from "@/lib/auth-redirect"
 
+function getSupabaseCallbackConfig() {
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL
+  const anonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
+
+  if (!url || !anonKey) {
+    throw new Error("Supabase is not configured. Set NEXT_PUBLIC_SUPABASE_URL and NEXT_PUBLIC_SUPABASE_ANON_KEY.")
+  }
+
+  return { url, anonKey }
+}
+
 export async function GET(request: NextRequest) {
   const { searchParams } = new URL(request.url)
   const code = searchParams.get("code")
@@ -28,9 +39,10 @@ export async function GET(request: NextRequest) {
     const supabaseResponse = NextResponse.redirect(`${origin}${next}`)
     supabaseResponse.cookies.delete(AUTH_RETURN_TO_COOKIE)
 
+    const { url, anonKey } = getSupabaseCallbackConfig()
     const supabase = createServerClient(
-      process.env.NEXT_PUBLIC_SUPABASE_URL || "https://placeholder.supabase.co",
-      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || "placeholder-anon-key",
+      url,
+      anonKey,
       {
         cookies: {
           getAll() {
