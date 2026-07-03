@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useMemo, useState } from "react"
+import { useEffect, useMemo, useRef, useState } from "react"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
@@ -25,11 +25,14 @@ import {
   POS_PAYMENT_METHODS,
   POS_PRODUCT_CATEGORIES,
 } from "@/lib/pos-catalog"
+import { cn } from "@/lib/utils"
 import {
   CheckCircle2,
   CreditCard,
   Loader2,
   Mail,
+  Maximize2,
+  Minimize2,
   Minus,
   Plus,
   Search,
@@ -89,6 +92,7 @@ function firstImage(product: PosProduct) {
 }
 
 export default function AdminPosPage() {
+  const posRootRef = useRef<HTMLDivElement | null>(null)
   const [products, setProducts] = useState<PosProduct[]>([])
   const [loading, setLoading] = useState(true)
   const [checkingOut, setCheckingOut] = useState(false)
@@ -104,6 +108,7 @@ export default function AdminPosPage() {
   const [isQuickAddOpen, setIsQuickAddOpen] = useState(false)
   const [savingProduct, setSavingProduct] = useState(false)
   const [quickProduct, setQuickProduct] = useState<QuickProductForm>(quickProductDefaults)
+  const [isFullscreen, setIsFullscreen] = useState(false)
 
   const availableProducts = useMemo(
     () => products.filter((product) => product.status === "AVAILABLE" && product.quantity > 0),
@@ -133,6 +138,25 @@ export default function AdminPosPage() {
   useEffect(() => {
     fetchProducts()
   }, [])
+
+  useEffect(() => {
+    const handleFullscreenChange = () => {
+      setIsFullscreen(document.fullscreenElement === posRootRef.current)
+    }
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape" && isFullscreen && !document.fullscreenElement) {
+        setIsFullscreen(false)
+      }
+    }
+
+    document.addEventListener("fullscreenchange", handleFullscreenChange)
+    document.addEventListener("keydown", handleKeyDown)
+
+    return () => {
+      document.removeEventListener("fullscreenchange", handleFullscreenChange)
+      document.removeEventListener("keydown", handleKeyDown)
+    }
+  }, [isFullscreen])
 
   const fetchProducts = async () => {
     try {
@@ -318,8 +342,51 @@ export default function AdminPosPage() {
     }
   }
 
+  const enterFullscreen = async () => {
+    const element = posRootRef.current
+    if (!element) return
+
+    setError("")
+    try {
+      if (element.requestFullscreen) {
+        await element.requestFullscreen()
+      }
+      setIsFullscreen(true)
+    } catch (fullscreenError) {
+      console.error("Could not enter browser fullscreen for POS", fullscreenError)
+      setIsFullscreen(true)
+    }
+  }
+
+  const exitFullscreen = async () => {
+    try {
+      if (document.fullscreenElement && document.exitFullscreen) {
+        await document.exitFullscreen()
+      }
+    } catch (fullscreenError) {
+      console.error("Could not exit browser fullscreen for POS", fullscreenError)
+    } finally {
+      setIsFullscreen(false)
+    }
+  }
+
+  const toggleFullscreen = () => {
+    if (isFullscreen) {
+      void exitFullscreen()
+      return
+    }
+
+    void enterFullscreen()
+  }
+
   return (
-    <div className="space-y-6">
+    <div
+      ref={posRootRef}
+      className={cn(
+        "space-y-6",
+        isFullscreen && "fixed inset-0 z-[80] overflow-auto bg-muted/30 p-4 sm:p-5 lg:p-6"
+      )}
+    >
       <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
         <div>
           <h1 className="font-heading text-3xl font-bold text-foreground">Point of Sale</h1>
@@ -327,15 +394,27 @@ export default function AdminPosPage() {
             Fast cashier checkout for ceramic wares and cafe-only items.
           </p>
         </div>
-        <div className="grid grid-cols-2 gap-3 sm:w-80">
-          <div className="rounded-md border border-border bg-background p-3">
-            <p className="text-xs text-muted-foreground">Available products</p>
-            <p className="text-2xl font-semibold text-foreground">{availableProducts.length}</p>
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-stretch">
+          <div className="grid grid-cols-2 gap-3 sm:w-80">
+            <div className="rounded-md border border-border bg-background p-3">
+              <p className="text-xs text-muted-foreground">Available products</p>
+              <p className="text-2xl font-semibold text-foreground">{availableProducts.length}</p>
+            </div>
+            <div className="rounded-md border border-border bg-background p-3">
+              <p className="text-xs text-muted-foreground">Cart</p>
+              <p className="text-2xl font-semibold text-foreground">{cartCount}</p>
+            </div>
           </div>
-          <div className="rounded-md border border-border bg-background p-3">
-            <p className="text-xs text-muted-foreground">Cart</p>
-            <p className="text-2xl font-semibold text-foreground">{cartCount}</p>
-          </div>
+          <Button
+            type="button"
+            variant={isFullscreen ? "secondary" : "outline"}
+            className="h-auto min-h-12 sm:min-w-40"
+            onClick={toggleFullscreen}
+            aria-pressed={isFullscreen}
+          >
+            {isFullscreen ? <Minimize2 className="mr-2 h-4 w-4" /> : <Maximize2 className="mr-2 h-4 w-4" />}
+            {isFullscreen ? "Exit fullscreen" : "Fullscreen POS"}
+          </Button>
         </div>
       </div>
 
@@ -352,7 +431,7 @@ export default function AdminPosPage() {
         </div>
       )}
 
-      <div className="grid gap-6 xl:grid-cols-[1fr_420px]">
+      <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_360px] xl:grid-cols-[minmax(0,1fr)_420px]">
         <Card>
           <CardHeader className="gap-4">
             <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
@@ -410,7 +489,12 @@ export default function AdminPosPage() {
                     </Button>
                   </div>
                 ) : (
-                  <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-4">
+                  <div
+                    className={cn(
+                      "grid gap-3 sm:grid-cols-2",
+                      isFullscreen ? "xl:grid-cols-3 2xl:grid-cols-4" : "2xl:grid-cols-3"
+                    )}
+                  >
                     {filteredProducts.map((product) => {
                       const image = firstImage(product)
                       const inCart = cart.find((item) => item.product.id === product.id)?.quantity || 0
@@ -454,7 +538,13 @@ export default function AdminPosPage() {
           </CardContent>
         </Card>
 
-        <Card className="xl:sticky xl:top-6 xl:self-start">
+        <Card
+          className={cn(
+            isFullscreen
+              ? "lg:sticky lg:top-0 lg:max-h-[calc(100vh-3rem)] lg:self-start lg:overflow-y-auto"
+              : "lg:sticky lg:top-20 lg:self-start xl:top-6"
+          )}
+        >
           <CardHeader>
             <CardTitle className="flex items-center justify-between font-heading text-xl">
               <span className="flex items-center gap-2">
@@ -471,7 +561,7 @@ export default function AdminPosPage() {
                 <p className="text-sm text-muted-foreground">Tap products to add them here.</p>
               </div>
             ) : (
-              <div className="space-y-3">
+              <div className={cn("space-y-3", isFullscreen && "lg:max-h-[26vh] lg:overflow-y-auto lg:pr-1")}>
                 {cart.map((item) => (
                   <div key={item.product.id} className="rounded-md border border-border p-3">
                     <div className="flex items-start justify-between gap-3">

@@ -49,6 +49,7 @@ export default function AdminLayout({
   const { user, isLoading, isAuthenticated, logout } = useAuth()
   const [sidebarOpen, setSidebarOpen] = useState(false)
   const [userMenuOpen, setUserMenuOpen] = useState(false)
+  const isPosRoute = pathname === "/admin/pos" || pathname.startsWith("/admin/pos/")
 
   if (isLoading) {
     return (
@@ -76,7 +77,10 @@ export default function AdminLayout({
   return (
     <div className="min-h-screen bg-muted/30">
       {/* Mobile Header */}
-      <header className="lg:hidden fixed top-0 left-0 right-0 z-50 bg-background border-b border-border h-16 flex items-center justify-between px-4">
+      <header className={cn(
+        "fixed top-0 left-0 right-0 z-50 bg-background border-b border-border h-16 flex items-center justify-between px-4",
+        isPosRoute ? "xl:hidden" : "lg:hidden"
+      )}>
         <div className="flex items-center gap-3">
           <div className="w-8 h-8 bg-primary rounded-full flex items-center justify-center">
             <span className="text-primary-foreground font-heading font-bold text-sm font-semibold">B</span>
@@ -145,7 +149,8 @@ export default function AdminLayout({
 
       {/* Sidebar */}
       <aside className={cn(
-        "fixed left-0 top-0 bottom-0 w-64 bg-background border-r border-border z-40 transition-transform lg:translate-x-0",
+        "fixed left-0 top-0 bottom-0 w-64 bg-background border-r border-border z-40 transition-transform",
+        isPosRoute ? "xl:translate-x-0" : "lg:translate-x-0",
         sidebarOpen ? "translate-x-0" : "-translate-x-full"
       )}>
         <div className="p-6">
@@ -221,14 +226,17 @@ export default function AdminLayout({
       {/* Mobile Overlay */}
       {sidebarOpen && (
         <div 
-          className="fixed inset-0 bg-background/80 backdrop-blur-sm z-30 lg:hidden"
+          className={cn("fixed inset-0 bg-background/80 backdrop-blur-sm z-30", isPosRoute ? "xl:hidden" : "lg:hidden")}
           onClick={() => setSidebarOpen(false)}
         />
       )}
 
       {/* Main Content */}
-      <main className="lg:pl-64 pt-16 lg:pt-0">
-        <div className="hidden border-b border-border bg-background/80 px-6 py-3 backdrop-blur lg:flex lg:items-center lg:justify-end lg:px-8">
+      <main className={cn("pt-16", isPosRoute ? "xl:pl-64 xl:pt-0" : "lg:pl-64 lg:pt-0")}>
+        <div className={cn(
+          "hidden border-b border-border bg-background/80 px-6 py-3 backdrop-blur lg:px-8",
+          isPosRoute ? "xl:flex xl:items-center xl:justify-end" : "lg:flex lg:items-center lg:justify-end"
+        )}>
           <AdminNotifications enabled={isFullAdminRole(user?.role)} />
         </div>
         <div className="p-6 lg:p-8">
