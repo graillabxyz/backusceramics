@@ -10,6 +10,7 @@ import {
   getSupabaseAuthUserName,
   getSupabaseAuthUserProvider,
   listSupabaseAuthUsers,
+  type SupabaseAuthUsersResult,
 } from "@/lib/auth-user-sync"
 import type { User as SupabaseAuthUser } from "@supabase/supabase-js"
 
@@ -43,21 +44,32 @@ function authOnlyUser(authUser: SupabaseAuthUser) {
 }
 
 async function getFallbackSession(): Promise<AdminSession> {
-  const supabase = await createClient()
-  const {
-    data: { user },
-  } = await supabase.auth.getUser()
+  try {
+    const supabase = await createClient()
+    const {
+      data: { user },
+      error,
+    } = await supabase.auth.getUser()
 
-  if (!user || !user.email) return null
+    if (error) {
+      console.error("Could not read fallback Supabase user for admin users list", error)
+      return null
+    }
 
-  return {
-    user: {
-      id: user.id,
-      email: user.email,
-      name: getSupabaseAuthUserName(user),
-      image: getSupabaseAuthUserImage(user),
-      role: getDefaultRole(user.email),
-    },
+    if (!user || !user.email) return null
+
+    return {
+      user: {
+        id: user.id,
+        email: user.email,
+        name: getSupabaseAuthUserName(user),
+        image: getSupabaseAuthUserImage(user),
+        role: getDefaultRole(user.email),
+      },
+    }
+  } catch (error) {
+    console.error("Could not create fallback Supabase session for admin users list", error)
+    return null
   }
 }
 
@@ -77,7 +89,23 @@ export async function GET() {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
   }
 
-  const authUsersResult = await listSupabaseAuthUsers()
+  let authUsersResult: SupabaseAuthUsersResult = {
+    enabled: false,
+    users: [],
+    error: null,
+  }
+
+  try {
+    authUsersResult = await listSupabaseAuthUsers()
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Unknown Supabase Auth listUsers error"
+    console.error("Could not list Supabase Auth users", error)
+    authUsersResult = {
+      enabled: true,
+      users: [],
+      error: message,
+    }
+  }
   const authUsersByEmail = new Map(
     authUsersResult.users.flatMap((authUser) => {
       const email = getSupabaseAuthUserEmail(authUser)

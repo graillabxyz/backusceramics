@@ -3,6 +3,7 @@
 import { useState, useEffect } from "react"
 import { Card, CardContent, CardDescription, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
+import { Button } from "@/components/ui/button"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Users as UsersIcon, Loader2, Shield, AlertCircle } from "lucide-react"
 import { useAuth } from "@/lib/auth-context"
@@ -56,9 +57,15 @@ export default function AdminUsersPage() {
 
   const fetchUsers = async () => {
     try {
+      setError(null)
       const res = await fetch("/api/users")
       const data = await res.json().catch(() => ({}))
-      if (!res.ok) throw new Error(data.error || "Could not load users")
+      if (!res.ok) {
+        const fallbackMessage = res.status === 401
+          ? "Your admin session could not be verified. Please sign in again."
+          : `Could not load users. (${res.status})`
+        throw new Error(data.error || fallbackMessage)
+      }
 
       if (Array.isArray(data)) {
         setUsers(data)
@@ -112,8 +119,17 @@ export default function AdminUsersPage() {
       </div>
 
       {error && (
-        <div className="rounded-md border border-destructive/30 bg-destructive/10 px-4 py-3 text-sm text-destructive">
-          {error}
+        <div className="flex flex-col gap-3 rounded-md border border-destructive/30 bg-destructive/10 px-4 py-3 text-sm text-destructive sm:flex-row sm:items-center sm:justify-between">
+          <span>{error}</span>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            className="w-fit border-destructive/40 text-destructive hover:bg-destructive/10"
+            onClick={fetchUsers}
+          >
+            Retry
+          </Button>
         </div>
       )}
 

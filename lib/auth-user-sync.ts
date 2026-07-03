@@ -5,7 +5,7 @@ import { getDefaultRole } from "@/lib/permissions"
 export interface SupabaseAuthUsersResult {
   enabled: boolean
   users: SupabaseAuthUser[]
-  error?: string
+  error?: string | null
 }
 
 function getSupabaseAdminConfig() {
