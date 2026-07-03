@@ -44,7 +44,7 @@ function formatDate(value?: string | null) {
 }
 
 export default function AdminUsersPage() {
-  const { user: currentUser } = useAuth()
+  const { user: currentUser, isLoading: authLoading } = useAuth()
   const [users, setUsers] = useState<UserData[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -52,8 +52,33 @@ export default function AdminUsersPage() {
   const canEditRoles = canManageAdmins(currentUser?.role)
 
   useEffect(() => {
-    fetchUsers()
-  }, [])
+    if (!authLoading) {
+      fetchUsers()
+    }
+  }, [authLoading]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  const currentUserFallback = (): UserData | null => {
+    if (!currentUser?.email) return null
+
+    return {
+      id: currentUser.id,
+      name: currentUser.name,
+      email: currentUser.email,
+      role: currentUser.role,
+      image: currentUser.image || null,
+      createdAt: new Date().toISOString(),
+      hasLocalUser: false,
+      hasSupabaseAuth: true,
+      authCreatedAt: null,
+      lastSignInAt: null,
+      authProvider: null,
+      _count: {
+        orders: 0,
+        classBookings: 0,
+        residencyApps: 0,
+      },
+    }
+  }
 
   const fetchUsers = async () => {
     try {
@@ -77,6 +102,16 @@ export default function AdminUsersPage() {
       }
     } catch (err) {
       console.error("Failed to fetch users:", err)
+      const fallbackUser = currentUserFallback()
+      if (fallbackUser) {
+        setUsers([fallbackUser])
+        setAuthSync({
+          enabled: false,
+          error: "Could not reach the full user directory. Showing your current signed-in admin session only.",
+          authUserCount: 0,
+          createdFromAuth: 0,
+        })
+      }
       setError(err instanceof Error ? err.message : "Could not load users.")
     } finally {
       setLoading(false)
@@ -101,7 +136,7 @@ export default function AdminUsersPage() {
     }
   }
 
-  if (loading) {
+  if (loading || authLoading) {
     return (
       <div className="flex items-center justify-center py-16">
         <Loader2 className="h-8 w-8 animate-spin text-primary" />
