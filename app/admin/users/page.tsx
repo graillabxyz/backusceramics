@@ -1,13 +1,33 @@
 "use client"
 
-import { useState, useEffect } from "react"
+import { useState, useEffect, useMemo } from "react"
 import { Card, CardContent, CardDescription, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { Users as UsersIcon, Loader2, Shield, AlertCircle } from "lucide-react"
+import { AlertCircle, ArrowDown, ArrowUp, ArrowUpDown, Loader2, Shield, Users as UsersIcon } from "lucide-react"
 import { useAuth } from "@/lib/auth-context"
 import { appRoles, canManageAdmins, roleLabels, type AppRole } from "@/lib/permissions"
+
+interface UserMetrics {
+  pageViews: number
+  productViews: number
+  checkoutViews: number
+  checkoutIntentClicks: number
+  paymentIntentClicks: number
+  paymentSessionsCreated: number
+  paymentsCompleted: number
+  checkoutAbandoned: number
+  paymentStartFailed: number
+  totalEvents: number
+  confirmedClassBookings: number
+  completedClassBookings: number
+  pendingClassBookings: number
+  cancelledClassBookings: number
+  posReceiptPurchases: number
+  posReceiptSpend: number
+  lastActivityAt: string | null
+}
 
 interface UserData {
   id: string
@@ -21,10 +41,13 @@ interface UserData {
   authCreatedAt?: string | null
   lastSignInAt?: string | null
   authProvider?: string | null
+  purchaseCount?: number
+  metrics?: UserMetrics
   _count: {
     orders: number
     classBookings: number
     residencyApps: number
+    posSales: number
   }
 }
 
@@ -38,9 +61,127 @@ interface UsersApiResponse {
   }
 }
 
+type SortDirection = "asc" | "desc"
+type SortKey =
+  | "name"
+  | "email"
+  | "role"
+  | "lastSignInAt"
+  | "lastActivityAt"
+  | "pageViews"
+  | "productViews"
+  | "checkoutViews"
+  | "paymentIntentClicks"
+  | "checkoutAbandoned"
+  | "purchases"
+  | "posSales"
+  | "joined"
+
+const numberFormatter = new Intl.NumberFormat("en-US")
+const rupiahFormatter = new Intl.NumberFormat("en-US", {
+  style: "currency",
+  currency: "IDR",
+  maximumFractionDigits: 0,
+})
+
+function emptyMetrics(): UserMetrics {
+  return {
+    pageViews: 0,
+    productViews: 0,
+    checkoutViews: 0,
+    checkoutIntentClicks: 0,
+    paymentIntentClicks: 0,
+    paymentSessionsCreated: 0,
+    paymentsCompleted: 0,
+    checkoutAbandoned: 0,
+    paymentStartFailed: 0,
+    totalEvents: 0,
+    confirmedClassBookings: 0,
+    completedClassBookings: 0,
+    pendingClassBookings: 0,
+    cancelledClassBookings: 0,
+    posReceiptPurchases: 0,
+    posReceiptSpend: 0,
+    lastActivityAt: null,
+  }
+}
+
+function getMetrics(user: UserData) {
+  return user.metrics || emptyMetrics()
+}
+
 function formatDate(value?: string | null) {
-  if (!value) return null
-  return new Date(value).toLocaleDateString()
+  if (!value) return "—"
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return "—"
+  return date.toLocaleDateString()
+}
+
+function formatDateTime(value?: string | null) {
+  if (!value) return "—"
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return "—"
+  return date.toLocaleString(undefined, {
+    dateStyle: "medium",
+    timeStyle: "short",
+  })
+}
+
+function dateSortValue(value?: string | null) {
+  if (!value) return 0
+  const timestamp = new Date(value).getTime()
+  return Number.isNaN(timestamp) ? 0 : timestamp
+}
+
+function formatNumber(value: number) {
+  return numberFormatter.format(value)
+}
+
+function formatCurrency(value: number) {
+  return rupiahFormatter.format(value)
+}
+
+function purchaseCount(user: UserData) {
+  const metrics = getMetrics(user)
+  return user.purchaseCount ?? (
+    user._count.orders +
+    metrics.confirmedClassBookings +
+    metrics.completedClassBookings +
+    metrics.posReceiptPurchases
+  )
+}
+
+function getSortValue(user: UserData, key: SortKey) {
+  const metrics = getMetrics(user)
+
+  switch (key) {
+    case "name":
+      return (user.name || user.email).toLowerCase()
+    case "email":
+      return user.email.toLowerCase()
+    case "role":
+      return roleLabels[user.role as AppRole] || user.role
+    case "lastSignInAt":
+      return dateSortValue(user.lastSignInAt)
+    case "lastActivityAt":
+      return dateSortValue(metrics.lastActivityAt)
+    case "pageViews":
+      return metrics.pageViews
+    case "productViews":
+      return metrics.productViews
+    case "checkoutViews":
+      return metrics.checkoutViews
+    case "paymentIntentClicks":
+      return metrics.paymentIntentClicks
+    case "checkoutAbandoned":
+      return metrics.checkoutAbandoned
+    case "purchases":
+      return purchaseCount(user)
+    case "posSales":
+      return user._count.posSales
+    case "joined":
+      return dateSortValue(user.authCreatedAt || user.createdAt)
+  }
 }
 
 export default function AdminUsersPage() {
@@ -49,6 +190,8 @@ export default function AdminUsersPage() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [authSync, setAuthSync] = useState<UsersApiResponse["authSync"]>(undefined)
+  const [sortKey, setSortKey] = useState<SortKey>("lastSignInAt")
+  const [sortDirection, setSortDirection] = useState<SortDirection>("desc")
   const canEditRoles = canManageAdmins(currentUser?.role)
 
   useEffect(() => {
@@ -72,10 +215,13 @@ export default function AdminUsersPage() {
       authCreatedAt: null,
       lastSignInAt: null,
       authProvider: null,
+      purchaseCount: 0,
+      metrics: emptyMetrics(),
       _count: {
         orders: 0,
         classBookings: 0,
         residencyApps: 0,
+        posSales: 0,
       },
     }
   }
@@ -136,6 +282,60 @@ export default function AdminUsersPage() {
     }
   }
 
+  const sortedUsers = useMemo(() => {
+    return [...users].sort((a, b) => {
+      const aValue = getSortValue(a, sortKey)
+      const bValue = getSortValue(b, sortKey)
+      const direction = sortDirection === "asc" ? 1 : -1
+
+      if (typeof aValue === "string" || typeof bValue === "string") {
+        return String(aValue).localeCompare(String(bValue)) * direction
+      }
+
+      return (Number(aValue) - Number(bValue)) * direction
+    })
+  }, [sortDirection, sortKey, users])
+
+  const totals = useMemo(() => {
+    return users.reduce(
+      (summary, user) => {
+        const metrics = getMetrics(user)
+        summary.pageViews += metrics.pageViews
+        summary.checkoutViews += metrics.checkoutViews
+        summary.paymentIntentClicks += metrics.paymentIntentClicks
+        summary.purchases += purchaseCount(user)
+        return summary
+      },
+      { pageViews: 0, checkoutViews: 0, paymentIntentClicks: 0, purchases: 0 }
+    )
+  }, [users])
+
+  const setSort = (key: SortKey) => {
+    if (key === sortKey) {
+      setSortDirection((current) => current === "asc" ? "desc" : "asc")
+      return
+    }
+
+    setSortKey(key)
+    setSortDirection(key === "name" || key === "email" || key === "role" ? "asc" : "desc")
+  }
+
+  const SortHeader = ({ column, label, align = "left" }: { column: SortKey; label: string; align?: "left" | "right" }) => {
+    const active = sortKey === column
+    const Icon = active ? (sortDirection === "asc" ? ArrowUp : ArrowDown) : ArrowUpDown
+
+    return (
+      <button
+        type="button"
+        onClick={() => setSort(column)}
+        className={`inline-flex w-full items-center gap-1.5 text-xs font-semibold uppercase text-muted-foreground hover:text-foreground ${align === "right" ? "justify-end" : "justify-start"}`}
+      >
+        <span>{label}</span>
+        <Icon className="h-3.5 w-3.5" />
+      </button>
+    )
+  }
+
   if (loading || authLoading) {
     return (
       <div className="flex items-center justify-center py-16">
@@ -180,18 +380,28 @@ export default function AdminUsersPage() {
         </div>
       )}
 
-      <div className="grid gap-3 sm:grid-cols-3">
+      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
         <div className="rounded-md border border-border bg-background p-4">
           <p className="text-sm text-muted-foreground">Visible users</p>
-          <p className="mt-1 text-2xl font-semibold text-foreground">{users.length}</p>
+          <p className="mt-1 text-2xl font-semibold text-foreground">{formatNumber(users.length)}</p>
         </div>
         <div className="rounded-md border border-border bg-background p-4">
           <p className="text-sm text-muted-foreground">Supabase auth users</p>
           <p className="mt-1 text-2xl font-semibold text-foreground">{authSync?.authUserCount ?? "—"}</p>
         </div>
         <div className="rounded-md border border-border bg-background p-4">
-          <p className="text-sm text-muted-foreground">Backfilled this load</p>
-          <p className="mt-1 text-2xl font-semibold text-foreground">{authSync?.createdFromAuth ?? 0}</p>
+          <p className="text-sm text-muted-foreground">Tracked page views</p>
+          <p className="mt-1 text-2xl font-semibold text-foreground">{formatNumber(totals.pageViews)}</p>
+        </div>
+        <div className="rounded-md border border-border bg-background p-4">
+          <p className="text-sm text-muted-foreground">Checkout / pay intent</p>
+          <p className="mt-1 text-2xl font-semibold text-foreground">
+            {formatNumber(totals.checkoutViews)} / {formatNumber(totals.paymentIntentClicks)}
+          </p>
+        </div>
+        <div className="rounded-md border border-border bg-background p-4">
+          <p className="text-sm text-muted-foreground">Purchases tracked</p>
+          <p className="mt-1 text-2xl font-semibold text-foreground">{formatNumber(totals.purchases)}</p>
         </div>
       </div>
 
@@ -206,74 +416,138 @@ export default function AdminUsersPage() {
           </CardContent>
         </Card>
       ) : (
-        <div className="space-y-3">
-          {users.map((user) => (
-            <Card key={user.id}>
-              <CardContent className="p-4 sm:p-6">
-                <div className="flex flex-col sm:flex-row sm:items-center gap-4">
-                  <div className="flex items-center gap-3 flex-1 min-w-0">
-                    {user.image ? (
-                      <img src={user.image} alt="" className="w-10 h-10 rounded-full" />
-                    ) : (
-                      <div className="w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center">
-                        <span className="text-sm font-semibold text-primary">
-                          {user.name?.[0] || user.email[0].toUpperCase()}
-                        </span>
-                      </div>
-                    )}
-                    <div className="min-w-0">
-                      <div className="flex items-center gap-2">
-                        <h3 className="font-medium text-foreground truncate">
-                          {user.name || "Unnamed"}
-                        </h3>
-                        {user.role !== "USER" && (
-                          <Shield className="h-4 w-4 text-primary" />
-                        )}
-                        {user.authProvider && (
-                          <Badge variant="outline" className="capitalize">
-                            {user.authProvider}
-                          </Badge>
-                        )}
-                        {user.hasSupabaseAuth === false && (
-                          <Badge variant="secondary">Local only</Badge>
-                        )}
-                        {user.hasLocalUser === false && (
-                          <Badge variant="secondary">Auth only</Badge>
-                        )}
-                      </div>
-                      <p className="text-sm text-muted-foreground truncate">{user.email}</p>
-                      <div className="flex items-center gap-3 mt-1 text-xs text-muted-foreground">
-                        <span>{user._count.orders} orders</span>
-                        <span>{user._count.classBookings} bookings</span>
-                        <span>{user._count.residencyApps} applications</span>
-                        <span>· Joined {formatDate(user.authCreatedAt || user.createdAt)}</span>
-                        {formatDate(user.lastSignInAt) && (
-                          <span>Last sign-in {formatDate(user.lastSignInAt)}</span>
-                        )}
-                      </div>
-                    </div>
-                  </div>
-                  <Select
-                    value={user.role}
-                    onValueChange={(val) => updateRole(user.id, val as AppRole)}
-                    disabled={!canEditRoles || user.hasLocalUser === false}
-                  >
-                    <SelectTrigger className="w-44">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {appRoles.map((role) => (
-                        <SelectItem key={role} value={role}>
-                          {roleLabels[role]}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-              </CardContent>
-            </Card>
-          ))}
-        </div>
+        <Card>
+          <CardContent className="p-0">
+            <div className="overflow-x-auto">
+              <table className="w-full min-w-[1320px] text-sm">
+                <thead className="border-b border-border bg-muted/40">
+                  <tr>
+                    <th className="px-4 py-3 text-left"><SortHeader column="name" label="User" /></th>
+                    <th className="px-4 py-3 text-left"><SortHeader column="role" label="Role" /></th>
+                    <th className="px-4 py-3 text-left"><SortHeader column="lastSignInAt" label="Last login" /></th>
+                    <th className="px-4 py-3 text-left"><SortHeader column="lastActivityAt" label="Last activity" /></th>
+                    <th className="px-4 py-3 text-right"><SortHeader column="pageViews" label="Pages" align="right" /></th>
+                    <th className="px-4 py-3 text-right"><SortHeader column="productViews" label="Products" align="right" /></th>
+                    <th className="px-4 py-3 text-right"><SortHeader column="checkoutViews" label="Checkout" align="right" /></th>
+                    <th className="px-4 py-3 text-right"><SortHeader column="paymentIntentClicks" label="Pay clicks" align="right" /></th>
+                    <th className="px-4 py-3 text-right"><SortHeader column="checkoutAbandoned" label="Abandoned" align="right" /></th>
+                    <th className="px-4 py-3 text-right"><SortHeader column="purchases" label="Purchases" align="right" /></th>
+                    <th className="px-4 py-3 text-right"><SortHeader column="posSales" label="POS ops" align="right" /></th>
+                    <th className="px-4 py-3 text-left"><SortHeader column="joined" label="Joined" /></th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {sortedUsers.map((user) => {
+                    const metrics = getMetrics(user)
+                    const userPurchaseCount = purchaseCount(user)
+                    const confirmedClasses = metrics.confirmedClassBookings + metrics.completedClassBookings
+
+                    return (
+                      <tr key={user.id} className="border-b border-border last:border-0 hover:bg-muted/30">
+                        <td className="px-4 py-4 align-middle">
+                          <div className="flex min-w-72 items-center gap-3">
+                            {user.image ? (
+                              <img src={user.image} alt="" className="h-10 w-10 rounded-full" />
+                            ) : (
+                              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-primary/10">
+                                <span className="text-sm font-semibold text-primary">
+                                  {user.name?.[0] || user.email[0].toUpperCase()}
+                                </span>
+                              </div>
+                            )}
+                            <div className="min-w-0">
+                              <div className="flex flex-wrap items-center gap-2">
+                                <h3 className="max-w-56 truncate font-medium text-foreground">
+                                  {user.name || "Unnamed"}
+                                </h3>
+                                {user.role !== "USER" && (
+                                  <Shield className="h-4 w-4 text-primary" />
+                                )}
+                                {user.authProvider && (
+                                  <Badge variant="outline" className="capitalize">
+                                    {user.authProvider}
+                                  </Badge>
+                                )}
+                                {user.hasSupabaseAuth === false && (
+                                  <Badge variant="secondary">Local only</Badge>
+                                )}
+                                {user.hasLocalUser === false && (
+                                  <Badge variant="secondary">Auth only</Badge>
+                                )}
+                              </div>
+                              <p className="mt-1 max-w-72 truncate text-sm text-muted-foreground">{user.email}</p>
+                            </div>
+                          </div>
+                        </td>
+                        <td className="px-4 py-4 align-middle">
+                          <Select
+                            value={user.role}
+                            onValueChange={(val) => updateRole(user.id, val as AppRole)}
+                            disabled={!canEditRoles || user.hasLocalUser === false}
+                          >
+                            <SelectTrigger className="h-9 w-40 bg-background">
+                              <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                              {appRoles.map((role) => (
+                                <SelectItem key={role} value={role}>
+                                  {roleLabels[role]}
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                          {user.hasLocalUser === false && (
+                            <p className="mt-1 text-xs text-muted-foreground">Sync needed</p>
+                          )}
+                        </td>
+                        <td className="whitespace-nowrap px-4 py-4 align-middle text-muted-foreground">
+                          {formatDateTime(user.lastSignInAt)}
+                        </td>
+                        <td className="whitespace-nowrap px-4 py-4 align-middle text-muted-foreground">
+                          {formatDateTime(metrics.lastActivityAt)}
+                        </td>
+                        <td className="px-4 py-4 text-right align-middle font-medium tabular-nums">
+                          {formatNumber(metrics.pageViews)}
+                        </td>
+                        <td className="px-4 py-4 text-right align-middle font-medium tabular-nums">
+                          {formatNumber(metrics.productViews)}
+                        </td>
+                        <td className="px-4 py-4 text-right align-middle tabular-nums">
+                          <p className="font-medium">{formatNumber(metrics.checkoutViews)}</p>
+                          <p className="text-xs text-muted-foreground">{formatNumber(metrics.checkoutIntentClicks)} starts</p>
+                        </td>
+                        <td className="px-4 py-4 text-right align-middle tabular-nums">
+                          <p className="font-medium">{formatNumber(metrics.paymentIntentClicks)}</p>
+                          <p className="text-xs text-muted-foreground">{formatNumber(metrics.paymentSessionsCreated)} sessions</p>
+                        </td>
+                        <td className="px-4 py-4 text-right align-middle tabular-nums">
+                          <p className="font-medium">{formatNumber(metrics.checkoutAbandoned)}</p>
+                          <p className="text-xs text-muted-foreground">{formatNumber(metrics.paymentStartFailed)} failed</p>
+                        </td>
+                        <td className="px-4 py-4 text-right align-middle tabular-nums">
+                          <p className="font-medium">{formatNumber(userPurchaseCount)}</p>
+                          <p className="text-xs text-muted-foreground">
+                            {formatNumber(confirmedClasses)} classes · {formatNumber(user._count.orders)} orders · {formatNumber(metrics.posReceiptPurchases)} POS
+                          </p>
+                          {metrics.posReceiptSpend > 0 && (
+                            <p className="text-xs text-muted-foreground">{formatCurrency(metrics.posReceiptSpend)}</p>
+                          )}
+                        </td>
+                        <td className="px-4 py-4 text-right align-middle tabular-nums">
+                          <p className="font-medium">{formatNumber(user._count.posSales)}</p>
+                          <p className="text-xs text-muted-foreground">as cashier</p>
+                        </td>
+                        <td className="whitespace-nowrap px-4 py-4 align-middle text-muted-foreground">
+                          {formatDate(user.authCreatedAt || user.createdAt)}
+                        </td>
+                      </tr>
+                    )
+                  })}
+                </tbody>
+              </table>
+            </div>
+          </CardContent>
+        </Card>
       )}
     </div>
   )

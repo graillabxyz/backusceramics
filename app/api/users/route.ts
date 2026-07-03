@@ -21,6 +21,29 @@ function emptyCounts() {
     orders: 0,
     classBookings: 0,
     residencyApps: 0,
+    posSales: 0,
+  }
+}
+
+function emptyMetrics() {
+  return {
+    pageViews: 0,
+    productViews: 0,
+    checkoutViews: 0,
+    checkoutIntentClicks: 0,
+    paymentIntentClicks: 0,
+    paymentSessionsCreated: 0,
+    paymentsCompleted: 0,
+    checkoutAbandoned: 0,
+    paymentStartFailed: 0,
+    totalEvents: 0,
+    confirmedClassBookings: 0,
+    completedClassBookings: 0,
+    pendingClassBookings: 0,
+    cancelledClassBookings: 0,
+    posReceiptPurchases: 0,
+    posReceiptSpend: 0,
+    lastActivityAt: null as string | null,
   }
 }
 
@@ -40,7 +63,142 @@ function authOnlyUser(authUser: SupabaseAuthUser) {
     lastSignInAt: authUser.last_sign_in_at || null,
     authProvider: getSupabaseAuthUserProvider(authUser),
     _count: emptyCounts(),
+    metrics: emptyMetrics(),
+    purchaseCount: 0,
   }
+}
+
+async function loadUserMetrics(users: Array<{ id: string; email: string }>) {
+  const metricsByUserId = new Map(users.map((user) => [user.id, emptyMetrics()]))
+  if (users.length === 0) return metricsByUserId
+
+  const userIds = users.map((user) => user.id)
+  const emailToUserId = new Map(
+    users.map((user) => [user.email.trim().toLowerCase(), user.id])
+  )
+  const emails = users.map((user) => user.email)
+
+  try {
+    const [eventsByType, latestEvents] = await Promise.all([
+      prisma.analyticsEvent.groupBy({
+        by: ["userId", "type"],
+        where: { userId: { in: userIds } },
+        _count: { _all: true },
+      }),
+      prisma.analyticsEvent.groupBy({
+        by: ["userId"],
+        where: { userId: { in: userIds } },
+        _max: { createdAt: true },
+      }),
+    ])
+
+    for (const eventGroup of eventsByType) {
+      if (!eventGroup.userId) continue
+      const metrics = metricsByUserId.get(eventGroup.userId)
+      if (!metrics) continue
+
+      const count = eventGroup._count._all
+      metrics.totalEvents += count
+
+      switch (eventGroup.type) {
+        case "page_view":
+          metrics.pageViews += count
+          break
+        case "product_view":
+          metrics.productViews += count
+          break
+        case "checkout_view":
+          metrics.checkoutViews += count
+          break
+        case "checkout_intent_click":
+          metrics.checkoutIntentClicks += count
+          break
+        case "payment_intent_click":
+          metrics.paymentIntentClicks += count
+          break
+        case "payment_session_created":
+          metrics.paymentSessionsCreated += count
+          break
+        case "payment_completed":
+          metrics.paymentsCompleted += count
+          break
+        case "checkout_abandoned":
+          metrics.checkoutAbandoned += count
+          break
+        case "payment_start_failed":
+        case "payment_session_failed":
+          metrics.paymentStartFailed += count
+          break
+      }
+    }
+
+    for (const latestEvent of latestEvents) {
+      if (!latestEvent.userId) continue
+      const metrics = metricsByUserId.get(latestEvent.userId)
+      if (!metrics) continue
+      metrics.lastActivityAt = latestEvent._max.createdAt?.toISOString() || null
+    }
+  } catch (error) {
+    console.error("Could not load per-user analytics metrics", error)
+  }
+
+  try {
+    const bookingGroups = await prisma.classBooking.groupBy({
+      by: ["userId", "status"],
+      where: { userId: { in: userIds } },
+      _count: { _all: true },
+    })
+
+    for (const bookingGroup of bookingGroups) {
+      if (!bookingGroup.userId) continue
+      const metrics = metricsByUserId.get(bookingGroup.userId)
+      if (!metrics) continue
+      const count = bookingGroup._count._all
+
+      switch (bookingGroup.status) {
+        case "CONFIRMED":
+          metrics.confirmedClassBookings += count
+          break
+        case "COMPLETED":
+          metrics.completedClassBookings += count
+          break
+        case "CANCELLED":
+          metrics.cancelledClassBookings += count
+          break
+        default:
+          metrics.pendingClassBookings += count
+          break
+      }
+    }
+  } catch (error) {
+    console.error("Could not load per-user class booking metrics", error)
+  }
+
+  try {
+    const posSaleGroups = await prisma.posSale.groupBy({
+      by: ["receiptEmail", "status"],
+      where: {
+        receiptEmail: { in: emails },
+      },
+      _count: { _all: true },
+      _sum: { total: true },
+    })
+
+    for (const saleGroup of posSaleGroups) {
+      if (!saleGroup.receiptEmail || saleGroup.status !== "PAID") continue
+      const userId = emailToUserId.get(saleGroup.receiptEmail.trim().toLowerCase())
+      if (!userId) continue
+      const metrics = metricsByUserId.get(userId)
+      if (!metrics) continue
+
+      metrics.posReceiptPurchases += saleGroup._count._all
+      metrics.posReceiptSpend += saleGroup._sum.total || 0
+    }
+  } catch (error) {
+    console.error("Could not load per-user POS receipt metrics", error)
+  }
+
+  return metricsByUserId
 }
 
 async function getFallbackSession(): Promise<AdminSession> {
@@ -157,15 +315,18 @@ export async function GET() {
             orders: true,
             classBookings: true,
             residencyApps: true,
+            posSales: true,
           },
         },
       },
     })
+    const metricsByUserId = await loadUserMetrics(users)
     const canVerifyAuthUsers = authUsersResult.enabled && !authUsersResult.error
 
     return NextResponse.json({
       users: users.map((user) => {
         const authUser = authUsersByEmail.get(user.email.trim().toLowerCase())
+        const metrics = metricsByUserId.get(user.id) || emptyMetrics()
 
         return {
           ...user,
@@ -174,6 +335,12 @@ export async function GET() {
           authCreatedAt: authUser?.created_at || null,
           lastSignInAt: authUser?.last_sign_in_at || null,
           authProvider: authUser ? getSupabaseAuthUserProvider(authUser) : null,
+          metrics,
+          purchaseCount:
+            user._count.orders +
+            metrics.confirmedClassBookings +
+            metrics.completedClassBookings +
+            metrics.posReceiptPurchases,
         }
       }),
       authSync: {
@@ -214,6 +381,8 @@ export async function GET() {
       lastSignInAt: null,
       authProvider: null,
       _count: emptyCounts(),
+      metrics: emptyMetrics(),
+      purchaseCount: 0,
     }],
     authSync: {
       enabled: authUsersResult.enabled,
