@@ -73,78 +73,111 @@ export default function AdminLayout({
   const displayName = user?.name || user?.email?.split("@")[0] || "Admin"
   const displayEmail = user?.email || ""
   const displayInitial = (displayName || displayEmail || "A").charAt(0).toUpperCase()
+  const isActiveNavItem = (item: (typeof navItems)[number]) => item.exact
+    ? pathname === item.href
+    : pathname === item.href || pathname.startsWith(item.href + "/")
 
   return (
     <div className="min-h-screen bg-muted/30">
       {/* Mobile Header */}
       <header className={cn(
-        "fixed top-0 left-0 right-0 z-50 bg-background border-b border-border h-16 flex items-center justify-between px-4",
+        "fixed top-0 left-0 right-0 z-50 border-b border-border bg-background",
+        isPosRoute ? "h-16 px-4" : "px-0",
         isPosRoute ? "xl:hidden" : "lg:hidden"
       )}>
-        <div className="flex items-center gap-3">
-          <div className="w-8 h-8 bg-primary rounded-full flex items-center justify-center">
-            <span className="text-primary-foreground font-heading font-bold text-sm font-semibold">B</span>
+        <div className={cn("flex h-16 items-center justify-between gap-3", !isPosRoute && "px-4")}>
+          <div className="flex items-center gap-3">
+            <div className="w-8 h-8 bg-primary rounded-full flex items-center justify-center">
+              <span className="text-primary-foreground font-heading font-bold text-sm font-semibold">B</span>
+            </div>
+            <span className="font-heading font-bold text-lg font-medium">Admin</span>
           </div>
-          <span className="font-heading font-bold text-lg font-medium">Admin</span>
-        </div>
-        <div className="flex items-center gap-2">
-          <AdminNotifications enabled={isFullAdminRole(user?.role)} />
-          <div className="relative">
-            <button
-              type="button"
-              onClick={() => {
-                setUserMenuOpen((open) => !open)
-                setSidebarOpen(false)
-              }}
-              className="flex h-9 w-9 items-center justify-center overflow-hidden rounded-full border border-border bg-background"
-              aria-label="Admin profile menu"
-            >
-              {user?.image ? (
-                <img src={user.image} alt="" className="h-full w-full object-cover" />
-              ) : (
-                <span className="text-sm font-semibold text-foreground">{displayInitial}</span>
-              )}
-            </button>
+          <div className="flex items-center gap-2">
+            <AdminNotifications enabled={isFullAdminRole(user?.role)} />
+            <div className="relative">
+              <button
+                type="button"
+                onClick={() => {
+                  setUserMenuOpen((open) => !open)
+                  setSidebarOpen(false)
+                }}
+                className="flex h-9 w-9 items-center justify-center overflow-hidden rounded-full border border-border bg-background"
+                aria-label="Admin profile menu"
+              >
+                {user?.image ? (
+                  <img src={user.image} alt="" className="h-full w-full object-cover" />
+                ) : (
+                  <span className="text-sm font-semibold text-foreground">{displayInitial}</span>
+                )}
+              </button>
 
-            {userMenuOpen && (
-              <div className="absolute right-0 top-full mt-2 w-64 overflow-hidden rounded-xl border border-border bg-background shadow-lg">
-                <div className="border-b border-border px-4 py-3">
-                  <p className="truncate text-sm font-semibold text-foreground">{displayName}</p>
-                  <p className="truncate text-xs text-muted-foreground">{displayEmail}</p>
-                  <p className="mt-1 text-xs text-muted-foreground">{roleLabels[user?.role || "USER"]}</p>
+              {userMenuOpen && (
+                <div className="absolute right-0 top-full mt-2 w-64 overflow-hidden rounded-xl border border-border bg-background shadow-lg">
+                  <div className="border-b border-border px-4 py-3">
+                    <p className="truncate text-sm font-semibold text-foreground">{displayName}</p>
+                    <p className="truncate text-xs text-muted-foreground">{displayEmail}</p>
+                    <p className="mt-1 text-xs text-muted-foreground">{roleLabels[user?.role || "USER"]}</p>
+                  </div>
+                  <div className="py-1">
+                    <Link
+                      href="/"
+                      className="flex items-center gap-3 px-4 py-2 text-sm text-foreground hover:bg-muted"
+                      onClick={() => setUserMenuOpen(false)}
+                    >
+                      <Home className="h-4 w-4 text-muted-foreground" />
+                      View Site
+                    </Link>
+                    <button
+                      onClick={() => logout()}
+                      className="flex w-full items-center gap-3 px-4 py-2 text-left text-sm text-destructive hover:bg-muted"
+                    >
+                      <LogOut className="h-4 w-4" />
+                      Sign Out
+                    </button>
+                  </div>
                 </div>
-                <div className="py-1">
-                  <Link
-                    href="/"
-                    className="flex items-center gap-3 px-4 py-2 text-sm text-foreground hover:bg-muted"
-                    onClick={() => setUserMenuOpen(false)}
-                  >
-                    <Home className="h-4 w-4 text-muted-foreground" />
-                    View Site
-                  </Link>
-                  <button
-                    onClick={() => logout()}
-                    className="flex w-full items-center gap-3 px-4 py-2 text-left text-sm text-destructive hover:bg-muted"
-                  >
-                    <LogOut className="h-4 w-4" />
-                    Sign Out
-                  </button>
-                </div>
-              </div>
-            )}
+              )}
+            </div>
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={() => {
+                setSidebarOpen(!sidebarOpen)
+                setUserMenuOpen(false)
+              }}
+              aria-label="Admin navigation"
+            >
+              {sidebarOpen ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}
+            </Button>
           </div>
-          <Button
-            variant="ghost"
-            size="icon"
-            onClick={() => {
-              setSidebarOpen(!sidebarOpen)
-              setUserMenuOpen(false)
-            }}
-            aria-label="Admin navigation"
-          >
-            {sidebarOpen ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}
-          </Button>
         </div>
+
+        {!isPosRoute && (
+          <nav className="flex gap-2 overflow-x-auto border-t border-border px-3 py-2">
+            {visibleNavItems.map((item) => {
+              const isActive = isActiveNavItem(item)
+              return (
+                <Link
+                  key={item.href}
+                  href={item.href}
+                  onClick={() => {
+                    setSidebarOpen(false)
+                    setUserMenuOpen(false)
+                  }}
+                  className={cn(
+                    "flex shrink-0 items-center gap-2 rounded-full border px-3 py-2 text-xs font-medium transition-colors",
+                    isActive
+                      ? "border-primary bg-primary text-primary-foreground"
+                      : "border-border bg-background text-muted-foreground hover:bg-muted hover:text-foreground"
+                  )}
+                >
+                  <item.icon className="h-4 w-4" />
+                  {item.label}
+                </Link>
+              )
+            })}
+          </nav>
+        )}
       </header>
 
       {/* Sidebar */}
@@ -166,9 +199,7 @@ export default function AdminLayout({
 
           <nav className="space-y-1">
             {visibleNavItems.map((item) => {
-              const isActive = item.exact
-                ? pathname === item.href
-                : pathname === item.href || pathname.startsWith(item.href + "/")
+              const isActive = isActiveNavItem(item)
               return (
                 <Link
                   key={item.href}
@@ -232,14 +263,14 @@ export default function AdminLayout({
       )}
 
       {/* Main Content */}
-      <main className={cn("pt-16", isPosRoute ? "xl:pl-64 xl:pt-0" : "lg:pl-64 lg:pt-0")}>
+      <main className={cn(isPosRoute ? "pt-16 xl:pl-64 xl:pt-0" : "pt-28 lg:pl-64 lg:pt-0")}>
         <div className={cn(
           "hidden border-b border-border bg-background/80 px-6 py-3 backdrop-blur lg:px-8",
           isPosRoute ? "xl:flex xl:items-center xl:justify-end" : "lg:flex lg:items-center lg:justify-end"
         )}>
           <AdminNotifications enabled={isFullAdminRole(user?.role)} />
         </div>
-        <div className="p-6 lg:p-8">
+        <div className="p-4 sm:p-6 lg:p-8">
           {children}
         </div>
       </main>

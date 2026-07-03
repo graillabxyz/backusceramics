@@ -3,6 +3,7 @@ import { auth } from "@/lib/auth"
 import { prisma } from "@/lib/prisma"
 import { canUsePos } from "@/lib/permissions"
 import {
+  isCupCategory,
   normalizeProductCategory,
   POS_PRODUCT_STATUSES,
   serializeProductImageUrls,
@@ -10,6 +11,18 @@ import {
 
 interface ProductRouteContext {
   params: Promise<{ id: string }>
+}
+
+function parseVolumeMl(value: unknown, category: string) {
+  if (!isCupCategory(category)) return { value: null }
+  if (value === null || value === undefined || value === "") return { value: null }
+
+  const volumeMl = Number(value)
+  if (!Number.isInteger(volumeMl) || volumeMl <= 0) {
+    return { error: "Cup volume must be a whole number in ml" }
+  }
+
+  return { value: volumeMl }
 }
 
 export async function PATCH(req: NextRequest, { params }: ProductRouteContext) {
@@ -21,6 +34,19 @@ export async function PATCH(req: NextRequest, { params }: ProductRouteContext) {
   const { id } = await params
   const data = await req.json()
   const updateData: Record<string, unknown> = {}
+  const nextCategory = "category" in data ? normalizeProductCategory(data.category) : undefined
+  let currentCategory: string | undefined
+
+  if ("volumeMl" in data && !nextCategory) {
+    const currentProduct = await prisma.posProduct.findUnique({
+      where: { id },
+      select: { category: true },
+    })
+    if (!currentProduct) {
+      return NextResponse.json({ error: "Product not found" }, { status: 404 })
+    }
+    currentCategory = currentProduct.category
+  }
 
   if ("name" in data) {
     const name = String(data.name || "").trim()
@@ -43,7 +69,15 @@ export async function PATCH(req: NextRequest, { params }: ProductRouteContext) {
   }
 
   if ("category" in data) {
-    updateData.category = normalizeProductCategory(data.category)
+    updateData.category = nextCategory
+  }
+
+  if ("volumeMl" in data || (nextCategory && !isCupCategory(nextCategory))) {
+    const volumeMl = parseVolumeMl(data.volumeMl, nextCategory || currentCategory || "CUPS")
+    if (volumeMl.error) {
+      return NextResponse.json({ error: volumeMl.error }, { status: 400 })
+    }
+    updateData.volumeMl = volumeMl.value
   }
 
   if ("price" in data) {
@@ -83,14 +117,6 @@ export async function PATCH(req: NextRequest, { params }: ProductRouteContext) {
 
   if ("featured" in data) {
     updateData.featured = Boolean(data.featured)
-  }
-
-  if ("sortOrder" in data) {
-    const sortOrder = Number(data.sortOrder || 0)
-    if (!Number.isInteger(sortOrder)) {
-      return NextResponse.json({ error: "Sort order must be a whole number" }, { status: 400 })
-    }
-    updateData.sortOrder = sortOrder
   }
 
   try {

@@ -5,6 +5,7 @@ import { canAccessAdmin } from "@/lib/permissions"
 import {
   formatPrice,
   getProductCategoryLabel,
+  isCupCategory,
   normalizeProductCategory,
   parseProductImageUrls,
   PUBLIC_WARES_CATEGORIES,
@@ -28,7 +29,6 @@ export default async function AdminWaresPreviewPage() {
     },
     orderBy: [
       { featured: "desc" },
-      { sortOrder: "asc" },
       { createdAt: "desc" },
     ],
   })
@@ -95,7 +95,12 @@ export default async function AdminWaresPreviewPage() {
                       <div className="flex items-start justify-between gap-3">
                         <div>
                           <h3 className="font-semibold leading-snug text-foreground">{product.name}</h3>
-                          <p className="mt-1 text-xs text-muted-foreground">{product.sku || getProductCategoryLabel(product.category)}</p>
+                          <p className="mt-1 text-xs text-muted-foreground">
+                            {product.sku || getProductCategoryLabel(product.category)}
+                            {isCupCategory(product.category) && product.volumeMl && (
+                              <span> · {product.volumeMl} ml</span>
+                            )}
+                          </p>
                         </div>
                         {product.featured && <Badge>Featured</Badge>}
                       </div>

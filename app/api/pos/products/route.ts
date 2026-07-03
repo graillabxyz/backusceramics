@@ -3,6 +3,7 @@ import { auth } from "@/lib/auth"
 import { prisma } from "@/lib/prisma"
 import { canUsePos } from "@/lib/permissions"
 import {
+  isCupCategory,
   normalizeProductCategory,
   POS_PRODUCT_STATUSES,
   serializeProductImageUrls,
@@ -29,6 +30,18 @@ async function uniqueSlug(name: string) {
   return slug
 }
 
+function parseVolumeMl(value: unknown, category: string) {
+  if (!isCupCategory(category)) return { value: null }
+  if (value === null || value === undefined || value === "") return { value: null }
+
+  const volumeMl = Number(value)
+  if (!Number.isInteger(volumeMl) || volumeMl <= 0) {
+    return { error: "Cup volume must be a whole number in ml" }
+  }
+
+  return { value: volumeMl }
+}
+
 export async function GET() {
   const session = await auth()
   if (!session || !canUsePos(session.user.role)) {
@@ -37,7 +50,7 @@ export async function GET() {
 
   const products = await prisma.posProduct.findMany({
     orderBy: [
-      { sortOrder: "asc" },
+      { featured: "desc" },
       { createdAt: "desc" },
     ],
   })
@@ -59,7 +72,7 @@ export async function POST(req: NextRequest) {
   const status = data.status || "AVAILABLE"
   const cafeOnly = Boolean(data.cafeOnly)
   const showInShop = cafeOnly ? false : Boolean(data.showInShop)
-  const sortOrder = Number(data.sortOrder || 0)
+  const volumeMl = parseVolumeMl(data.volumeMl, category)
 
   if (!name) {
     return NextResponse.json({ error: "Product name is required" }, { status: 400 })
@@ -77,8 +90,8 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Invalid product status" }, { status: 400 })
   }
 
-  if (!Number.isInteger(sortOrder)) {
-    return NextResponse.json({ error: "Sort order must be a whole number" }, { status: 400 })
+  if (volumeMl.error) {
+    return NextResponse.json({ error: volumeMl.error }, { status: 400 })
   }
 
   const product = await prisma.posProduct.create({
@@ -88,6 +101,7 @@ export async function POST(req: NextRequest) {
       slug: await uniqueSlug(name),
       sku: data.sku ? String(data.sku).trim() : null,
       description: data.description ? String(data.description).trim() : null,
+      volumeMl: volumeMl.value,
       imageUrls: serializeProductImageUrls(data.imageUrls),
       price,
       category,
@@ -96,7 +110,6 @@ export async function POST(req: NextRequest) {
       cafeOnly,
       showInShop,
       featured: Boolean(data.featured),
-      sortOrder,
     },
   })
 

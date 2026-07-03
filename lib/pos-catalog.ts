@@ -49,6 +49,10 @@ export function getProductCategoryLabel(value: unknown) {
   return POS_PRODUCT_CATEGORIES.find((item) => item.id === category)?.label || "Other"
 }
 
+export function isCupCategory(value: unknown) {
+  return normalizeProductCategory(value) === "CUPS"
+}
+
 export function parseProductImageUrls(value: unknown): string[] {
   if (!value) return []
   if (Array.isArray(value)) {

@@ -21,6 +21,7 @@ import { Textarea } from "@/components/ui/textarea"
 import {
   formatPrice,
   getProductCategoryLabel,
+  isCupCategory,
   normalizeProductCategory,
   parseProductImageUrls,
   POS_PRODUCT_CATEGORIES,
@@ -45,6 +46,7 @@ interface PosProduct {
   slug: string
   sku: string | null
   description: string | null
+  volumeMl: number | null
   imageUrls: string | null
   price: number
   currency: string
@@ -54,7 +56,6 @@ interface PosProduct {
   cafeOnly: boolean
   showInShop: boolean
   featured: boolean
-  sortOrder: number
   createdAt: string
 }
 
@@ -66,11 +67,11 @@ interface ProductFormState {
   quantity: string
   status: string
   description: string
+  volumeMl: string
   imageUrls: string
   cafeOnly: boolean
   showInShop: boolean
   featured: boolean
-  sortOrder: string
 }
 
 const emptyForm: ProductFormState = {
@@ -81,11 +82,11 @@ const emptyForm: ProductFormState = {
   quantity: "1",
   status: "AVAILABLE",
   description: "",
+  volumeMl: "",
   imageUrls: "",
   cafeOnly: false,
   showInShop: true,
   featured: false,
-  sortOrder: "0",
 }
 
 function toImageText(value: string | null) {
@@ -94,6 +95,10 @@ function toImageText(value: string | null) {
 
 function firstImage(product: PosProduct) {
   return parseProductImageUrls(product.imageUrls)[0] || ""
+}
+
+function cupVolumeLabel(product: PosProduct) {
+  return isCupCategory(product.category) && product.volumeMl ? `${product.volumeMl} ml` : ""
 }
 
 export default function AdminProductsPage() {
@@ -125,6 +130,7 @@ export default function AdminProductsPage() {
     () => products.filter((product) => product.showInShop && !product.cafeOnly && product.status === "AVAILABLE").length,
     [products]
   )
+  const formIsCup = isCupCategory(formData.category)
 
   useEffect(() => {
     fetchProducts()
@@ -161,11 +167,11 @@ export default function AdminProductsPage() {
       quantity: product.quantity.toString(),
       status: product.status,
       description: product.description || "",
+      volumeMl: product.volumeMl ? product.volumeMl.toString() : "",
       imageUrls: toImageText(product.imageUrls),
       cafeOnly: product.cafeOnly,
       showInShop: product.showInShop,
       featured: product.featured,
-      sortOrder: product.sortOrder.toString(),
     })
     setError("")
     setIsDialogOpen(true)
@@ -175,6 +181,13 @@ export default function AdminProductsPage() {
     setFormData((current) => {
       if (key === "cafeOnly" && value === true) {
         return { ...current, cafeOnly: true, showInShop: false }
+      }
+      if (key === "category") {
+        const category = String(value)
+        if (!isCupCategory(category)) {
+          return { ...current, category, volumeMl: "" }
+        }
+        return { ...current, category }
       }
       return { ...current, [key]: value }
     })
@@ -215,7 +228,9 @@ export default function AdminProductsPage() {
       ...formData,
       price: Number(formData.price),
       quantity: Number(formData.quantity),
-      sortOrder: Number(formData.sortOrder || 0),
+      volumeMl: isCupCategory(formData.category) && formData.volumeMl.trim()
+        ? Number(formData.volumeMl)
+        : null,
       imageUrls: parseProductImageUrls(formData.imageUrls),
       showInShop: formData.cafeOnly ? false : formData.showInShop,
     }
@@ -270,13 +285,13 @@ export default function AdminProductsPage() {
           </p>
         </div>
         <div className="flex flex-col gap-3 sm:flex-row">
-          <Button asChild variant="outline">
+          <Button asChild variant="outline" className="w-full sm:w-auto">
             <Link href="/admin/wares">
               <Eye className="mr-2 h-4 w-4" />
               Preview wares page
             </Link>
           </Button>
-          <Button onClick={openCreate}>
+          <Button className="w-full sm:w-auto" onClick={openCreate}>
             <Plus className="mr-2 h-4 w-4" />
             Add Product
           </Button>
@@ -351,7 +366,82 @@ export default function AdminProductsPage() {
               <p className="mt-1 text-sm text-muted-foreground">Add a piece or clear the current filters.</p>
             </div>
           ) : (
-            <div className="overflow-x-auto">
+            <>
+              <div className="space-y-3 md:hidden">
+                {filteredProducts.map((product) => {
+                  const image = firstImage(product)
+                  const volume = cupVolumeLabel(product)
+
+                  return (
+                    <article key={product.id} className="rounded-md border border-border bg-background p-3 shadow-sm">
+                      <div className="flex gap-3">
+                        <div className="h-20 w-20 shrink-0 overflow-hidden rounded-md bg-muted">
+                          {image ? (
+                            <img src={image} alt="" className="h-full w-full object-cover" />
+                          ) : (
+                            <div className="flex h-full w-full items-center justify-center">
+                              <ShoppingBag className="h-5 w-5 text-muted-foreground" />
+                            </div>
+                          )}
+                        </div>
+                        <div className="min-w-0 flex-1">
+                          <div className="flex items-start justify-between gap-2">
+                            <div className="min-w-0">
+                              <h3 className="truncate font-semibold text-foreground">{product.name}</h3>
+                              <p className="mt-0.5 text-xs text-muted-foreground">
+                                {product.sku || product.slug}
+                                {volume && <span> · {volume}</span>}
+                              </p>
+                            </div>
+                            <Badge
+                              variant="secondary"
+                              className={cn(
+                                "shrink-0",
+                                product.status === "AVAILABLE" && "bg-primary text-primary-foreground"
+                              )}
+                            >
+                              {product.status.toLowerCase()}
+                            </Badge>
+                          </div>
+
+                          <div className="mt-3 flex flex-wrap gap-2">
+                            <Badge variant="outline">{getProductCategoryLabel(product.category)}</Badge>
+                            <Badge variant={product.cafeOnly ? "default" : "outline"}>
+                              {product.cafeOnly ? "Cafe only" : "POS"}
+                            </Badge>
+                            {product.showInShop && !product.cafeOnly && (
+                              <Badge variant="secondary">Wares page</Badge>
+                            )}
+                            {product.featured && <Badge variant="outline">Featured</Badge>}
+                          </div>
+
+                          <div className="mt-4 flex items-center justify-between gap-3">
+                            <div>
+                              <p className="font-semibold text-foreground">{formatPrice(product.price)}</p>
+                              <p className="text-xs text-muted-foreground">{product.quantity} in stock</p>
+                            </div>
+                            <div className="flex gap-2">
+                              <Button variant="outline" size="icon" onClick={() => openEdit(product)}>
+                                <Pencil className="h-4 w-4" />
+                              </Button>
+                              <Button
+                                variant="outline"
+                                size="icon"
+                                className="text-destructive hover:text-destructive"
+                                onClick={() => handleArchive(product)}
+                              >
+                                <Trash2 className="h-4 w-4" />
+                              </Button>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    </article>
+                  )
+                })}
+              </div>
+
+              <div className="hidden overflow-x-auto md:block">
               <Table>
                 <TableHeader>
                   <TableRow>
@@ -383,7 +473,10 @@ export default function AdminProductsPage() {
                             </div>
                             <div>
                               <p className="font-medium text-foreground">{product.name}</p>
-                              <p className="text-xs text-muted-foreground">{product.sku || product.slug}</p>
+                              <p className="text-xs text-muted-foreground">
+                                {product.sku || product.slug}
+                                {cupVolumeLabel(product) && <span> · {cupVolumeLabel(product)}</span>}
+                              </p>
                             </div>
                           </div>
                         </TableCell>
@@ -429,14 +522,15 @@ export default function AdminProductsPage() {
                   })}
                 </TableBody>
               </Table>
-            </div>
+              </div>
+            </>
           )}
         </CardContent>
       </Card>
 
       <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
-        <DialogContent className="max-h-[90vh] max-w-3xl overflow-y-auto">
-          <DialogHeader>
+        <DialogContent className="grid max-h-[92vh] max-w-3xl grid-rows-[auto_minmax(0,1fr)_auto] gap-0 overflow-hidden p-0 sm:p-6">
+          <DialogHeader className="border-b border-border px-4 py-4 text-left sm:border-0 sm:px-0 sm:py-0">
             <DialogTitle className="font-heading text-2xl">
               {editingProduct ? "Edit product" : "Add product"}
             </DialogTitle>
@@ -445,163 +539,193 @@ export default function AdminProductsPage() {
             </DialogDescription>
           </DialogHeader>
 
-          <div className="grid gap-4 py-4 md:grid-cols-2">
-            <div className="space-y-2 md:col-span-2">
-              <Label htmlFor="name">Product name</Label>
-              <Input
-                id="name"
-                value={formData.name}
-                onChange={(event) => handleFormChange("name", event.target.value)}
-                placeholder="e.g., Wall cup 24"
-              />
-            </div>
-
-            <div className="space-y-2">
-              <Label htmlFor="sku">SKU or shelf code</Label>
-              <Input
-                id="sku"
-                value={formData.sku}
-                onChange={(event) => handleFormChange("sku", event.target.value)}
-                placeholder="CUP-WALL-24"
-              />
-            </div>
-
-            <div className="space-y-2">
-              <Label>Category</Label>
-              <Select value={formData.category} onValueChange={(category) => handleFormChange("category", category)}>
-                <SelectTrigger>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {POS_PRODUCT_CATEGORIES.map((category) => (
-                    <SelectItem key={category.id} value={category.id}>
-                      {category.label}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-
-            <div className="space-y-2">
-              <Label htmlFor="price">Price (IDR)</Label>
-              <Input
-                id="price"
-                inputMode="numeric"
-                value={formData.price}
-                onChange={(event) => handleFormChange("price", event.target.value)}
-                placeholder="450000"
-              />
-            </div>
-
-            <div className="space-y-2">
-              <Label htmlFor="quantity">Quantity</Label>
-              <Input
-                id="quantity"
-                inputMode="numeric"
-                value={formData.quantity}
-                onChange={(event) => handleFormChange("quantity", event.target.value)}
-              />
-            </div>
-
-            <div className="space-y-2">
-              <Label>Status</Label>
-              <Select value={formData.status} onValueChange={(status) => handleFormChange("status", status)}>
-                <SelectTrigger>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {POS_PRODUCT_STATUSES.map((status) => (
-                    <SelectItem key={status} value={status}>
-                      {status.toLowerCase()}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-
-            <div className="space-y-2">
-              <Label htmlFor="sortOrder">Sort order</Label>
-              <Input
-                id="sortOrder"
-                inputMode="numeric"
-                value={formData.sortOrder}
-                onChange={(event) => handleFormChange("sortOrder", event.target.value)}
-              />
-            </div>
-
-            <div className="space-y-2 md:col-span-2">
-              <Label htmlFor="description">Description</Label>
-              <Textarea
-                id="description"
-                value={formData.description}
-                onChange={(event) => handleFormChange("description", event.target.value)}
-                rows={4}
-                placeholder="Clay body, glaze, dimensions, use notes, or origin story"
-              />
-            </div>
-
-            <div className="space-y-2 md:col-span-2">
-              <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-                <Label htmlFor="imageUrls">Images</Label>
-                <label className="inline-flex cursor-pointer items-center gap-2 rounded-md border border-border px-3 py-2 text-sm font-medium hover:bg-muted">
-                  {uploading ? <Loader2 className="h-4 w-4 animate-spin" /> : <ImagePlus className="h-4 w-4" />}
-                  Upload image
-                  <input type="file" accept="image/*" className="hidden" onChange={handleUpload} disabled={uploading} />
-                </label>
+          <div className="min-h-0 space-y-4 overflow-y-auto px-4 py-4 sm:px-0">
+            <section className="rounded-md border border-border bg-muted/20 p-4">
+              <div className="mb-4">
+                <h3 className="font-heading text-lg font-semibold text-foreground">Product details</h3>
+                <p className="text-sm text-muted-foreground">Name, category, pricing, and cup-specific capacity.</p>
               </div>
-              <Textarea
-                id="imageUrls"
-                value={formData.imageUrls}
-                onChange={(event) => handleFormChange("imageUrls", event.target.value)}
-                rows={3}
-                placeholder="/uploads/cup.jpg or https://..."
-              />
-              <p className="text-xs text-muted-foreground">Add one image URL per line. The first image is used as the main thumbnail.</p>
-            </div>
 
-            <div className="flex items-center justify-between rounded-md border border-border p-3">
-              <div>
-                <Label htmlFor="cafeOnly">Cafe only</Label>
-                <p className="text-xs text-muted-foreground">Use for F&B or products sold only at the cashier.</p>
-              </div>
-              <Switch
-                id="cafeOnly"
-                checked={formData.cafeOnly}
-                onCheckedChange={(checked) => handleFormChange("cafeOnly", checked)}
-              />
-            </div>
+              <div className="grid gap-4 md:grid-cols-2">
+                <div className="space-y-2 md:col-span-2">
+                  <Label htmlFor="name">Product name</Label>
+                  <Input
+                    id="name"
+                    value={formData.name}
+                    onChange={(event) => handleFormChange("name", event.target.value)}
+                    placeholder="e.g., Wall cup 24"
+                  />
+                </div>
 
-            <div className="flex items-center justify-between rounded-md border border-border p-3">
-              <div>
-                <Label htmlFor="showInShop">Show on wares page</Label>
-                <p className="text-xs text-muted-foreground">Disabled for cafe-only products.</p>
-              </div>
-              <Switch
-                id="showInShop"
-                checked={formData.showInShop && !formData.cafeOnly}
-                disabled={formData.cafeOnly}
-                onCheckedChange={(checked) => handleFormChange("showInShop", checked)}
-              />
-            </div>
+                <div className="space-y-2">
+                  <Label htmlFor="sku">SKU or shelf code</Label>
+                  <Input
+                    id="sku"
+                    value={formData.sku}
+                    onChange={(event) => handleFormChange("sku", event.target.value)}
+                    placeholder="CUP-WALL-24"
+                  />
+                </div>
 
-            <div className="flex items-center justify-between rounded-md border border-border p-3 md:col-span-2">
-              <div>
-                <Label htmlFor="featured">Featured</Label>
-                <p className="text-xs text-muted-foreground">Place this piece near the top of the wares page.</p>
+                <div className="space-y-2">
+                  <Label>Category</Label>
+                  <Select value={formData.category} onValueChange={(category) => handleFormChange("category", category)}>
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {POS_PRODUCT_CATEGORIES.map((category) => (
+                        <SelectItem key={category.id} value={category.id}>
+                          {category.label}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="price">Price (IDR)</Label>
+                  <Input
+                    id="price"
+                    inputMode="numeric"
+                    value={formData.price}
+                    onChange={(event) => handleFormChange("price", event.target.value)}
+                    placeholder="450000"
+                  />
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="quantity">Quantity</Label>
+                  <Input
+                    id="quantity"
+                    inputMode="numeric"
+                    value={formData.quantity}
+                    onChange={(event) => handleFormChange("quantity", event.target.value)}
+                  />
+                </div>
+
+                {formIsCup && (
+                  <div className="space-y-2">
+                    <Label htmlFor="volumeMl">Volume (ml)</Label>
+                    <Input
+                      id="volumeMl"
+                      inputMode="numeric"
+                      value={formData.volumeMl}
+                      onChange={(event) => handleFormChange("volumeMl", event.target.value)}
+                      placeholder="180"
+                    />
+                  </div>
+                )}
+
+                <div className="space-y-2">
+                  <Label>Status</Label>
+                  <Select value={formData.status} onValueChange={(status) => handleFormChange("status", status)}>
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {POS_PRODUCT_STATUSES.map((status) => (
+                        <SelectItem key={status} value={status}>
+                          {status.toLowerCase()}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
               </div>
-              <Switch
-                id="featured"
-                checked={formData.featured}
-                onCheckedChange={(checked) => handleFormChange("featured", checked)}
-              />
-            </div>
+            </section>
+
+            <section className="rounded-md border border-border bg-muted/20 p-4">
+              <div className="mb-4">
+                <h3 className="font-heading text-lg font-semibold text-foreground">Story and images</h3>
+                <p className="text-sm text-muted-foreground">Photos and notes that help sell the piece.</p>
+              </div>
+
+              <div className="grid gap-4">
+                <div className="space-y-2">
+                  <Label htmlFor="description">Description</Label>
+                  <Textarea
+                    id="description"
+                    value={formData.description}
+                    onChange={(event) => handleFormChange("description", event.target.value)}
+                    rows={4}
+                    placeholder="Clay body, glaze, dimensions, use notes, or origin story"
+                  />
+                </div>
+
+                <div className="space-y-2">
+                  <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                    <Label htmlFor="imageUrls">Images</Label>
+                    <label className="inline-flex cursor-pointer items-center justify-center gap-2 rounded-md border border-border px-3 py-2 text-sm font-medium hover:bg-muted">
+                      {uploading ? <Loader2 className="h-4 w-4 animate-spin" /> : <ImagePlus className="h-4 w-4" />}
+                      Upload image
+                      <input type="file" accept="image/*" className="hidden" onChange={handleUpload} disabled={uploading} />
+                    </label>
+                  </div>
+                  <Textarea
+                    id="imageUrls"
+                    value={formData.imageUrls}
+                    onChange={(event) => handleFormChange("imageUrls", event.target.value)}
+                    rows={3}
+                    placeholder="/uploads/cup.jpg or https://..."
+                  />
+                  <p className="text-xs text-muted-foreground">Add one image URL per line. The first image is used as the main thumbnail.</p>
+                </div>
+              </div>
+            </section>
+
+            <section className="rounded-md border border-border bg-muted/20 p-4">
+              <div className="mb-4">
+                <h3 className="font-heading text-lg font-semibold text-foreground">Sales channels</h3>
+                <p className="text-sm text-muted-foreground">Choose where this product should appear.</p>
+              </div>
+
+              <div className="grid gap-3 md:grid-cols-2">
+                <div className="flex items-center justify-between rounded-md border border-border bg-background p-3">
+                  <div>
+                    <Label htmlFor="cafeOnly">Cafe only</Label>
+                    <p className="text-xs text-muted-foreground">Use for F&B or products sold only at the cashier.</p>
+                  </div>
+                  <Switch
+                    id="cafeOnly"
+                    checked={formData.cafeOnly}
+                    onCheckedChange={(checked) => handleFormChange("cafeOnly", checked)}
+                  />
+                </div>
+
+                <div className="flex items-center justify-between rounded-md border border-border bg-background p-3">
+                  <div>
+                    <Label htmlFor="showInShop">Show on wares page</Label>
+                    <p className="text-xs text-muted-foreground">Disabled for cafe-only products.</p>
+                  </div>
+                  <Switch
+                    id="showInShop"
+                    checked={formData.showInShop && !formData.cafeOnly}
+                    disabled={formData.cafeOnly}
+                    onCheckedChange={(checked) => handleFormChange("showInShop", checked)}
+                  />
+                </div>
+
+                <div className="flex items-center justify-between rounded-md border border-border bg-background p-3 md:col-span-2">
+                  <div>
+                    <Label htmlFor="featured">Featured</Label>
+                    <p className="text-xs text-muted-foreground">Place this piece near the top of the wares page.</p>
+                  </div>
+                  <Switch
+                    id="featured"
+                    checked={formData.featured}
+                    onCheckedChange={(checked) => handleFormChange("featured", checked)}
+                  />
+                </div>
+              </div>
+            </section>
           </div>
 
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setIsDialogOpen(false)}>
+          <DialogFooter className="border-t border-border bg-background px-4 py-3 sm:px-0 sm:pb-0">
+            <Button variant="outline" className="w-full sm:w-auto" onClick={() => setIsDialogOpen(false)}>
               Cancel
             </Button>
-            <Button onClick={handleSave} disabled={saving || uploading}>
+            <Button className="w-full sm:w-auto" onClick={handleSave} disabled={saving || uploading}>
               {saving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
               Save product
             </Button>

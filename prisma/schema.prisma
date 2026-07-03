@@ -206,6 +206,7 @@ model PosProduct {
   slug        String  @unique
   sku         String?
   description String?
+  volumeMl    Int?
   imageUrls   String? // JSON array of image URLs
   price       Int
   currency    String  @default("IDR")

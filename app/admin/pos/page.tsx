@@ -20,6 +20,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import {
   formatPrice,
   getProductCategoryLabel,
+  isCupCategory,
   normalizeProductCategory,
   parseProductImageUrls,
   POS_PAYMENT_METHODS,
@@ -49,6 +50,7 @@ interface PosProduct {
   slug: string
   sku: string | null
   description: string | null
+  volumeMl: number | null
   imageUrls: string | null
   price: number
   currency: string
@@ -58,7 +60,6 @@ interface PosProduct {
   cafeOnly: boolean
   showInShop: boolean
   featured: boolean
-  sortOrder: number
   createdAt: string
 }
 
@@ -71,6 +72,7 @@ interface QuickProductForm {
   name: string
   sku: string
   category: string
+  volumeMl: string
   price: string
   quantity: string
   cafeOnly: boolean
@@ -81,6 +83,7 @@ const quickProductDefaults: QuickProductForm = {
   name: "",
   sku: "",
   category: "CUPS",
+  volumeMl: "",
   price: "",
   quantity: "1",
   cafeOnly: false,
@@ -89,6 +92,10 @@ const quickProductDefaults: QuickProductForm = {
 
 function firstImage(product: PosProduct) {
   return parseProductImageUrls(product.imageUrls)[0] || ""
+}
+
+function cupVolumeLabel(product: PosProduct) {
+  return isCupCategory(product.category) && product.volumeMl ? `${product.volumeMl} ml` : ""
 }
 
 export default function AdminPosPage() {
@@ -134,6 +141,7 @@ export default function AdminPosPage() {
     () => cart.reduce((sum, item) => sum + item.quantity, 0),
     [cart]
   )
+  const quickProductIsCup = isCupCategory(quickProduct.category)
 
   useEffect(() => {
     fetchProducts()
@@ -180,15 +188,22 @@ export default function AdminPosPage() {
   const updateQuickProduct = <K extends keyof QuickProductForm>(key: K, value: QuickProductForm[K]) => {
     setQuickProduct((current) => {
       if (key === "cafeOnly" && value === true) {
-        return { ...current, cafeOnly: true, showInShop: false, category: "F_AND_B" }
+        return { ...current, cafeOnly: true, showInShop: false, category: "F_AND_B", volumeMl: "" }
       }
 
       if (key === "cafeOnly" && value === false && current.category === "F_AND_B") {
         return { ...current, cafeOnly: false, showInShop: true, category: "CUPS" }
       }
 
-      if (key === "category" && value === "F_AND_B") {
-        return { ...current, category: value, cafeOnly: true, showInShop: false }
+      if (key === "category") {
+        const category = String(value)
+        if (category === "F_AND_B") {
+          return { ...current, category, cafeOnly: true, showInShop: false, volumeMl: "" }
+        }
+        if (!isCupCategory(category)) {
+          return { ...current, category, volumeMl: "" }
+        }
+        return { ...current, category }
       }
 
       return { ...current, [key]: value }
@@ -204,6 +219,9 @@ export default function AdminPosPage() {
       ...quickProduct,
       price: Number(quickProduct.price),
       quantity: Number(quickProduct.quantity || 1),
+      volumeMl: isCupCategory(quickProduct.category) && quickProduct.volumeMl.trim()
+        ? Number(quickProduct.volumeMl)
+        : null,
       status: "AVAILABLE",
       showInShop: quickProduct.cafeOnly ? false : quickProduct.showInShop,
     }
@@ -498,6 +516,7 @@ export default function AdminPosPage() {
                     {filteredProducts.map((product) => {
                       const image = firstImage(product)
                       const inCart = cart.find((item) => item.product.id === product.id)?.quantity || 0
+                      const volume = cupVolumeLabel(product)
 
                       return (
                         <button
@@ -519,7 +538,10 @@ export default function AdminPosPage() {
                             <div className="flex items-start justify-between gap-3">
                               <div>
                                 <p className="font-semibold leading-snug text-foreground">{product.name}</p>
-                                <p className="mt-1 text-xs text-muted-foreground">{product.sku || getProductCategoryLabel(product.category)}</p>
+                                <p className="mt-1 text-xs text-muted-foreground">
+                                  {product.sku || getProductCategoryLabel(product.category)}
+                                  {volume && <span> · {volume}</span>}
+                                </p>
                               </div>
                               {product.cafeOnly && <Badge variant="outline">Cafe</Badge>}
                             </div>
@@ -674,7 +696,7 @@ export default function AdminPosPage() {
       </div>
 
       <Dialog open={isQuickAddOpen} onOpenChange={setIsQuickAddOpen}>
-        <DialogContent className="max-w-2xl">
+        <DialogContent className="max-h-[92vh] max-w-2xl overflow-y-auto">
           <DialogHeader>
             <DialogTitle className="font-heading text-2xl">Add product to POS</DialogTitle>
             <DialogDescription>
@@ -718,6 +740,19 @@ export default function AdminPosPage() {
                 </SelectContent>
               </Select>
             </div>
+
+            {quickProductIsCup && (
+              <div className="space-y-2">
+                <Label htmlFor="quickVolumeMl">Volume (ml)</Label>
+                <Input
+                  id="quickVolumeMl"
+                  inputMode="numeric"
+                  value={quickProduct.volumeMl}
+                  onChange={(event) => updateQuickProduct("volumeMl", event.target.value)}
+                  placeholder="180"
+                />
+              </div>
+            )}
 
             <div className="space-y-2">
               <Label htmlFor="quickPrice">Price (IDR)</Label>
