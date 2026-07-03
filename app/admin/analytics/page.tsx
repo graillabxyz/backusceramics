@@ -2,7 +2,19 @@
 
 import { useState, useEffect } from "react"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
-import { Loader2, TrendingUp, ClipboardList, GraduationCap, Users, Calendar } from "lucide-react"
+import {
+  AlertTriangle,
+  Calendar,
+  ClipboardList,
+  CreditCard,
+  Eye,
+  GraduationCap,
+  Loader2,
+  MousePointerClick,
+  ShoppingBag,
+  TrendingUp,
+  Users,
+} from "lucide-react"
 
 interface AnalyticsData {
   totalOrders: number
@@ -15,6 +27,42 @@ interface AnalyticsData {
   recentOrders: Array<{ id: string; contactName: string; status: string; createdAt: string }>
   ordersThisMonth: number
   ordersLastMonth: number
+  analyticsWindowDays: number
+  eventCounts: Record<string, number>
+  pageViews30d: number
+  uniqueVisitors30d: number
+  productViews30d: number
+  checkoutViews30d: number
+  checkoutIntentClicks30d: number
+  paymentIntentClicks30d: number
+  paymentSessionsCreated30d: number
+  paymentsCompleted30d: number
+  checkoutAbandoned30d: number
+  paymentStartFailed30d: number
+  openPaymentSessions30d: number
+  topPages: Array<{ path: string; views: number }>
+  topProducts: Array<{ slug: string; name: string; category: string; views: number }>
+  recentEvents: Array<{
+    id: string
+    type: string
+    path: string | null
+    productName: string | null
+    productSlug: string | null
+    workshopTitle: string | null
+    source: string | null
+    value: number | null
+    currency: string
+    createdAt: string
+  }>
+}
+
+function rate(part: number, whole: number) {
+  if (!whole) return "0%"
+  return `${Math.round((part / whole) * 100)}%`
+}
+
+function formatEventType(type: string) {
+  return type.replace(/_/g, " ").replace(/\b\w/g, (letter) => letter.toUpperCase())
 }
 
 export default function AdminAnalyticsPage() {
@@ -51,15 +99,102 @@ export default function AdminAnalyticsPage() {
   const growthPercent = data.ordersLastMonth > 0
     ? Math.round(((data.ordersThisMonth - data.ordersLastMonth) / data.ordersLastMonth) * 100)
     : data.ordersThisMonth > 0 ? 100 : 0
+  const paymentCompletionRate = rate(data.paymentsCompleted30d, data.paymentSessionsCreated30d)
+  const checkoutClickRate = rate(data.paymentIntentClicks30d, data.checkoutViews30d)
 
   return (
     <div className="space-y-8">
       <div>
         <h1 className="font-heading font-bold text-3xl text-foreground">Analytics</h1>
-        <p className="text-muted-foreground mt-1">Overview of your studio activity</p>
+        <p className="text-muted-foreground mt-1">Customer traffic, checkout intent, and studio activity</p>
       </div>
 
-      {/* Summary Stats */}
+      <div>
+        <div className="mb-4 flex items-end justify-between gap-4">
+          <div>
+            <h2 className="font-heading text-xl font-semibold text-foreground">Site behavior</h2>
+            <p className="text-sm text-muted-foreground">Last {data.analyticsWindowDays} days</p>
+          </div>
+        </div>
+        <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-6">
+          <Card>
+            <CardHeader className="flex flex-row items-center justify-between pb-2">
+              <CardTitle className="text-sm font-medium text-muted-foreground">Page Views</CardTitle>
+              <Eye className="h-4 w-4 text-muted-foreground" />
+            </CardHeader>
+            <CardContent>
+              <p className="text-2xl font-bold text-foreground">{data.pageViews30d}</p>
+              <p className="text-xs text-muted-foreground mt-1">{data.uniqueVisitors30d} unique visitors</p>
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader className="flex flex-row items-center justify-between pb-2">
+              <CardTitle className="text-sm font-medium text-muted-foreground">Product Views</CardTitle>
+              <ShoppingBag className="h-4 w-4 text-muted-foreground" />
+            </CardHeader>
+            <CardContent>
+              <p className="text-2xl font-bold text-foreground">{data.productViews30d}</p>
+              <p className="text-xs text-muted-foreground mt-1">Shop detail page interest</p>
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader className="flex flex-row items-center justify-between pb-2">
+              <CardTitle className="text-sm font-medium text-muted-foreground">Checkout Intent</CardTitle>
+              <MousePointerClick className="h-4 w-4 text-muted-foreground" />
+            </CardHeader>
+            <CardContent>
+              <p className="text-2xl font-bold text-foreground">{data.checkoutViews30d}</p>
+              <p className="text-xs text-muted-foreground mt-1">{checkoutClickRate} clicked pay</p>
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader className="flex flex-row items-center justify-between pb-2">
+              <CardTitle className="text-sm font-medium text-muted-foreground">Payment Starts</CardTitle>
+              <CreditCard className="h-4 w-4 text-muted-foreground" />
+            </CardHeader>
+            <CardContent>
+              <p className="text-2xl font-bold text-foreground">{data.paymentSessionsCreated30d}</p>
+              <p className="text-xs text-muted-foreground mt-1">{paymentCompletionRate} completed by webhook</p>
+            </CardContent>
+          </Card>
+        </div>
+
+        <div className="mt-6 grid md:grid-cols-3 gap-6">
+          <Card>
+            <CardHeader className="flex flex-row items-center justify-between pb-2">
+              <CardTitle className="text-sm font-medium text-muted-foreground">Checkout Abandons</CardTitle>
+              <AlertTriangle className="h-4 w-4 text-muted-foreground" />
+            </CardHeader>
+            <CardContent>
+              <p className="text-2xl font-bold text-foreground">{data.checkoutAbandoned30d}</p>
+              <p className="text-xs text-muted-foreground mt-1">Left checkout before payment start</p>
+            </CardContent>
+          </Card>
+          <Card>
+            <CardHeader className="pb-2">
+              <CardTitle className="text-sm font-medium text-muted-foreground">Open Payment Sessions</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <p className="text-2xl font-bold text-foreground">{data.openPaymentSessions30d}</p>
+              <p className="text-xs text-muted-foreground mt-1">Started payment minus completed webhooks</p>
+            </CardContent>
+          </Card>
+          <Card>
+            <CardHeader className="pb-2">
+              <CardTitle className="text-sm font-medium text-muted-foreground">Payment Start Errors</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <p className="text-2xl font-bold text-foreground">{data.paymentStartFailed30d}</p>
+              <p className="text-xs text-muted-foreground mt-1">Customer reached pay click but Xendit did not start</p>
+            </CardContent>
+          </Card>
+        </div>
+      </div>
+
+      {/* Studio Stats */}
       <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-6">
         <Card>
           <CardHeader className="flex flex-row items-center justify-between pb-2">
@@ -112,6 +247,51 @@ export default function AdminAnalyticsPage() {
                 <TrendingUp className="h-3 w-3" />
                 {growthPercent > 0 ? "+" : ""}{growthPercent}% orders vs last month
               </p>
+            )}
+          </CardContent>
+        </Card>
+      </div>
+
+      <div className="grid lg:grid-cols-2 gap-6">
+        <Card>
+          <CardHeader>
+            <CardTitle className="font-heading font-bold text-lg">Top Pages</CardTitle>
+          </CardHeader>
+          <CardContent>
+            {data.topPages.length === 0 ? (
+              <p className="text-sm text-muted-foreground">No page views recorded yet</p>
+            ) : (
+              <div className="space-y-3">
+                {data.topPages.map((page) => (
+                  <div key={page.path} className="flex items-center justify-between gap-4">
+                    <span className="truncate text-sm text-muted-foreground">{page.path}</span>
+                    <span className="text-sm font-medium text-foreground">{page.views}</span>
+                  </div>
+                ))}
+              </div>
+            )}
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader>
+            <CardTitle className="font-heading font-bold text-lg">Top Products</CardTitle>
+          </CardHeader>
+          <CardContent>
+            {data.topProducts.length === 0 ? (
+              <p className="text-sm text-muted-foreground">No product views recorded yet</p>
+            ) : (
+              <div className="space-y-3">
+                {data.topProducts.map((product) => (
+                  <div key={product.slug} className="flex items-center justify-between gap-4">
+                    <div className="min-w-0">
+                      <p className="truncate text-sm font-medium text-foreground">{product.name}</p>
+                      <p className="text-xs text-muted-foreground">{product.category}</p>
+                    </div>
+                    <span className="text-sm font-medium text-foreground">{product.views}</span>
+                  </div>
+                ))}
+              </div>
             )}
           </CardContent>
         </Card>
@@ -176,6 +356,33 @@ export default function AdminAnalyticsPage() {
           </CardContent>
         </Card>
       </div>
+
+      <Card>
+        <CardHeader>
+          <CardTitle className="font-heading font-bold text-lg">Recent Events</CardTitle>
+        </CardHeader>
+        <CardContent>
+          {data.recentEvents.length === 0 ? (
+            <p className="text-sm text-muted-foreground">No analytics events recorded yet</p>
+          ) : (
+            <div className="space-y-3">
+              {data.recentEvents.map((event) => (
+                <div key={event.id} className="flex items-center justify-between gap-4 border-b border-border py-2 last:border-0">
+                  <div className="min-w-0">
+                    <p className="truncate text-sm font-medium text-foreground">{formatEventType(event.type)}</p>
+                    <p className="truncate text-xs text-muted-foreground">
+                      {event.productName || event.workshopTitle || event.path || event.source || "Site event"}
+                    </p>
+                  </div>
+                  <span className="shrink-0 text-xs text-muted-foreground">
+                    {new Date(event.createdAt).toLocaleString()}
+                  </span>
+                </div>
+              ))}
+            </div>
+          )}
+        </CardContent>
+      </Card>
     </div>
   )
 }

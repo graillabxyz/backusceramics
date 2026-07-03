@@ -17,8 +17,8 @@ export default function PrivacyPage() {
           <h1 className="font-heading font-bold text-3xl md:text-4xl text-foreground mb-2">
             Privacy Policy
           </h1>
-          <p className="text-sm text-muted-foreground mb-10">
-            Last updated: May 19, 2026
+	          <p className="text-sm text-muted-foreground mb-10">
+	            Last updated: July 3, 2026
           </p>
 
           <div className="prose prose-neutral max-w-none space-y-8 text-foreground/90 text-[15px] leading-relaxed">
@@ -51,10 +51,10 @@ export default function PrivacyPage() {
                 <li>Custom order specifications and preferences</li>
               </ul>
 
-              <h3 className="font-medium text-foreground text-base mt-4">2.3 Automatically Collected Information</h3>
-              <p>
-                When you visit the Site, we may automatically collect standard server log data including your IP address, browser type, pages viewed, and access times. This information is used for operational and security purposes.
-              </p>
+	              <h3 className="font-medium text-foreground text-base mt-4">2.3 Automatically Collected Information</h3>
+	              <p>
+	                When you visit the Site, we may automatically collect standard server log data including your IP address, browser type, pages viewed, and access times. We also record first-party site analytics such as page views, product views, checkout visits, payment-start attempts, and payment completion or cancellation signals. This information is used for operational, security, booking, and business-performance purposes.
+	              </p>
             </section>
 
             <section>
@@ -64,8 +64,9 @@ export default function PrivacyPage() {
                 <li>Create and manage your account</li>
                 <li>Process class bookings and custom order inquiries</li>
                 <li>Communicate with you about your orders and bookings</li>
-                <li>Improve and maintain the Site</li>
-                <li>Respond to your inquiries and support requests</li>
+	                <li>Improve and maintain the Site</li>
+	                <li>Understand site performance, product interest, checkout intent, and booking funnel issues</li>
+	                <li>Respond to your inquiries and support requests</li>
               </ul>
               <p>We do not sell, rent, or share your personal information with third parties for marketing purposes.</p>
             </section>
@@ -125,10 +126,10 @@ export default function PrivacyPage() {
             </section>
 
             <section>
-              <h2 className="font-heading font-semibold text-xl text-foreground">8. Cookies</h2>
-              <p>
-                We use essential cookies to maintain your authentication session and ensure the Site functions correctly. We do not use tracking or advertising cookies.
-              </p>
+	              <h2 className="font-heading font-semibold text-xl text-foreground">8. Cookies</h2>
+	              <p>
+	                We use essential cookies to maintain your authentication session and ensure the Site functions correctly. We may use first-party browser storage to keep anonymous analytics session and visitor identifiers so we can understand repeat visits, checkout abandonment, and product interest. We do not use advertising cookies or sell analytics data.
+	              </p>
             </section>
 
             <section>

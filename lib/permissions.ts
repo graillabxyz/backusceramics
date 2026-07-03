@@ -2,12 +2,13 @@ const FALLBACK_OWNER_ADMIN_EMAIL = "backusceramics@gmail.com"
 
 export const OWNER_ADMIN_EMAIL = process.env.OWNER_ADMIN_EMAIL || FALLBACK_OWNER_ADMIN_EMAIL
 
-export const appRoles = ["USER", "ADMIN", "OWNER", "POS_OPERATOR"] as const
+export const appRoles = ["USER", "MANAGER", "ADMIN", "OWNER", "POS_OPERATOR"] as const
 
 export type AppRole = (typeof appRoles)[number]
 
 export const roleLabels: Record<AppRole, string> = {
   USER: "User",
+  MANAGER: "Manager",
   ADMIN: "Admin",
   OWNER: "Owner admin",
   POS_OPERATOR: "Point of sale",
@@ -39,12 +40,12 @@ export function isOwnerRole(role?: string | null) {
 
 export function isFullAdminRole(role?: string | null) {
   const normalized = normalizeRole(role)
-  return normalized === "OWNER" || normalized === "ADMIN" || normalized === "POS_OPERATOR"
+  return normalized === "OWNER" || normalized === "ADMIN" || normalized === "MANAGER" || normalized === "POS_OPERATOR"
 }
 
 export function canAccessAdmin(role?: string | null) {
   const normalized = normalizeRole(role)
-  return normalized === "OWNER" || normalized === "ADMIN" || normalized === "POS_OPERATOR"
+  return normalized === "OWNER" || normalized === "ADMIN" || normalized === "MANAGER" || normalized === "POS_OPERATOR"
 }
 
 export function canManageAdmins(role?: string | null) {

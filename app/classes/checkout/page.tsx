@@ -23,6 +23,7 @@ import {
 } from "@/components/ui/select"
 import { useAuth } from "@/lib/auth-context"
 import { formatPrice } from "@/lib/classes-data"
+import { markCheckoutPaymentStarted, trackAnalyticsEvent } from "@/lib/client-analytics"
 
 interface CheckoutMeeting {
   key: string
@@ -138,32 +139,78 @@ function ClassCheckoutContent() {
   const uniqueMeetingTimes = useMemo(() => Array.from(new Set(meetings.map((meeting) => meeting.timeLabel))), [meetings])
   const hasMixedMeetingTimes = prepaid && uniqueMeetingTimes.length > 1
   const isCheckingSignIn = authLoading && !isAuthenticated
+  const analyticsContext = () => ({
+    path: typeof window !== "undefined" ? `${window.location.pathname}${window.location.search}` : `/classes/checkout?${searchParams.toString()}`,
+    source: bookingSource || undefined,
+    workshopId,
+    workshopTitle: title,
+    scheduleId: scheduleId || undefined,
+    value: total,
+    metadata: {
+      participants: selectedSeatCount,
+      meetingCount: paymentMeetings.length,
+      requiredMeetings: paymentRequiredMeetings,
+      prepaid,
+      dateKey,
+      dateLabel,
+      timeLabel,
+      focus: focus || undefined,
+    },
+  })
 
   const handleSubmit = async () => {
     setError("")
     setSuccess("")
+    void trackAnalyticsEvent({
+      type: "payment_intent_click",
+      ...analyticsContext(),
+    })
 
     if (isCheckingSignIn) {
+      void trackAnalyticsEvent({
+        type: "payment_validation_failed",
+        ...analyticsContext(),
+        metadata: { ...analyticsContext().metadata, reason: "auth_resolving" },
+      })
       setError("We are finishing your sign-in. Please wait a moment.")
       return
     }
 
     if (!isAuthenticated) {
+      void trackAnalyticsEvent({
+        type: "payment_login_required",
+        ...analyticsContext(),
+      })
       openAuthModal(`/classes/checkout?${searchParams.toString()}`)
       return
     }
 
     if (!whatsappPhone.trim()) {
+      void trackAnalyticsEvent({
+        type: "payment_validation_failed",
+        ...analyticsContext(),
+        metadata: { ...analyticsContext().metadata, reason: "missing_whatsapp" },
+      })
       setError("Enter your WhatsApp phone number.")
       return
     }
 
     if (paymentRequiredMeetings > 0 && paymentMeetings.length !== paymentRequiredMeetings) {
+      void trackAnalyticsEvent({
+        type: "payment_validation_failed",
+        ...analyticsContext(),
+        metadata: { ...analyticsContext().metadata, reason: "wrong_meeting_count" },
+      })
       setError(`This booking needs ${paymentRequiredMeetings} available ${paymentRequiredMeetings === 1 ? "class time" : "program days"} before payment.`)
       return
     }
 
     if (paymentMeetings.length === 0) {
+      void trackAnalyticsEvent({
+        type: "payment_validation_failed",
+        ...analyticsContext(),
+        metadata: { ...analyticsContext().metadata, reason: "missing_meetings" },
+      })
       setError("Return to the calendar and choose your class time.")
       return
     }
@@ -171,6 +218,10 @@ function ClassCheckoutContent() {
     setIsSubmitting(true)
     try {
       const returnPath = `${window.location.pathname}${window.location.search}`
+      void trackAnalyticsEvent({
+        type: "payment_start_request",
+        ...analyticsContext(),
+      })
       const res = await fetch("/api/payments/xendit-session", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -182,6 +233,7 @@ function ClassCheckoutContent() {
           meetings: paymentMeetings,
           requiredMeetings: paymentRequiredMeetings,
           focus,
+          source: bookingSource,
           returnPath,
         }),
       })
@@ -194,6 +246,15 @@ function ClassCheckoutContent() {
         data = { rawResponse: responseText.slice(0, 1000) }
       }
       if (!res.ok) {
+        void trackAnalyticsEvent({
+          type: "payment_start_failed",
+          ...analyticsContext(),
+          metadata: {
+            ...analyticsContext().metadata,
+            status: res.status,
+            code: typeof data.code === "string" ? data.code : undefined,
+          },
+        })
         console.error("Payment start failed", {
           status: res.status,
           response: data,
@@ -223,6 +284,11 @@ function ClassCheckoutContent() {
 
       const paymentUrl = typeof data.paymentUrl === "string" ? data.paymentUrl : ""
       if (!paymentUrl) {
+        void trackAnalyticsEvent({
+          type: "payment_start_failed",
+          ...analyticsContext(),
+          metadata: { ...analyticsContext().metadata, reason: "missing_payment_url" },
+        })
         console.error("Payment response missing paymentUrl", {
           response: data,
           request: {
@@ -246,9 +312,29 @@ function ClassCheckoutContent() {
         throw new Error("Payment could not be started right now. Please try again shortly or message us on WhatsApp.")
       }
 
+      markCheckoutPaymentStarted(returnPath)
+      await trackAnalyticsEvent({
+        type: "payment_start_success",
+        ...analyticsContext(),
+        metadata: {
+          ...analyticsContext().metadata,
+          referenceId: typeof data.referenceId === "string" ? data.referenceId : undefined,
+          paymentSessionId: typeof data.paymentSessionId === "string" ? data.paymentSessionId : undefined,
+          bookingIds: Array.isArray(data.bookingIds) ? data.bookingIds : undefined,
+          holdExpiresAt: typeof data.holdExpiresAt === "string" ? data.holdExpiresAt : undefined,
+        },
+      }, { beacon: true })
       window.location.href = paymentUrl
     } catch (paymentError) {
       console.error("Payment checkout error", paymentError)
+      void trackAnalyticsEvent({
+        type: "payment_checkout_error",
+        ...analyticsContext(),
+        metadata: {
+          ...analyticsContext().metadata,
+          message: paymentError instanceof Error ? paymentError.message : "Unknown checkout error",
+        },
+      })
       setError(paymentError instanceof Error ? paymentError.message : "We could not start this booking. Please refresh and try again.")
       setIsSubmitting(false)
     }

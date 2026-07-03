@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server"
 import { prisma } from "@/lib/prisma"
 import { getXenditCallbackToken } from "@/lib/xendit"
 import { sendPosReceiptEmail } from "@/lib/pos-receipts"
+import { recordAnalyticsEvent } from "@/lib/analytics-server"
 
 export const runtime = "nodejs"
 
@@ -167,6 +168,18 @@ export async function POST(req: NextRequest) {
 
     if (posSaleStatus === "CANCELLED") {
       const result = await cancelPendingPosSale(sale)
+      await recordAnalyticsEvent({
+        type: "pos_payment_cancelled",
+        source: "xendit_webhook",
+        value: sale?.total || null,
+        metadata: {
+          posSaleId: sale?.id || posSaleId || undefined,
+          paymentSessionId,
+          paymentReference: posReference || undefined,
+          updated: result.updated,
+          webhookStatus,
+        },
+      }, req)
       return NextResponse.json({ ok: true, status: posSaleStatus, posUpdated: result.updated })
     }
 
@@ -195,6 +208,20 @@ export async function POST(req: NextRequest) {
         })
       }
     }
+
+    await recordAnalyticsEvent({
+      type: "pos_payment_completed",
+      source: "xendit_webhook",
+      value: updatedSale.total,
+      currency: updatedSale.currency,
+      metadata: {
+        posSaleId: updatedSale.id,
+        paymentSessionId,
+        paymentReference: posReference || undefined,
+        itemCount: updatedSale.items.length,
+        webhookStatus,
+      },
+    }, req)
 
     return NextResponse.json({ ok: true, status: posSaleStatus, posUpdated: 1 })
   }
@@ -230,6 +257,19 @@ export async function POST(req: NextRequest) {
       ...(bookingStatus === "CONFIRMED" ? { confirmedAt: new Date() } : { cancelledAt: new Date() }),
     },
   })
+
+  await recordAnalyticsEvent({
+    type: bookingStatus === "CONFIRMED" ? "payment_completed" : "payment_cancelled",
+    source: "xendit_webhook",
+    metadata: {
+      bookingStatus,
+      webhookStatus,
+      bookingIds,
+      externalId,
+      paymentSessionId,
+      updated: result.count,
+    },
+  }, req)
 
   return NextResponse.json({
     ok: true,

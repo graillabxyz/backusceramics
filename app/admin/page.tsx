@@ -2,8 +2,10 @@
 
 import { useState, useEffect } from "react"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
-import { GraduationCap, ShoppingBag, ClipboardList, TrendingUp, Users, Calendar, Loader2, BarChart3 } from "lucide-react"
+import { GraduationCap, ShoppingBag, ClipboardList, Users, Calendar, Loader2, BarChart3, Store } from "lucide-react"
 import Link from "next/link"
+import { useAuth } from "@/lib/auth-context"
+import { canManageAdmins, canUsePos, isFullAdminRole } from "@/lib/permissions"
 
 interface DashboardStats {
   totalOrders: number
@@ -25,6 +27,7 @@ const statusLabels: Record<string, string> = {
 }
 
 export default function AdminDashboard() {
+  const { user } = useAuth()
   const [stats, setStats] = useState<DashboardStats | null>(null)
   const [loading, setLoading] = useState(true)
 
@@ -49,6 +52,9 @@ export default function AdminDashboard() {
     (stats?.ordersByStatus?.GLAZING || 0) + (stats?.ordersByStatus?.FIRING || 0)
   const pendingBookings = stats?.bookingsByStatus?.PENDING || 0
   const newApplications = stats?.applicationsByStatus?.SUBMITTED || 0
+  const canOpenAdminTools = isFullAdminRole(user?.role)
+  const canOpenPos = canUsePos(user?.role)
+  const canOpenUserRoles = canManageAdmins(user?.role)
 
   return (
     <div className="space-y-8">
@@ -123,48 +129,98 @@ export default function AdminDashboard() {
       </div>
 
       {/* Quick Actions */}
-      <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
-        <Link href="/admin/orders">
-          <Card className="hover:shadow-md transition-shadow cursor-pointer h-full">
-            <CardHeader>
-              <div className="w-12 h-12 rounded-full bg-primary/10 flex items-center justify-center mb-2">
-                <ClipboardList className="h-6 w-6 text-primary" />
-              </div>
-              <CardTitle className="font-heading font-bold text-xl">Manage Orders</CardTitle>
-              <CardDescription>
-                View inquiries, update statuses, and add progress updates
-              </CardDescription>
-            </CardHeader>
-          </Card>
-        </Link>
+      <div className="grid md:grid-cols-2 xl:grid-cols-3 gap-4 sm:gap-6">
+        {canOpenAdminTools && (
+          <>
+            <Link href="/admin/orders">
+              <Card className="hover:shadow-md transition-shadow cursor-pointer h-full">
+                <CardHeader>
+                  <div className="w-12 h-12 rounded-full bg-primary/10 flex items-center justify-center mb-2">
+                    <ClipboardList className="h-6 w-6 text-primary" />
+                  </div>
+                  <CardTitle className="font-heading font-bold text-xl">Manage Orders</CardTitle>
+                  <CardDescription>
+                    View inquiries, update statuses, and add progress updates
+                  </CardDescription>
+                </CardHeader>
+              </Card>
+            </Link>
 
-        <Link href="/admin/bookings">
-          <Card className="hover:shadow-md transition-shadow cursor-pointer h-full">
-            <CardHeader>
-              <div className="w-12 h-12 rounded-full bg-primary/10 flex items-center justify-center mb-2">
-                <GraduationCap className="h-6 w-6 text-primary" />
-              </div>
-              <CardTitle className="font-heading font-bold text-xl">Class Bookings</CardTitle>
-              <CardDescription>
-                Confirm workshop bookings and manage the class schedule
-              </CardDescription>
-            </CardHeader>
-          </Card>
-        </Link>
+            <Link href="/admin/bookings">
+              <Card className="hover:shadow-md transition-shadow cursor-pointer h-full">
+                <CardHeader>
+                  <div className="w-12 h-12 rounded-full bg-primary/10 flex items-center justify-center mb-2">
+                    <GraduationCap className="h-6 w-6 text-primary" />
+                  </div>
+                  <CardTitle className="font-heading font-bold text-xl">Class Bookings</CardTitle>
+                  <CardDescription>
+                    Confirm workshop bookings and manage the class schedule
+                  </CardDescription>
+                </CardHeader>
+              </Card>
+            </Link>
 
-        <Link href="/admin/analytics">
-          <Card className="hover:shadow-md transition-shadow cursor-pointer h-full">
-            <CardHeader>
-              <div className="w-12 h-12 rounded-full bg-primary/10 flex items-center justify-center mb-2">
-                <BarChart3 className="h-6 w-6 text-primary" />
-              </div>
-              <CardTitle className="font-heading font-bold text-xl">Analytics</CardTitle>
-              <CardDescription>
-                View trends, status breakdowns, and activity metrics
-              </CardDescription>
-            </CardHeader>
-          </Card>
-        </Link>
+            <Link href="/admin/products">
+              <Card className="hover:shadow-md transition-shadow cursor-pointer h-full">
+                <CardHeader>
+                  <div className="w-12 h-12 rounded-full bg-primary/10 flex items-center justify-center mb-2">
+                    <ShoppingBag className="h-6 w-6 text-primary" />
+                  </div>
+                  <CardTitle className="font-heading font-bold text-xl">Products</CardTitle>
+                  <CardDescription>
+                    Add wares, cafe items, prices, inventory, and sales visibility
+                  </CardDescription>
+                </CardHeader>
+              </Card>
+            </Link>
+
+            <Link href="/admin/analytics">
+              <Card className="hover:shadow-md transition-shadow cursor-pointer h-full">
+                <CardHeader>
+                  <div className="w-12 h-12 rounded-full bg-primary/10 flex items-center justify-center mb-2">
+                    <BarChart3 className="h-6 w-6 text-primary" />
+                  </div>
+                  <CardTitle className="font-heading font-bold text-xl">Analytics</CardTitle>
+                  <CardDescription>
+                    View trends, status breakdowns, and activity metrics
+                  </CardDescription>
+                </CardHeader>
+              </Card>
+            </Link>
+          </>
+        )}
+
+        {canOpenPos && (
+          <Link href="/admin/pos">
+            <Card className="hover:shadow-md transition-shadow cursor-pointer h-full">
+              <CardHeader>
+                <div className="w-12 h-12 rounded-full bg-primary/10 flex items-center justify-center mb-2">
+                  <Store className="h-6 w-6 text-primary" />
+                </div>
+                <CardTitle className="font-heading font-bold text-xl">Point of Sale</CardTitle>
+                <CardDescription>
+                  Open the cashier register, add quick products, and record sales
+                </CardDescription>
+              </CardHeader>
+            </Card>
+          </Link>
+        )}
+
+        {canOpenUserRoles && (
+          <Link href="/admin/users">
+            <Card className="hover:shadow-md transition-shadow cursor-pointer h-full">
+              <CardHeader>
+                <div className="w-12 h-12 rounded-full bg-primary/10 flex items-center justify-center mb-2">
+                  <Users className="h-6 w-6 text-primary" />
+                </div>
+                <CardTitle className="font-heading font-bold text-xl">Users & Roles</CardTitle>
+                <CardDescription>
+                  See every auth user and assign manager, admin, owner, or POS access
+                </CardDescription>
+              </CardHeader>
+            </Card>
+          </Link>
+        )}
       </div>
 
       {/* Recent Activity */}

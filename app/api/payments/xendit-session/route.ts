@@ -17,6 +17,7 @@ import {
   parseWeekdays,
   sessionKey,
 } from "@/lib/class-schedule"
+import { recordAnalyticsEvent } from "@/lib/analytics-server"
 
 export const runtime = "nodejs"
 
@@ -418,6 +419,7 @@ async function handlePaymentSessionPost(req: NextRequest, trace?: PaymentTrace) 
   const hasHttpsOrigin = isHttpsUrl(origin)
   const returnPath = safeInternalPath(data.returnPath, "/classes/calendar")
   const contactPhone = typeof data.contactPhone === "string" ? data.contactPhone.trim() : ""
+  const bookingSource = typeof data.source === "string" ? data.source : undefined
   const paymentNote = [
     `Payment required via Xendit.`,
     `Payment reference: ${referenceId}.`,
@@ -532,6 +534,27 @@ async function handlePaymentSessionPost(req: NextRequest, trace?: PaymentTrace) 
       })
     }
 
+    await recordAnalyticsEvent({
+      type: "payment_session_created",
+      path: returnPath,
+      userId: session.user.id,
+      workshopId: workshop.id,
+      workshopTitle: workshop.title,
+      scheduleId,
+      source: bookingSource,
+      value: total,
+      currency: "IDR",
+      metadata: {
+        referenceId,
+        paymentSessionId: paymentSession.payment_session_id,
+        bookingIds: createdBookings.map((booking) => booking.id),
+        participants,
+        meetingCount: meetings.length,
+        requiredMeetings,
+        holdExpiresAt: holdExpiresAt.toISOString(),
+      },
+    }, req)
+
     return NextResponse.json({
       paymentUrl: paymentSession.payment_link_url,
       referenceId,
@@ -563,7 +586,28 @@ async function handlePaymentSessionPost(req: NextRequest, trace?: PaymentTrace) 
       console.error("Could not cancel reserved bookings after Xendit failure", rollbackError)
     }
 
-    return NextResponse.json(
+    await recordAnalyticsEvent({
+      type: "payment_session_failed",
+      path: returnPath,
+      userId: session.user.id,
+      workshopId: workshop.id,
+      workshopTitle: workshop.title,
+      scheduleId,
+      source: bookingSource,
+      value: total,
+      currency: "IDR",
+      metadata: {
+        referenceId,
+        bookingIds: createdBookings.map((booking) => booking.id),
+        participants,
+        meetingCount: meetings.length,
+        xenditStatus: isXenditError ? error.status : undefined,
+        xenditCode: isXenditError ? error.xenditCode : undefined,
+        configurationError: isConfigError,
+      },
+    }, req)
+
+	    return NextResponse.json(
       {
         error: error instanceof Error ? error.message : "Could not start payment",
         code: isConfigError ? paymentErrorCodes.configurationMissing : paymentErrorCodes.xenditInvoiceFailed,

@@ -28,6 +28,7 @@ import {
   startOfWeek,
 } from "@/lib/class-schedule"
 import { cn } from "@/lib/utils"
+import { trackAnalyticsEvent } from "@/lib/client-analytics"
 
 const classColors: Record<string, string> = {
   "beginner-wheel": "border-l-amber-500 bg-amber-50 text-amber-950 dark:bg-amber-950/30 dark:text-amber-100",
@@ -470,8 +471,27 @@ export function ClassesCalendar({ initialClass }: ClassesCalendarProps) {
 
   const handleUnauthenticatedCheckout = () => {
     if (!isAuthenticated && !authLoading) {
+      trackCheckoutIntent()
       openAuthModal(buildCheckoutHref())
     }
+  }
+  const trackCheckoutIntent = () => {
+    if (!activeCheckoutSession || !activeWorkshop) return
+    void trackAnalyticsEvent({
+      type: "checkout_intent_click",
+      path: buildCheckoutHref(),
+      source: "weekly-calendar",
+      workshopId: activeWorkshop.id,
+      workshopTitle: activeCheckoutSession.scheduleTitle || activeWorkshop.title,
+      scheduleId: activeCheckoutSession.scheduleId || undefined,
+      value: activeWorkshop.price,
+      metadata: {
+        selectedDateKey: activeCheckoutSession.dateKey,
+        selectedTime: activeCheckoutSession.timeLabel,
+        prepaid: prepaidProgram,
+        requiredDays: requiredProgramDays,
+      },
+    })
   }
   const isCheckingSignIn = authLoading && !isAuthenticated
   const canContinue = isMultiDaySelection
@@ -755,7 +775,11 @@ export function ClassesCalendar({ initialClass }: ClassesCalendarProps) {
                     className="h-12 w-full gap-2 text-base"
                     disabled={!canContinue || availabilityLoading}
                   >
-                    <Link href={buildCheckoutHref()} className={cn((!canContinue || availabilityLoading) && "pointer-events-none opacity-50")}>
+                    <Link
+                      href={buildCheckoutHref()}
+                      className={cn((!canContinue || availabilityLoading) && "pointer-events-none opacity-50")}
+                      onClick={trackCheckoutIntent}
+                    >
                       <CalendarDays className="h-4 w-4" />
                       {!canContinue ? "Choose another start time" : "Continue to Payment"}
                     </Link>

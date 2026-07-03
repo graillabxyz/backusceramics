@@ -15,6 +15,7 @@ interface UserData {
   role: string
   image: string | null
   createdAt: string
+  hasLocalUser?: boolean
   hasSupabaseAuth?: boolean
   authCreatedAt?: string | null
   lastSignInAt?: string | null
@@ -56,7 +57,7 @@ export default function AdminUsersPage() {
   const fetchUsers = async () => {
     try {
       const res = await fetch("/api/users")
-      const data = await res.json()
+      const data = await res.json().catch(() => ({}))
       if (!res.ok) throw new Error(data.error || "Could not load users")
 
       if (Array.isArray(data)) {
@@ -69,7 +70,7 @@ export default function AdminUsersPage() {
       }
     } catch (err) {
       console.error("Failed to fetch users:", err)
-      setError("Could not load users.")
+      setError(err instanceof Error ? err.message : "Could not load users.")
     } finally {
       setLoading(false)
     }
@@ -185,6 +186,9 @@ export default function AdminUsersPage() {
                         {user.hasSupabaseAuth === false && (
                           <Badge variant="secondary">Local only</Badge>
                         )}
+                        {user.hasLocalUser === false && (
+                          <Badge variant="secondary">Auth only</Badge>
+                        )}
                       </div>
                       <p className="text-sm text-muted-foreground truncate">{user.email}</p>
                       <div className="flex items-center gap-3 mt-1 text-xs text-muted-foreground">
@@ -201,7 +205,7 @@ export default function AdminUsersPage() {
                   <Select
                     value={user.role}
                     onValueChange={(val) => updateRole(user.id, val as AppRole)}
-                    disabled={!canEditRoles}
+                    disabled={!canEditRoles || user.hasLocalUser === false}
                   >
                     <SelectTrigger className="w-44">
                       <SelectValue />

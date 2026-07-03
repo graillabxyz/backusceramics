@@ -6,6 +6,7 @@ import Link from "next/link"
 import { ArrowLeft, Check, X } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
+import { ProductViewTracker } from "@/components/product-view-tracker"
 
 interface ProductPageProps {
   params: Promise<{
@@ -34,6 +35,13 @@ export default async function ProductPage({ params }: ProductPageProps) {
 
   return (
     <main className="min-h-screen">
+      <ProductViewTracker
+        productId={product.id}
+        productSlug={product.slug}
+        productName={product.name}
+        productCategory={product.category}
+        value={product.price}
+      />
       <Navigation />
       
       {/* Breadcrumb */}

@@ -16,6 +16,7 @@ import { Switch } from "@/components/ui/switch"
 import { formatPrice, workshops } from "@/lib/classes-data"
 import { addDays, CalendarAvailability, CalendarSession, formatDateKey, getScheduleOffering, hasSessionStartPassed, parseDateKey } from "@/lib/class-schedule"
 import { cn } from "@/lib/utils"
+import { trackAnalyticsEvent } from "@/lib/client-analytics"
 
 type ResidencyFocus = "wheel" | "handbuilding" | "mix"
 
@@ -534,7 +535,27 @@ export default function ResidencyBookingPage() {
               </div>
               {!canContinue && <p className="text-sm text-muted-foreground">Select exactly {requiredDays} days, with up to 5 days in each week, to continue to payment.</p>}
               <Button asChild className="h-12 w-full gap-2 text-base" disabled={!canContinue || loading}>
-                <Link href={checkoutHref} className={cn(!canContinue && "pointer-events-none opacity-50")}><CalendarDays className="h-4 w-4" />Book Residency</Link>
+                <Link
+                  href={checkoutHref}
+                  className={cn(!canContinue && "pointer-events-none opacity-50")}
+                  onClick={() => {
+                    if (!canContinue) return
+                    void trackAnalyticsEvent({
+                      type: "checkout_intent_click",
+                      path: checkoutHref,
+                      source: "residency-booking",
+                      workshopId: program.id,
+                      workshopTitle: program.title,
+                      value: program.price,
+                      metadata: {
+                        selectedDays: selectedCount,
+                        requiredDays,
+                        focus: focusLabel(focus),
+                        manualTimes,
+                      },
+                    })
+                  }}
+                ><CalendarDays className="h-4 w-4" />Book Residency</Link>
               </Button>
             </CardContent>
           </Card>

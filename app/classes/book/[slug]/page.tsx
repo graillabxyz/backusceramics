@@ -23,6 +23,7 @@ import {
   scheduleOfferings,
 } from "@/lib/class-schedule"
 import { cn } from "@/lib/utils"
+import { trackAnalyticsEvent } from "@/lib/client-analytics"
 
 const weekdayLabels = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat"]
 const requiredMultiDaySelections: Record<string, number> = {
@@ -898,12 +899,30 @@ export default function ClassMonthBookingPage() {
                     </div>
                   </div>
 
-                  <Button asChild className="h-12 w-full text-base">
-                    <Link
-                      href={checkoutHref}
-                      aria-disabled={!canContinue}
-                      className={cn(!canContinue && "pointer-events-none opacity-50")}
-                    >
+	                  <Button asChild className="h-12 w-full text-base">
+	                    <Link
+	                      href={checkoutHref}
+	                      aria-disabled={!canContinue}
+	                      className={cn(!canContinue && "pointer-events-none opacity-50")}
+	                      onClick={() => {
+	                        if (!workshop || !selectedSession) return
+	                        void trackAnalyticsEvent({
+	                          type: "checkout_intent_click",
+	                          path: checkoutHref,
+	                          source: "class-month",
+	                          workshopId: workshop.id,
+	                          workshopTitle: selectedSession.scheduleTitle || workshop.title,
+	                          scheduleId: selectedSession.scheduleId || undefined,
+	                          value: total,
+	                          metadata: {
+	                            seats: Number(seats),
+	                            prepaid,
+	                            selectedDateKey: selectedSession.dateKey,
+	                            selectedTime: selectedSession.timeLabel,
+	                          },
+	                        })
+	                      }}
+	                    >
                       <CalendarDays className="h-4 w-4" />
                       {isMultiDaySelection && !canContinue
                         ? "Choose another start time"

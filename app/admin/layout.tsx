@@ -48,6 +48,7 @@ export default function AdminLayout({
   const pathname = usePathname()
   const { user, isLoading, isAuthenticated, logout } = useAuth()
   const [sidebarOpen, setSidebarOpen] = useState(false)
+  const [userMenuOpen, setUserMenuOpen] = useState(false)
 
   if (isLoading) {
     return (
@@ -68,6 +69,9 @@ export default function AdminLayout({
     if (item.access === "pos") return canUsePos(user?.role)
     return isFullAdminRole(user?.role)
   })
+  const displayName = user?.name || user?.email?.split("@")[0] || "Admin"
+  const displayEmail = user?.email || ""
+  const displayInitial = (displayName || displayEmail || "A").charAt(0).toUpperCase()
 
   return (
     <div className="min-h-screen bg-muted/30">
@@ -79,13 +83,64 @@ export default function AdminLayout({
           </div>
           <span className="font-heading font-bold text-lg font-medium">Admin</span>
         </div>
-        <Button
-          variant="ghost"
-          size="icon"
-          onClick={() => setSidebarOpen(!sidebarOpen)}
-        >
-          {sidebarOpen ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}
-        </Button>
+        <div className="flex items-center gap-2">
+          <AdminNotifications enabled={isFullAdminRole(user?.role)} />
+          <div className="relative">
+            <button
+              type="button"
+              onClick={() => {
+                setUserMenuOpen((open) => !open)
+                setSidebarOpen(false)
+              }}
+              className="flex h-9 w-9 items-center justify-center overflow-hidden rounded-full border border-border bg-background"
+              aria-label="Admin profile menu"
+            >
+              {user?.image ? (
+                <img src={user.image} alt="" className="h-full w-full object-cover" />
+              ) : (
+                <span className="text-sm font-semibold text-foreground">{displayInitial}</span>
+              )}
+            </button>
+
+            {userMenuOpen && (
+              <div className="absolute right-0 top-full mt-2 w-64 overflow-hidden rounded-xl border border-border bg-background shadow-lg">
+                <div className="border-b border-border px-4 py-3">
+                  <p className="truncate text-sm font-semibold text-foreground">{displayName}</p>
+                  <p className="truncate text-xs text-muted-foreground">{displayEmail}</p>
+                  <p className="mt-1 text-xs text-muted-foreground">{roleLabels[user?.role || "USER"]}</p>
+                </div>
+                <div className="py-1">
+                  <Link
+                    href="/"
+                    className="flex items-center gap-3 px-4 py-2 text-sm text-foreground hover:bg-muted"
+                    onClick={() => setUserMenuOpen(false)}
+                  >
+                    <Home className="h-4 w-4 text-muted-foreground" />
+                    View Site
+                  </Link>
+                  <button
+                    onClick={() => logout()}
+                    className="flex w-full items-center gap-3 px-4 py-2 text-left text-sm text-destructive hover:bg-muted"
+                  >
+                    <LogOut className="h-4 w-4" />
+                    Sign Out
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={() => {
+              setSidebarOpen(!sidebarOpen)
+              setUserMenuOpen(false)
+            }}
+            aria-label="Admin navigation"
+          >
+            {sidebarOpen ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}
+          </Button>
+        </div>
       </header>
 
       {/* Sidebar */}
@@ -174,9 +229,6 @@ export default function AdminLayout({
       {/* Main Content */}
       <main className="lg:pl-64 pt-16 lg:pt-0">
         <div className="hidden border-b border-border bg-background/80 px-6 py-3 backdrop-blur lg:flex lg:items-center lg:justify-end lg:px-8">
-          <AdminNotifications enabled={isFullAdminRole(user?.role)} />
-        </div>
-        <div className="fixed right-4 top-3 z-50 lg:hidden">
           <AdminNotifications enabled={isFullAdminRole(user?.role)} />
         </div>
         <div className="p-6 lg:p-8">

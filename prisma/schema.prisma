@@ -19,7 +19,7 @@ model User {
   email         String    @unique
   emailVerified DateTime?
   image         String?
-  role          String    @default("USER") // "USER" | "ADMIN" | "OWNER" | "POS_OPERATOR"
+  role          String    @default("USER") // "USER" | "MANAGER" | "ADMIN" | "OWNER" | "POS_OPERATOR"
 
   accounts      Account[]
   sessions      Session[]
@@ -29,6 +29,7 @@ model User {
   classSchedules ClassSchedule[]
   posProducts    PosProduct[] @relation("PosProductCreator")
   posSales       PosSale[] @relation("PosSaleOperator")
+  analyticsEvents AnalyticsEvent[]
   residencyApps ResidencyApplication[]
 
   createdAt DateTime @default(now())
@@ -293,6 +294,51 @@ model AdminNotification {
   @@index([type])
   @@index([readAt])
   @@index([createdAt])
+}
+
+model AnalyticsEvent {
+  id        String @id @default(cuid())
+  type      String
+  path      String?
+  referrer  String?
+  pageTitle String?
+
+  visitorId String?
+  sessionId String?
+  userId    String?
+  user      User?   @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  productId       String?
+  productSlug     String?
+  productName     String?
+  productCategory String?
+
+  workshopId    String?
+  workshopTitle String?
+  scheduleId    String?
+  source        String?
+
+  value    Int?
+  currency String @default("IDR")
+  metadata String?
+
+  city      String?
+  region    String?
+  country   String?
+  ip        String?
+  userAgent String?
+
+  createdAt DateTime @default(now())
+
+  @@index([type])
+  @@index([createdAt])
+  @@index([path])
+  @@index([userId])
+  @@index([visitorId])
+  @@index([sessionId])
+  @@index([productSlug])
+  @@index([workshopId])
+  @@index([source])
 }
 
 model ResidencyApplication {

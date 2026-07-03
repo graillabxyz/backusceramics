@@ -4,6 +4,7 @@ import { prisma } from "@/lib/prisma"
 import { canUsePos } from "@/lib/permissions"
 import { POS_PAYMENT_METHODS } from "@/lib/pos-catalog"
 import { sendPosReceiptEmail } from "@/lib/pos-receipts"
+import { recordAnalyticsEvent } from "@/lib/analytics-server"
 
 interface SaleItemRequest {
   productId: string
@@ -114,6 +115,20 @@ export async function POST(req: NextRequest) {
         })
       }
     }
+
+    await recordAnalyticsEvent({
+      type: "pos_sale_paid",
+      userId: session.user.id,
+      source: "pos",
+      value: sale.total,
+      currency: sale.currency,
+      metadata: {
+        saleId: sale.id,
+        paymentMethod,
+        itemCount: sale.items.length,
+        receiptRequested: Boolean(receiptEmail),
+      },
+    }, req)
 
     return NextResponse.json(sale, { status: 201 })
   } catch (error) {

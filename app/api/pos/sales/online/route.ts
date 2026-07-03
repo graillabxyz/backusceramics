@@ -8,6 +8,7 @@ import {
   XenditApiError,
   XenditConfigurationError,
 } from "@/lib/xendit"
+import { recordAnalyticsEvent } from "@/lib/analytics-server"
 
 interface SaleItemRequest {
   productId: string
@@ -187,6 +188,21 @@ export async function POST(req: NextRequest) {
       data: { paymentSessionId: paymentSession.payment_session_id },
       include: { items: true },
     })
+
+    await recordAnalyticsEvent({
+      type: "pos_online_payment_started",
+      userId: session.user.id,
+      source: "pos",
+      value: updatedSale.total,
+      currency: updatedSale.currency,
+      metadata: {
+        saleId: updatedSale.id,
+        paymentReference,
+        paymentSessionId: paymentSession.payment_session_id,
+        itemCount: updatedSale.items.length,
+        receiptRequested: Boolean(receiptEmail),
+      },
+    }, req)
 
     return NextResponse.json({
       sale: updatedSale,

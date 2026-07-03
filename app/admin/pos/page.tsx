@@ -4,9 +4,18 @@ import { useEffect, useMemo, useState } from "react"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
+import { Switch } from "@/components/ui/switch"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import {
   formatPrice,
@@ -25,6 +34,7 @@ import {
   Plus,
   Search,
   Send,
+  ShoppingBag,
   ShoppingCart,
   Store,
   Trash2,
@@ -54,6 +64,26 @@ interface CartItem {
   quantity: number
 }
 
+interface QuickProductForm {
+  name: string
+  sku: string
+  category: string
+  price: string
+  quantity: string
+  cafeOnly: boolean
+  showInShop: boolean
+}
+
+const quickProductDefaults: QuickProductForm = {
+  name: "",
+  sku: "",
+  category: "CUPS",
+  price: "",
+  quantity: "1",
+  cafeOnly: false,
+  showInShop: true,
+}
+
 function firstImage(product: PosProduct) {
   return parseProductImageUrls(product.imageUrls)[0] || ""
 }
@@ -71,6 +101,9 @@ export default function AdminPosPage() {
   const [receiptEmail, setReceiptEmail] = useState("")
   const [customerName, setCustomerName] = useState("")
   const [paymentMethod, setPaymentMethod] = useState("CARD_MACHINE")
+  const [isQuickAddOpen, setIsQuickAddOpen] = useState(false)
+  const [savingProduct, setSavingProduct] = useState(false)
+  const [quickProduct, setQuickProduct] = useState<QuickProductForm>(quickProductDefaults)
 
   const availableProducts = useMemo(
     () => products.filter((product) => product.status === "AVAILABLE" && product.quantity > 0),
@@ -111,6 +144,70 @@ export default function AdminPosPage() {
       setError("Could not load POS products.")
     } finally {
       setLoading(false)
+    }
+  }
+
+  const openQuickAdd = () => {
+    setQuickProduct(quickProductDefaults)
+    setError("")
+    setIsQuickAddOpen(true)
+  }
+
+  const updateQuickProduct = <K extends keyof QuickProductForm>(key: K, value: QuickProductForm[K]) => {
+    setQuickProduct((current) => {
+      if (key === "cafeOnly" && value === true) {
+        return { ...current, cafeOnly: true, showInShop: false, category: "F_AND_B" }
+      }
+
+      if (key === "cafeOnly" && value === false && current.category === "F_AND_B") {
+        return { ...current, cafeOnly: false, showInShop: true, category: "CUPS" }
+      }
+
+      if (key === "category" && value === "F_AND_B") {
+        return { ...current, category: value, cafeOnly: true, showInShop: false }
+      }
+
+      return { ...current, [key]: value }
+    })
+  }
+
+  const handleQuickAddProduct = async () => {
+    setSavingProduct(true)
+    setError("")
+    setSuccess("")
+
+    const payload = {
+      ...quickProduct,
+      price: Number(quickProduct.price),
+      quantity: Number(quickProduct.quantity || 1),
+      status: "AVAILABLE",
+      showInShop: quickProduct.cafeOnly ? false : quickProduct.showInShop,
+    }
+
+    try {
+      const res = await fetch("/api/pos/products", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      })
+      const data = await res.json()
+
+      if (!res.ok) {
+        setError(data.error || "Could not add product")
+        return
+      }
+
+      setProducts((current) => [data, ...current])
+      setActiveCategory(normalizeProductCategory(data.category))
+      setSearchTerm("")
+      setSuccess(`${data.name} was added to POS inventory.`)
+      setIsQuickAddOpen(false)
+      setQuickProduct(quickProductDefaults)
+    } catch (productError) {
+      console.error("Quick POS product add failed", productError)
+      setError("Could not add product.")
+    } finally {
+      setSavingProduct(false)
     }
   }
 
@@ -263,14 +360,20 @@ export default function AdminPosPage() {
                 <Store className="h-5 w-5" />
                 Products
               </CardTitle>
-              <div className="relative md:w-80">
-                <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-                <Input
-                  value={searchTerm}
-                  onChange={(event) => setSearchTerm(event.target.value)}
-                  placeholder="Search POS..."
-                  className="pl-9"
-                />
+              <div className="flex flex-col gap-2 sm:flex-row md:items-center">
+                <Button type="button" onClick={openQuickAdd}>
+                  <Plus className="mr-2 h-4 w-4" />
+                  Add product
+                </Button>
+                <div className="relative md:w-80">
+                  <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                  <Input
+                    value={searchTerm}
+                    onChange={(event) => setSearchTerm(event.target.value)}
+                    placeholder="Search POS..."
+                    className="pl-9"
+                  />
+                </div>
               </div>
             </div>
           </CardHeader>
@@ -300,7 +403,11 @@ export default function AdminPosPage() {
                   <div className="py-24 text-center">
                     <ShoppingCart className="mx-auto mb-4 h-12 w-12 text-muted-foreground" />
                     <p className="font-medium text-foreground">No available products here</p>
-                    <p className="mt-1 text-sm text-muted-foreground">Try another category or add inventory in Products.</p>
+                    <p className="mt-1 text-sm text-muted-foreground">Try another category or add inventory right here.</p>
+                    <Button type="button" className="mt-5" onClick={openQuickAdd}>
+                      <Plus className="mr-2 h-4 w-4" />
+                      Add product
+                    </Button>
                   </div>
                 ) : (
                   <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-4">
@@ -475,6 +582,120 @@ export default function AdminPosPage() {
           </CardContent>
         </Card>
       </div>
+
+      <Dialog open={isQuickAddOpen} onOpenChange={setIsQuickAddOpen}>
+        <DialogContent className="max-w-2xl">
+          <DialogHeader>
+            <DialogTitle className="font-heading text-2xl">Add product to POS</DialogTitle>
+            <DialogDescription>
+              Use this for quick cashier inventory. Detailed photos and long descriptions can still be edited later in Products.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="grid gap-4 py-4 sm:grid-cols-2">
+            <div className="space-y-2 sm:col-span-2">
+              <Label htmlFor="quickName">Product name</Label>
+              <Input
+                id="quickName"
+                value={quickProduct.name}
+                onChange={(event) => updateQuickProduct("name", event.target.value)}
+                placeholder="e.g., Blue cup, iced latte, incense holder"
+              />
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="quickSku">SKU or shelf code</Label>
+              <Input
+                id="quickSku"
+                value={quickProduct.sku}
+                onChange={(event) => updateQuickProduct("sku", event.target.value)}
+                placeholder="Optional"
+              />
+            </div>
+
+            <div className="space-y-2">
+              <Label>Category</Label>
+              <Select value={quickProduct.category} onValueChange={(category) => updateQuickProduct("category", category)}>
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {POS_PRODUCT_CATEGORIES.map((category) => (
+                    <SelectItem key={category.id} value={category.id}>
+                      {category.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="quickPrice">Price (IDR)</Label>
+              <Input
+                id="quickPrice"
+                inputMode="numeric"
+                value={quickProduct.price}
+                onChange={(event) => updateQuickProduct("price", event.target.value)}
+                placeholder="250000"
+              />
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="quickQuantity">Quantity</Label>
+              <Input
+                id="quickQuantity"
+                inputMode="numeric"
+                value={quickProduct.quantity}
+                onChange={(event) => updateQuickProduct("quantity", event.target.value)}
+              />
+            </div>
+
+            <div className="flex items-center justify-between rounded-md border border-border p-3">
+              <div>
+                <Label htmlFor="quickCafeOnly">Cafe only</Label>
+                <p className="text-xs text-muted-foreground">F&B and cashier-only items.</p>
+              </div>
+              <Switch
+                id="quickCafeOnly"
+                checked={quickProduct.cafeOnly}
+                onCheckedChange={(checked) => updateQuickProduct("cafeOnly", checked)}
+              />
+            </div>
+
+            <div className="flex items-center justify-between rounded-md border border-border p-3">
+              <div>
+                <Label htmlFor="quickShowInShop">Show on wares page</Label>
+                <p className="text-xs text-muted-foreground">Keep off for cafe-only products.</p>
+              </div>
+              <Switch
+                id="quickShowInShop"
+                checked={quickProduct.showInShop && !quickProduct.cafeOnly}
+                disabled={quickProduct.cafeOnly}
+                onCheckedChange={(checked) => updateQuickProduct("showInShop", checked)}
+              />
+            </div>
+
+            <div className="rounded-md border border-border bg-muted/40 p-3 sm:col-span-2">
+              <div className="flex items-start gap-3">
+                <ShoppingBag className="mt-0.5 h-4 w-4 text-muted-foreground" />
+                <p className="text-sm text-muted-foreground">
+                  New products are immediately available on this POS. Use the Products page later for images, descriptions, featured placement, or archiving.
+                </p>
+              </div>
+            </div>
+          </div>
+
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setIsQuickAddOpen(false)}>
+              Cancel
+            </Button>
+            <Button onClick={handleQuickAddProduct} disabled={savingProduct}>
+              {savingProduct && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+              Add to POS
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }
