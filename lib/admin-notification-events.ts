@@ -1,6 +1,7 @@
 import { prisma } from "@/lib/prisma"
 import { formatPrice, isCupCategory } from "@/lib/pos-catalog"
 import { workshops } from "@/lib/classes-data"
+import { sendPushForAdminNotification } from "@/lib/push-notifications"
 
 type SaleItemSnapshot = {
   nameSnapshot: string
@@ -29,13 +30,18 @@ type ClassBookingSnapshot = {
   paymentSessionId: string | null
 }
 
-async function createAdminNotification(input: {
+export async function createAdminNotification(input: {
   type: string
   title: string
   message: string
   path?: string
   dedupeKey?: string
   metadata?: Record<string, unknown>
+  city?: string | null
+  region?: string | null
+  country?: string | null
+  ip?: string | null
+  userAgent?: string | null
 }) {
   try {
     if (input.dedupeKey) {
@@ -48,14 +54,27 @@ async function createAdminNotification(input: {
       if (existing) return
     }
 
-    await prisma.adminNotification.create({
+    const notification = await prisma.adminNotification.create({
       data: {
         type: input.type,
         title: input.title,
         message: input.message,
         path: input.path || null,
+        city: input.city || null,
+        region: input.region || null,
+        country: input.country || null,
+        ip: input.ip || null,
+        userAgent: input.userAgent || null,
         metadata: input.metadata ? JSON.stringify({ ...input.metadata, dedupeKey: input.dedupeKey || null }) : null,
       },
+    })
+
+    await sendPushForAdminNotification({
+      type: notification.type,
+      title: notification.title,
+      message: notification.message,
+      path: notification.path,
+      notificationId: notification.id,
     })
   } catch (error) {
     console.error("Could not create admin notification", {

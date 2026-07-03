@@ -91,11 +91,11 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Quantity must be zero or higher" }, { status: 400 })
   }
 
-  if (!isDraft && (!Number.isInteger(price) || price <= 0)) {
+  if (!isDraft && (price === null || !Number.isInteger(price) || price <= 0)) {
     return NextResponse.json({ error: "Price is required before a product can be available" }, { status: 400 })
   }
 
-  if (!isDraft && (!Number.isInteger(quantity) || quantity < 1)) {
+  if (!isDraft && (quantity === null || !Number.isInteger(quantity) || quantity < 1)) {
     return NextResponse.json({ error: "Quantity must be at least 1 before a product can be available" }, { status: 400 })
   }
 

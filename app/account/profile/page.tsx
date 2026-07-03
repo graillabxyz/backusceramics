@@ -4,6 +4,7 @@ import { useAuth } from "@/lib/auth-context"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
+import { PushNotificationSettings } from "@/components/push-notification-settings"
 
 export default function ProfilePage() {
   const { user, logout } = useAuth()
@@ -50,6 +51,8 @@ export default function ProfilePage() {
           </div>
         </CardContent>
       </Card>
+
+      <PushNotificationSettings />
     </div>
   )
 }

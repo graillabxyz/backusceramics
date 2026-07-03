@@ -31,6 +31,8 @@ model User {
   posSales       PosSale[] @relation("PosSaleOperator")
   analyticsEvents AnalyticsEvent[]
   residencyApps ResidencyApplication[]
+  notificationPreference UserNotificationPreference?
+  pushSubscriptions PushSubscription[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -295,6 +297,38 @@ model AdminNotification {
   @@index([type])
   @@index([readAt])
   @@index([createdAt])
+}
+
+model UserNotificationPreference {
+  id        String @id @default(cuid())
+  userId    String @unique
+  user      User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  browserPushEnabled       Boolean @default(false)
+  classBookingNotifications Boolean @default(true)
+  salesNotifications        Boolean @default(true)
+  websiteVisitNotifications Boolean @default(false)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model PushSubscription {
+  id        String @id @default(cuid())
+  userId    String
+  user      User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  endpoint String @unique
+  p256dh   String
+  auth     String
+  userAgent String?
+  enabled  Boolean @default(true)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([userId])
+  @@index([enabled])
 }
 
 model AnalyticsEvent {

@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server"
-import { prisma } from "@/lib/prisma"
+import { createAdminNotification } from "@/lib/admin-notification-events"
 
 export const runtime = "nodejs"
 
@@ -43,22 +43,20 @@ export async function POST(req: NextRequest) {
   const location = locationMessage({ city, region, country })
 
   try {
-    await prisma.adminNotification.create({
-      data: {
-        type: "WEBSITE_VISIT",
-        title: "Website visitor",
-        message: `Someone visited ${path} from ${location}.`,
-        path,
-        city,
-        region,
-        country,
-        ip,
-        userAgent,
-        metadata: JSON.stringify({
-          referrer: data.referrer || null,
-          pageTitle: data.title || null,
-          timezone: data.timezone || null,
-        }),
+    await createAdminNotification({
+      type: "WEBSITE_VISIT",
+      title: "Website visitor",
+      message: `Someone visited ${path} from ${location}.`,
+      path,
+      city,
+      region,
+      country,
+      ip,
+      userAgent,
+      metadata: {
+        referrer: data.referrer || null,
+        pageTitle: data.title || null,
+        timezone: data.timezone || null,
       },
     })
   } catch (error) {
