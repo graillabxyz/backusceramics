@@ -67,7 +67,7 @@ if (!deployResult.output.includes("P3005")) {
 
 console.log("Production database has existing non-Prisma objects; bootstrapping Prisma schema with db push.")
 
-const pushResult = runPrisma(["db", "push", "--skip-generate"])
+const pushResult = runPrisma(["db", "push"])
 
 if (pushResult.status !== 0) {
   process.exit(pushResult.status)
