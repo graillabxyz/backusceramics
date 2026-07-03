@@ -1,6 +1,8 @@
 import { spawnSync } from "node:child_process"
 
 const connectionString =
+  process.env.DIRECT_URL ||
+  process.env.POSTGRES_URL_NON_POOLING ||
   process.env.DATABASE_URL ||
   process.env.POSTGRES_URL ||
   process.env.POSTGRES_PRISMA_URL
@@ -19,6 +21,10 @@ if (!hasConnectionString) {
 }
 
 const result = spawnSync("npx", ["prisma", "migrate", "deploy"], {
+  env: {
+    ...process.env,
+    DATABASE_URL: connectionString,
+  },
   stdio: "inherit",
   shell: process.platform === "win32",
 })
