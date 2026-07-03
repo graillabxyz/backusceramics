@@ -1,5 +1,6 @@
 export const POS_PRODUCT_CATEGORIES = [
   { id: "F_AND_B", label: "Cafe", publicListing: false },
+  { id: "CLASSES", label: "Classes", publicListing: false },
   { id: "CUPS", label: "Cups", publicListing: true },
   { id: "VASES", label: "Vases", publicListing: true },
   { id: "LAMPS", label: "Lamps", publicListing: true },
@@ -19,6 +20,11 @@ const categoryAliases: Record<string, PosProductCategory> = {
   "FOOD AND BEVERAGE": "F_AND_B",
   "F&B": "F_AND_B",
   "CAFE": "F_AND_B",
+  "CLASS": "CLASSES",
+  "WORKSHOP": "CLASSES",
+  "WORKSHOPS": "CLASSES",
+  "RESIDENCY": "CLASSES",
+  "RESIDENCIES": "CLASSES",
 }
 
 export const POS_PRODUCT_STATUSES = ["AVAILABLE", "DRAFT", "SOLD", "ARCHIVED"] as const

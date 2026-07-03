@@ -29,11 +29,13 @@ import {
 } from "@/lib/pos-catalog"
 import { cn } from "@/lib/utils"
 import {
+  CheckCircle2,
   Eye,
   ImagePlus,
   Loader2,
   Pencil,
   Plus,
+  RefreshCw,
   Search,
   ShoppingBag,
   Trash2,
@@ -105,8 +107,10 @@ export default function AdminProductsPage() {
   const [products, setProducts] = useState<PosProduct[]>([])
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
+  const [syncingDefaults, setSyncingDefaults] = useState(false)
   const [uploading, setUploading] = useState(false)
   const [error, setError] = useState("")
+  const [success, setSuccess] = useState("")
   const [searchTerm, setSearchTerm] = useState("")
   const [filterCategory, setFilterCategory] = useState("ALL")
   const [editingProduct, setEditingProduct] = useState<PosProduct | null>(null)
@@ -154,6 +158,7 @@ export default function AdminProductsPage() {
     setEditingProduct(null)
     setFormData(emptyForm)
     setError("")
+    setSuccess("")
     setIsDialogOpen(true)
   }
 
@@ -174,7 +179,33 @@ export default function AdminProductsPage() {
       featured: product.featured,
     })
     setError("")
+    setSuccess("")
     setIsDialogOpen(true)
+  }
+
+  const handleSyncDefaults = async () => {
+    setSyncingDefaults(true)
+    setError("")
+    setSuccess("")
+
+    try {
+      const res = await fetch("/api/pos/products/defaults", { method: "POST" })
+      const data = await res.json()
+      if (!res.ok) {
+        setError(data.error || "Could not sync default products")
+        return
+      }
+
+      await fetchProducts()
+      setSuccess(
+        `Synced ${data.total} default items: ${data.created} created, ${data.updated} class items updated, ${data.skipped} cafe items already existed. Cafe items are drafts until prices are set.`
+      )
+    } catch (syncError) {
+      console.error("Default POS product sync failed", syncError)
+      setError("Could not sync default products.")
+    } finally {
+      setSyncingDefaults(false)
+    }
   }
 
   const handleFormChange = <K extends keyof ProductFormState>(key: K, value: ProductFormState[K]) => {
@@ -223,6 +254,7 @@ export default function AdminProductsPage() {
   const handleSave = async () => {
     setSaving(true)
     setError("")
+    setSuccess("")
 
     const payload = {
       ...formData,
@@ -252,6 +284,7 @@ export default function AdminProductsPage() {
         if (editingProduct) return current.map((product) => product.id === data.id ? data : product)
         return [data, ...current]
       })
+      setSuccess(`${data.name} was saved.`)
       setIsDialogOpen(false)
     } catch (saveError) {
       console.error("Product save failed", saveError)
@@ -269,6 +302,7 @@ export default function AdminProductsPage() {
       const data = await res.json()
       if (!res.ok) throw new Error(data.error || "Archive failed")
       setProducts((current) => current.map((item) => item.id === product.id ? data : item))
+      setSuccess(`${product.name} was archived.`)
     } catch (archiveError) {
       console.error("Product archive failed", archiveError)
       setError("Could not archive product.")
@@ -285,6 +319,16 @@ export default function AdminProductsPage() {
           </p>
         </div>
         <div className="flex flex-col gap-3 sm:flex-row">
+          <Button
+            type="button"
+            variant="secondary"
+            className="w-full sm:w-auto"
+            onClick={handleSyncDefaults}
+            disabled={syncingDefaults || loading}
+          >
+            {syncingDefaults ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <RefreshCw className="mr-2 h-4 w-4" />}
+            Sync defaults
+          </Button>
           <Button asChild variant="outline" className="w-full sm:w-auto">
             <Link href="/admin/wares">
               <Eye className="mr-2 h-4 w-4" />
@@ -318,6 +362,13 @@ export default function AdminProductsPage() {
       {error && (
         <div className="rounded-md border border-destructive/30 bg-destructive/10 px-4 py-3 text-sm text-destructive">
           {error}
+        </div>
+      )}
+
+      {success && (
+        <div className="flex items-start gap-2 rounded-md border border-primary/30 bg-primary/10 px-4 py-3 text-sm text-primary">
+          <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0" />
+          <span>{success}</span>
         </div>
       )}
 
