@@ -67,27 +67,36 @@ export async function POST(req: NextRequest) {
   const data = await req.json()
   const name = String(data.name || "").trim()
   const category = normalizeProductCategory(data.category)
-  const price = Number(data.price)
-  const quantity = Number(data.quantity || 1)
-  const status = data.status || "AVAILABLE"
+  const rawStatus = data.status || "DRAFT"
+  if (!POS_PRODUCT_STATUSES.includes(rawStatus)) {
+    return NextResponse.json({ error: "Invalid product status" }, { status: 400 })
+  }
+  const status = rawStatus
+  const isDraft = status === "DRAFT"
+  const price = data.price === "" || data.price === null || data.price === undefined ? null : Number(data.price)
+  const quantity = data.quantity === "" || data.quantity === null || data.quantity === undefined ? null : Number(data.quantity)
   const cafeOnly = Boolean(data.cafeOnly)
-  const showInShop = cafeOnly ? false : Boolean(data.showInShop)
+  const showInShop = cafeOnly || isDraft ? false : Boolean(data.showInShop)
   const volumeMl = parseVolumeMl(data.volumeMl, category)
 
   if (!name) {
     return NextResponse.json({ error: "Product name is required" }, { status: 400 })
   }
 
-  if (!Number.isInteger(price) || price < 0) {
+  if (price !== null && (!Number.isInteger(price) || price < 0)) {
     return NextResponse.json({ error: "Price must be a whole number in IDR" }, { status: 400 })
   }
 
-  if (!Number.isInteger(quantity) || quantity < 0) {
+  if (quantity !== null && (!Number.isInteger(quantity) || quantity < 0)) {
     return NextResponse.json({ error: "Quantity must be zero or higher" }, { status: 400 })
   }
 
-  if (!POS_PRODUCT_STATUSES.includes(status)) {
-    return NextResponse.json({ error: "Invalid product status" }, { status: 400 })
+  if (!isDraft && (!Number.isInteger(price) || price <= 0)) {
+    return NextResponse.json({ error: "Price is required before a product can be available" }, { status: 400 })
+  }
+
+  if (!isDraft && (!Number.isInteger(quantity) || quantity < 1)) {
+    return NextResponse.json({ error: "Quantity must be at least 1 before a product can be available" }, { status: 400 })
   }
 
   if (volumeMl.error) {
@@ -103,13 +112,13 @@ export async function POST(req: NextRequest) {
       description: data.description ? String(data.description).trim() : null,
       volumeMl: volumeMl.value,
       imageUrls: serializeProductImageUrls(data.imageUrls),
-      price,
+      price: price ?? 0,
       category,
-      quantity,
+      quantity: quantity ?? 0,
       status,
       cafeOnly,
       showInShop,
-      featured: Boolean(data.featured),
+      featured: isDraft ? false : Boolean(data.featured),
     },
   })
 

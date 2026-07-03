@@ -35,17 +35,18 @@ export async function PATCH(req: NextRequest, { params }: ProductRouteContext) {
   const data = await req.json()
   const updateData: Record<string, unknown> = {}
   const nextCategory = "category" in data ? normalizeProductCategory(data.category) : undefined
-  let currentCategory: string | undefined
+  const currentProduct = await prisma.posProduct.findUnique({
+    where: { id },
+    select: {
+      category: true,
+      price: true,
+      quantity: true,
+      status: true,
+    },
+  })
 
-  if ("volumeMl" in data && !nextCategory) {
-    const currentProduct = await prisma.posProduct.findUnique({
-      where: { id },
-      select: { category: true },
-    })
-    if (!currentProduct) {
-      return NextResponse.json({ error: "Product not found" }, { status: 404 })
-    }
-    currentCategory = currentProduct.category
+  if (!currentProduct) {
+    return NextResponse.json({ error: "Product not found" }, { status: 404 })
   }
 
   if ("name" in data) {
@@ -73,7 +74,7 @@ export async function PATCH(req: NextRequest, { params }: ProductRouteContext) {
   }
 
   if ("volumeMl" in data || (nextCategory && !isCupCategory(nextCategory))) {
-    const volumeMl = parseVolumeMl(data.volumeMl, nextCategory || currentCategory || "CUPS")
+    const volumeMl = parseVolumeMl(data.volumeMl, nextCategory || currentProduct.category)
     if (volumeMl.error) {
       return NextResponse.json({ error: volumeMl.error }, { status: 400 })
     }
@@ -103,6 +104,10 @@ export async function PATCH(req: NextRequest, { params }: ProductRouteContext) {
       return NextResponse.json({ error: "Invalid product status" }, { status: 400 })
     }
     updateData.status = status
+    if (status === "DRAFT") {
+      updateData.showInShop = false
+      updateData.featured = false
+    }
   }
 
   if ("cafeOnly" in data) {
@@ -117,6 +122,25 @@ export async function PATCH(req: NextRequest, { params }: ProductRouteContext) {
 
   if ("featured" in data) {
     updateData.featured = Boolean(data.featured)
+  }
+
+  const nextStatus = String(updateData.status || currentProduct.status)
+  const nextPrice = typeof updateData.price === "number" ? updateData.price : currentProduct.price
+  const nextQuantity = typeof updateData.quantity === "number" ? updateData.quantity : currentProduct.quantity
+
+  if (nextStatus === "DRAFT") {
+    updateData.showInShop = false
+    updateData.featured = false
+  }
+
+  if (nextStatus === "AVAILABLE") {
+    if (!Number.isInteger(nextPrice) || nextPrice <= 0) {
+      return NextResponse.json({ error: "Price is required before a product can be available" }, { status: 400 })
+    }
+
+    if (!Number.isInteger(nextQuantity) || nextQuantity < 1) {
+      return NextResponse.json({ error: "Quantity must be at least 1 before a product can be available" }, { status: 400 })
+    }
   }
 
   try {

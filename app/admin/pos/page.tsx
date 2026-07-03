@@ -4,6 +4,7 @@ import { useEffect, useMemo, useRef, useState } from "react"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
+import { AdminNotifications } from "@/components/admin-notifications"
 import {
   Dialog,
   DialogContent,
@@ -25,6 +26,7 @@ import {
   parseProductImageUrls,
   POS_PAYMENT_METHODS,
   POS_PRODUCT_CATEGORIES,
+  POS_PRODUCT_STATUSES,
 } from "@/lib/pos-catalog"
 import { cn } from "@/lib/utils"
 import {
@@ -75,6 +77,7 @@ interface QuickProductForm {
   volumeMl: string
   price: string
   quantity: string
+  status: string
   cafeOnly: boolean
   showInShop: boolean
 }
@@ -86,6 +89,7 @@ const quickProductDefaults: QuickProductForm = {
   volumeMl: "",
   price: "",
   quantity: "1",
+  status: "AVAILABLE",
   cafeOnly: false,
   showInShop: true,
 }
@@ -142,6 +146,7 @@ export default function AdminPosPage() {
     [cart]
   )
   const quickProductIsCup = isCupCategory(quickProduct.category)
+  const quickProductIsDraft = quickProduct.status === "DRAFT"
 
   useEffect(() => {
     fetchProducts()
@@ -206,6 +211,10 @@ export default function AdminPosPage() {
         return { ...current, category }
       }
 
+      if (key === "status" && value === "DRAFT") {
+        return { ...current, status: "DRAFT", showInShop: false }
+      }
+
       return { ...current, [key]: value }
     })
   }
@@ -217,13 +226,13 @@ export default function AdminPosPage() {
 
     const payload = {
       ...quickProduct,
-      price: Number(quickProduct.price),
-      quantity: Number(quickProduct.quantity || 1),
+      price: quickProduct.price.trim() ? Number(quickProduct.price) : null,
+      quantity: quickProduct.quantity.trim() ? Number(quickProduct.quantity) : null,
       volumeMl: isCupCategory(quickProduct.category) && quickProduct.volumeMl.trim()
         ? Number(quickProduct.volumeMl)
         : null,
-      status: "AVAILABLE",
-      showInShop: quickProduct.cafeOnly ? false : quickProduct.showInShop,
+      status: quickProduct.status,
+      showInShop: quickProduct.cafeOnly || quickProductIsDraft ? false : quickProduct.showInShop,
     }
 
     try {
@@ -242,7 +251,7 @@ export default function AdminPosPage() {
       setProducts((current) => [data, ...current])
       setActiveCategory(normalizeProductCategory(data.category))
       setSearchTerm("")
-      setSuccess(`${data.name} was added to POS inventory.`)
+      setSuccess(data.status === "DRAFT" ? `${data.name} was saved as a draft.` : `${data.name} was added to POS inventory.`)
       setIsQuickAddOpen(false)
       setQuickProduct(quickProductDefaults)
     } catch (productError) {
@@ -413,6 +422,9 @@ export default function AdminPosPage() {
           </p>
         </div>
         <div className="flex flex-col gap-3 sm:flex-row sm:items-stretch">
+          <div className="flex items-center justify-end sm:hidden">
+            <AdminNotifications enabled />
+          </div>
           <div className="grid grid-cols-2 gap-3 sm:w-80">
             <div className="rounded-md border border-border bg-background p-3">
               <p className="text-xs text-muted-foreground">Available products</p>
@@ -422,6 +434,9 @@ export default function AdminPosPage() {
               <p className="text-xs text-muted-foreground">Cart</p>
               <p className="text-2xl font-semibold text-foreground">{cartCount}</p>
             </div>
+          </div>
+          <div className="hidden items-center sm:flex">
+            <AdminNotifications enabled />
           </div>
           <Button
             type="button"
@@ -741,6 +756,25 @@ export default function AdminPosPage() {
               </Select>
             </div>
 
+            <div className="space-y-2">
+              <Label>Status</Label>
+              <Select value={quickProduct.status} onValueChange={(status) => updateQuickProduct("status", status)}>
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {POS_PRODUCT_STATUSES.map((status) => (
+                    <SelectItem key={status} value={status}>
+                      {status.toLowerCase()}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              {quickProductIsDraft && (
+                <p className="text-xs text-muted-foreground">Drafts can be saved with only a name and finished later.</p>
+              )}
+            </div>
+
             {quickProductIsCup && (
               <div className="space-y-2">
                 <Label htmlFor="quickVolumeMl">Volume (ml)</Label>
@@ -755,7 +789,7 @@ export default function AdminPosPage() {
             )}
 
             <div className="space-y-2">
-              <Label htmlFor="quickPrice">Price (IDR)</Label>
+              <Label htmlFor="quickPrice">Price (IDR){quickProductIsDraft && <span className="text-muted-foreground"> optional</span>}</Label>
               <Input
                 id="quickPrice"
                 inputMode="numeric"
@@ -766,12 +800,13 @@ export default function AdminPosPage() {
             </div>
 
             <div className="space-y-2">
-              <Label htmlFor="quickQuantity">Quantity</Label>
+              <Label htmlFor="quickQuantity">Quantity{quickProductIsDraft && <span className="text-muted-foreground"> optional</span>}</Label>
               <Input
                 id="quickQuantity"
                 inputMode="numeric"
                 value={quickProduct.quantity}
                 onChange={(event) => updateQuickProduct("quantity", event.target.value)}
+                placeholder={quickProductIsDraft ? "Add later" : "1"}
               />
             </div>
 
@@ -794,8 +829,8 @@ export default function AdminPosPage() {
               </div>
               <Switch
                 id="quickShowInShop"
-                checked={quickProduct.showInShop && !quickProduct.cafeOnly}
-                disabled={quickProduct.cafeOnly}
+                checked={quickProduct.showInShop && !quickProduct.cafeOnly && !quickProductIsDraft}
+                disabled={quickProduct.cafeOnly || quickProductIsDraft}
                 onCheckedChange={(checked) => updateQuickProduct("showInShop", checked)}
               />
             </div>
@@ -804,7 +839,7 @@ export default function AdminPosPage() {
               <div className="flex items-start gap-3">
                 <ShoppingBag className="mt-0.5 h-4 w-4 text-muted-foreground" />
                 <p className="text-sm text-muted-foreground">
-                  New products are immediately available on this POS. Use the Products page later for images, descriptions, featured placement, or archiving.
+                  Available products show on this POS immediately. Drafts stay hidden until they are finished from Products.
                 </p>
               </div>
             </div>
@@ -816,7 +851,7 @@ export default function AdminPosPage() {
             </Button>
             <Button onClick={handleQuickAddProduct} disabled={savingProduct}>
               {savingProduct && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-              Add to POS
+              {quickProductIsDraft ? "Save draft" : "Add to POS"}
             </Button>
           </DialogFooter>
         </DialogContent>

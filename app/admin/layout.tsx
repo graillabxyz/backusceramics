@@ -5,7 +5,7 @@ import Link from "next/link"
 import { usePathname } from "next/navigation"
 import { cn } from "@/lib/utils"
 import { useAuth } from "@/lib/auth-context"
-import { canAccessAdmin, canUsePos, isFullAdminRole, roleLabels } from "@/lib/permissions"
+import { canAccessAdmin, canUsePos, canViewAnalytics, isFullAdminRole, roleLabels } from "@/lib/permissions"
 import { 
   LayoutDashboard, 
   GraduationCap, 
@@ -36,7 +36,7 @@ const navItems = [
   { href: "/admin/products", label: "Products", icon: ShoppingBag, access: "admin" },
   { href: "/admin/wares", label: "Wares Preview", icon: Eye, access: "admin" },
   { href: "/admin/users", label: "Users", icon: Users, access: "admin" },
-  { href: "/admin/analytics", label: "Analytics", icon: BarChart3, access: "admin" },
+  { href: "/admin/analytics", label: "Analytics", icon: BarChart3, access: "analytics" },
   { href: "/admin/settings", label: "Settings", icon: Settings, access: "admin" },
 ]
 
@@ -68,6 +68,7 @@ export default function AdminLayout({
 
   const visibleNavItems = navItems.filter((item) => {
     if (item.access === "pos") return canUsePos(user?.role)
+    if (item.access === "analytics") return canViewAnalytics(user?.role)
     return isFullAdminRole(user?.role)
   })
   const displayName = user?.name || user?.email?.split("@")[0] || "Admin"

@@ -5,9 +5,10 @@ import { Card, CardContent, CardDescription, CardTitle } from "@/components/ui/c
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { AlertCircle, ArrowDown, ArrowUp, ArrowUpDown, Loader2, Shield, Users as UsersIcon } from "lucide-react"
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
+import { AlertCircle, ArrowDown, ArrowUp, ArrowUpDown, HelpCircle, Loader2, Shield, Users as UsersIcon } from "lucide-react"
 import { useAuth } from "@/lib/auth-context"
-import { appRoles, canManageAdmins, roleLabels, type AppRole } from "@/lib/permissions"
+import { appRoles, canManageAdmins, roleAccessDescriptions, roleLabels, type AppRole } from "@/lib/permissions"
 
 interface UserMetrics {
   pageViews: number
@@ -139,6 +140,26 @@ function formatNumber(value: number) {
 
 function formatCurrency(value: number) {
   return rupiahFormatter.format(value)
+}
+
+function RoleAccessTooltip({ role }: { role: AppRole }) {
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <span
+          className="inline-flex h-6 w-6 items-center justify-center rounded-full text-muted-foreground hover:bg-muted hover:text-foreground"
+          aria-label={`${roleLabels[role]} access details`}
+          onPointerDown={(event) => event.stopPropagation()}
+          onClick={(event) => event.stopPropagation()}
+        >
+          <HelpCircle className="h-3.5 w-3.5" />
+        </span>
+      </TooltipTrigger>
+      <TooltipContent side="right" align="center" className="max-w-72 text-pretty leading-relaxed">
+        {roleAccessDescriptions[role]}
+      </TooltipContent>
+    </Tooltip>
+  )
 }
 
 function purchaseCount(user: UserData) {
@@ -480,22 +501,28 @@ export default function AdminUsersPage() {
                           </div>
                         </td>
                         <td className="px-4 py-4 align-middle">
-                          <Select
-                            value={user.role}
-                            onValueChange={(val) => updateRole(user.id, val as AppRole)}
-                            disabled={!canEditRoles || user.hasLocalUser === false}
-                          >
-                            <SelectTrigger className="h-9 w-40 bg-background">
-                              <SelectValue />
-                            </SelectTrigger>
-                            <SelectContent>
-                              {appRoles.map((role) => (
-                                <SelectItem key={role} value={role}>
-                                  {roleLabels[role]}
-                                </SelectItem>
-                              ))}
-                            </SelectContent>
-                          </Select>
+                          <div className="flex items-center gap-2">
+                            <Select
+                              value={user.role}
+                              onValueChange={(val) => updateRole(user.id, val as AppRole)}
+                              disabled={!canEditRoles || user.hasLocalUser === false}
+                            >
+                              <SelectTrigger className="h-9 w-40 bg-background">
+                                <SelectValue />
+                              </SelectTrigger>
+                              <SelectContent>
+                                {appRoles.map((role) => (
+                                  <SelectItem key={role} value={role}>
+                                    <span className="flex w-full items-center justify-between gap-3">
+                                      <span>{roleLabels[role]}</span>
+                                      <RoleAccessTooltip role={role} />
+                                    </span>
+                                  </SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                            <RoleAccessTooltip role={(appRoles.includes(user.role as AppRole) ? user.role : "USER") as AppRole} />
+                          </div>
                           {user.hasLocalUser === false && (
                             <p className="mt-1 text-xs text-muted-foreground">Sync needed</p>
                           )}

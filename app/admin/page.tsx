@@ -5,7 +5,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { GraduationCap, ShoppingBag, ClipboardList, Users, Calendar, Loader2, BarChart3, Store } from "lucide-react"
 import Link from "next/link"
 import { useAuth } from "@/lib/auth-context"
-import { canManageAdmins, canUsePos, isFullAdminRole } from "@/lib/permissions"
+import { canManageAdmins, canUsePos, canViewAnalytics, isFullAdminRole } from "@/lib/permissions"
 
 interface DashboardStats {
   totalOrders: number
@@ -55,6 +55,7 @@ export default function AdminDashboard() {
   const canOpenAdminTools = isFullAdminRole(user?.role)
   const canOpenPos = canUsePos(user?.role)
   const canOpenUserRoles = canManageAdmins(user?.role)
+  const canOpenAnalytics = canViewAnalytics(user?.role)
 
   return (
     <div className="space-y-8">
@@ -174,20 +175,23 @@ export default function AdminDashboard() {
               </Card>
             </Link>
 
-            <Link href="/admin/analytics">
-              <Card className="hover:shadow-md transition-shadow cursor-pointer h-full">
-                <CardHeader>
-                  <div className="w-12 h-12 rounded-full bg-primary/10 flex items-center justify-center mb-2">
-                    <BarChart3 className="h-6 w-6 text-primary" />
-                  </div>
-                  <CardTitle className="font-heading font-bold text-xl">Analytics</CardTitle>
-                  <CardDescription>
-                    View trends, status breakdowns, and activity metrics
-                  </CardDescription>
-                </CardHeader>
-              </Card>
-            </Link>
           </>
+        )}
+
+        {canOpenAnalytics && (
+          <Link href="/admin/analytics">
+            <Card className="hover:shadow-md transition-shadow cursor-pointer h-full">
+              <CardHeader>
+                <div className="w-12 h-12 rounded-full bg-primary/10 flex items-center justify-center mb-2">
+                  <BarChart3 className="h-6 w-6 text-primary" />
+                </div>
+                <CardTitle className="font-heading font-bold text-xl">Analytics</CardTitle>
+                <CardDescription>
+                  View trends, status breakdowns, and activity metrics
+                </CardDescription>
+              </CardHeader>
+            </Card>
+          </Link>
         )}
 
         {canOpenPos && (

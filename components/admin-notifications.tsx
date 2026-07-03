@@ -1,12 +1,14 @@
 "use client"
 
 import { useEffect, useState } from "react"
-import { Bell, MapPin } from "lucide-react"
+import Link from "next/link"
+import { Bell, CalendarCheck, MapPin, ShoppingBag, UserRound } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { cn } from "@/lib/utils"
 
 interface AdminNotification {
   id: string
+  type: string
   title: string
   message: string
   path?: string | null
@@ -30,6 +32,20 @@ function timeAgo(value: string) {
 
 function place(notification: AdminNotification) {
   return [notification.city, notification.region, notification.country].filter(Boolean).join(", ") || "Unknown location"
+}
+
+function notificationIcon(type: string) {
+  if (type === "CUP_SOLD") return ShoppingBag
+  if (type === "CLASS_BOOKED") return CalendarCheck
+  if (type === "WEBSITE_VISIT") return MapPin
+  return UserRound
+}
+
+function notificationContext(notification: AdminNotification) {
+  if (notification.type === "WEBSITE_VISIT") return place(notification)
+  if (notification.path?.includes("/pos")) return "Point of sale"
+  if (notification.path?.includes("/bookings")) return "Class bookings"
+  return "Admin activity"
 }
 
 export function AdminNotifications({ enabled }: { enabled: boolean }) {
@@ -85,7 +101,7 @@ export function AdminNotifications({ enabled }: { enabled: boolean }) {
           <div className="flex items-center justify-between gap-3 border-b border-border px-4 py-3">
             <div>
               <p className="text-sm font-semibold text-foreground">Notifications</p>
-              <p className="text-xs text-muted-foreground">Recent website visits</p>
+              <p className="text-xs text-muted-foreground">Recent admin and POS activity</p>
             </div>
             <Button variant="ghost" size="sm" onClick={markAllRead} disabled={unreadCount === 0}>
               Mark read
@@ -94,27 +110,46 @@ export function AdminNotifications({ enabled }: { enabled: boolean }) {
 
           <div className="max-h-[420px] overflow-y-auto">
             {notifications.length === 0 ? (
-              <p className="px-4 py-8 text-center text-sm text-muted-foreground">No visit notifications yet.</p>
+              <p className="px-4 py-8 text-center text-sm text-muted-foreground">No notifications yet.</p>
             ) : (
-              notifications.map((notification) => (
-                <div
-                  key={notification.id}
-                  className={cn(
-                    "border-b border-border px-4 py-3 last:border-b-0",
-                    !notification.readAt && "bg-primary/5"
-                  )}
-                >
-                  <div className="flex items-start justify-between gap-3">
-                    <p className="text-sm font-semibold text-foreground">{notification.title}</p>
-                    <span className="shrink-0 text-xs text-muted-foreground">{timeAgo(notification.createdAt)}</span>
+              notifications.map((notification) => {
+                const Icon = notificationIcon(notification.type)
+
+                return (
+                  <div
+                    key={notification.id}
+                    className={cn(
+                      "border-b border-border px-4 py-3 last:border-b-0",
+                      !notification.readAt && "bg-primary/5"
+                    )}
+                  >
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="flex min-w-0 items-start gap-2.5">
+                        <span className="mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-muted text-muted-foreground">
+                          <Icon className="h-3.5 w-3.5" />
+                        </span>
+                        <div className="min-w-0">
+                          <p className="text-sm font-semibold text-foreground">{notification.title}</p>
+                          <p className="mt-1 text-sm leading-relaxed text-muted-foreground">{notification.message}</p>
+                        </div>
+                      </div>
+                      <span className="shrink-0 text-xs text-muted-foreground">{timeAgo(notification.createdAt)}</span>
+                    </div>
+                    <div className="mt-2 flex items-center justify-between gap-3 pl-9 text-xs text-muted-foreground">
+                      <span>{notificationContext(notification)}</span>
+                      {notification.path && (
+                        <Link
+                          href={notification.path}
+                          onClick={() => setOpen(false)}
+                          className="font-medium text-foreground underline-offset-4 hover:underline"
+                        >
+                          Open
+                        </Link>
+                      )}
+                    </div>
                   </div>
-                  <p className="mt-1 text-sm leading-relaxed text-muted-foreground">{notification.message}</p>
-                  <div className="mt-2 flex items-center gap-1.5 text-xs text-muted-foreground">
-                    <MapPin className="h-3 w-3" />
-                    {place(notification)}
-                  </div>
-                </div>
-              ))
+                )
+              })
             )}
           </div>
         </div>

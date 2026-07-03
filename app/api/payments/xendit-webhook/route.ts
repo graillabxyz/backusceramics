@@ -3,6 +3,7 @@ import { prisma } from "@/lib/prisma"
 import { getXenditCallbackToken } from "@/lib/xendit"
 import { sendPosReceiptEmail } from "@/lib/pos-receipts"
 import { recordAnalyticsEvent } from "@/lib/analytics-server"
+import { notifyClassBookingsConfirmed, notifyCupSalePaid } from "@/lib/admin-notification-events"
 
 export const runtime = "nodejs"
 
@@ -223,6 +224,8 @@ export async function POST(req: NextRequest) {
       },
     }, req)
 
+    await notifyCupSalePaid(updatedSale, "online POS payment")
+
     return NextResponse.json({ ok: true, status: posSaleStatus, posUpdated: 1 })
   }
 
@@ -270,6 +273,15 @@ export async function POST(req: NextRequest) {
       updated: result.count,
     },
   }, req)
+
+  if (bookingStatus === "CONFIRMED" && result.count > 0) {
+    const confirmedBookings = await prisma.classBooking.findMany({
+      where,
+      orderBy: { createdAt: "asc" },
+      take: 20,
+    })
+    await notifyClassBookingsConfirmed(confirmedBookings)
+  }
 
   return NextResponse.json({
     ok: true,

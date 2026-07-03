@@ -81,13 +81,13 @@ const emptyForm: ProductFormState = {
   sku: "",
   category: "CUPS",
   price: "",
-  quantity: "1",
-  status: "AVAILABLE",
+  quantity: "",
+  status: "DRAFT",
   description: "",
   volumeMl: "",
   imageUrls: "",
   cafeOnly: false,
-  showInShop: true,
+  showInShop: false,
   featured: false,
 }
 
@@ -101,6 +101,14 @@ function firstImage(product: PosProduct) {
 
 function cupVolumeLabel(product: PosProduct) {
   return isCupCategory(product.category) && product.volumeMl ? `${product.volumeMl} ml` : ""
+}
+
+function productPriceLabel(product: PosProduct) {
+  return product.status === "DRAFT" && product.price === 0 ? "No price yet" : formatPrice(product.price)
+}
+
+function productQuantityLabel(product: PosProduct) {
+  return product.status === "DRAFT" && product.quantity === 0 ? "No stock set" : `${product.quantity} in stock`
 }
 
 export default function AdminProductsPage() {
@@ -134,7 +142,12 @@ export default function AdminProductsPage() {
     () => products.filter((product) => product.showInShop && !product.cafeOnly && product.status === "AVAILABLE").length,
     [products]
   )
+  const draftCount = useMemo(
+    () => products.filter((product) => product.status === "DRAFT").length,
+    [products]
+  )
   const formIsCup = isCupCategory(formData.category)
+  const formIsDraft = formData.status === "DRAFT"
 
   useEffect(() => {
     fetchProducts()
@@ -213,6 +226,9 @@ export default function AdminProductsPage() {
       if (key === "cafeOnly" && value === true) {
         return { ...current, cafeOnly: true, showInShop: false }
       }
+      if (key === "status" && value === "DRAFT") {
+        return { ...current, status: "DRAFT", showInShop: false, featured: false }
+      }
       if (key === "category") {
         const category = String(value)
         if (!isCupCategory(category)) {
@@ -258,13 +274,14 @@ export default function AdminProductsPage() {
 
     const payload = {
       ...formData,
-      price: Number(formData.price),
-      quantity: Number(formData.quantity),
+      price: formData.price.trim() ? Number(formData.price) : null,
+      quantity: formData.quantity.trim() ? Number(formData.quantity) : null,
       volumeMl: isCupCategory(formData.category) && formData.volumeMl.trim()
         ? Number(formData.volumeMl)
         : null,
       imageUrls: parseProductImageUrls(formData.imageUrls),
-      showInShop: formData.cafeOnly ? false : formData.showInShop,
+      showInShop: formData.cafeOnly || formIsDraft ? false : formData.showInShop,
+      featured: formIsDraft ? false : formData.featured,
     }
 
     try {
@@ -342,7 +359,7 @@ export default function AdminProductsPage() {
         </div>
       </div>
 
-      <div className="grid gap-3 sm:grid-cols-3">
+      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
         <div className="rounded-md border border-border bg-background p-4">
           <p className="text-sm text-muted-foreground">Catalog items</p>
           <p className="mt-1 text-2xl font-semibold text-foreground">{products.length}</p>
@@ -350,6 +367,10 @@ export default function AdminProductsPage() {
         <div className="rounded-md border border-border bg-background p-4">
           <p className="text-sm text-muted-foreground">Visible on wares page</p>
           <p className="mt-1 text-2xl font-semibold text-foreground">{shopCount}</p>
+        </div>
+        <div className="rounded-md border border-border bg-background p-4">
+          <p className="text-sm text-muted-foreground">Drafts</p>
+          <p className="mt-1 text-2xl font-semibold text-foreground">{draftCount}</p>
         </div>
         <div className="rounded-md border border-border bg-background p-4">
           <p className="text-sm text-muted-foreground">Cafe-only</p>
@@ -467,9 +488,9 @@ export default function AdminProductsPage() {
                           </div>
 
                           <div className="mt-4 flex items-center justify-between gap-3">
-                            <div>
-                              <p className="font-semibold text-foreground">{formatPrice(product.price)}</p>
-                              <p className="text-xs text-muted-foreground">{product.quantity} in stock</p>
+                          <div>
+                              <p className="font-semibold text-foreground">{productPriceLabel(product)}</p>
+                              <p className="text-xs text-muted-foreground">{productQuantityLabel(product)}</p>
                             </div>
                             <div className="flex gap-2">
                               <Button variant="outline" size="icon" onClick={() => openEdit(product)}>
@@ -532,8 +553,8 @@ export default function AdminProductsPage() {
                           </div>
                         </TableCell>
                         <TableCell>{getProductCategoryLabel(product.category)}</TableCell>
-                        <TableCell>{product.quantity}</TableCell>
-                        <TableCell>{formatPrice(product.price)}</TableCell>
+                        <TableCell>{product.status === "DRAFT" && product.quantity === 0 ? "Not set" : product.quantity}</TableCell>
+                        <TableCell>{productPriceLabel(product)}</TableCell>
                         <TableCell>
                           <Badge
                             variant="secondary"
@@ -586,7 +607,7 @@ export default function AdminProductsPage() {
               {editingProduct ? "Edit product" : "Add product"}
             </DialogTitle>
             <DialogDescription>
-              Products marked for the wares page appear in the admin-only sales preview. Cafe-only items stay on the POS.
+              Drafts only need a name. Add price, stock, images, and sales channels when the piece is ready.
             </DialogDescription>
           </DialogHeader>
 
@@ -594,7 +615,9 @@ export default function AdminProductsPage() {
             <section className="rounded-md border border-border bg-muted/20 p-4">
               <div className="mb-4">
                 <h3 className="font-heading text-lg font-semibold text-foreground">Product details</h3>
-                <p className="text-sm text-muted-foreground">Name, category, pricing, and cup-specific capacity.</p>
+                <p className="text-sm text-muted-foreground">
+                  Name is required. Pricing and stock are required only before publishing as available.
+                </p>
               </div>
 
               <div className="grid gap-4 md:grid-cols-2">
@@ -635,7 +658,7 @@ export default function AdminProductsPage() {
                 </div>
 
                 <div className="space-y-2">
-                  <Label htmlFor="price">Price (IDR)</Label>
+                  <Label htmlFor="price">Price (IDR){formIsDraft && <span className="text-muted-foreground"> optional</span>}</Label>
                   <Input
                     id="price"
                     inputMode="numeric"
@@ -646,12 +669,13 @@ export default function AdminProductsPage() {
                 </div>
 
                 <div className="space-y-2">
-                  <Label htmlFor="quantity">Quantity</Label>
+                  <Label htmlFor="quantity">Quantity{formIsDraft && <span className="text-muted-foreground"> optional</span>}</Label>
                   <Input
                     id="quantity"
                     inputMode="numeric"
                     value={formData.quantity}
                     onChange={(event) => handleFormChange("quantity", event.target.value)}
+                    placeholder={formIsDraft ? "Add later" : "1"}
                   />
                 </div>
 
@@ -682,6 +706,9 @@ export default function AdminProductsPage() {
                       ))}
                     </SelectContent>
                   </Select>
+                  {formIsDraft && (
+                    <p className="text-xs text-muted-foreground">Draft products stay hidden from POS selling and the wares page.</p>
+                  )}
                 </div>
               </div>
             </section>
@@ -728,7 +755,9 @@ export default function AdminProductsPage() {
             <section className="rounded-md border border-border bg-muted/20 p-4">
               <div className="mb-4">
                 <h3 className="font-heading text-lg font-semibold text-foreground">Sales channels</h3>
-                <p className="text-sm text-muted-foreground">Choose where this product should appear.</p>
+                <p className="text-sm text-muted-foreground">
+                  Choose where this product should appear after it is marked available.
+                </p>
               </div>
 
               <div className="grid gap-3 md:grid-cols-2">
@@ -751,8 +780,8 @@ export default function AdminProductsPage() {
                   </div>
                   <Switch
                     id="showInShop"
-                    checked={formData.showInShop && !formData.cafeOnly}
-                    disabled={formData.cafeOnly}
+                    checked={formData.showInShop && !formData.cafeOnly && !formIsDraft}
+                    disabled={formData.cafeOnly || formIsDraft}
                     onCheckedChange={(checked) => handleFormChange("showInShop", checked)}
                   />
                 </div>
@@ -764,7 +793,8 @@ export default function AdminProductsPage() {
                   </div>
                   <Switch
                     id="featured"
-                    checked={formData.featured}
+                    checked={formData.featured && !formIsDraft}
+                    disabled={formIsDraft}
                     onCheckedChange={(checked) => handleFormChange("featured", checked)}
                   />
                 </div>
@@ -778,7 +808,7 @@ export default function AdminProductsPage() {
             </Button>
             <Button className="w-full sm:w-auto" onClick={handleSave} disabled={saving || uploading}>
               {saving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-              Save product
+              {formIsDraft ? "Save draft" : "Save product"}
             </Button>
           </DialogFooter>
         </DialogContent>

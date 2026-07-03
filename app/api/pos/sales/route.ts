@@ -5,6 +5,7 @@ import { canUsePos } from "@/lib/permissions"
 import { POS_PAYMENT_METHODS } from "@/lib/pos-catalog"
 import { sendPosReceiptEmail } from "@/lib/pos-receipts"
 import { recordAnalyticsEvent } from "@/lib/analytics-server"
+import { notifyCupSalePaid } from "@/lib/admin-notification-events"
 
 interface SaleItemRequest {
   productId: string
@@ -129,6 +130,8 @@ export async function POST(req: NextRequest) {
         receiptRequested: Boolean(receiptEmail),
       },
     }, req)
+
+    await notifyCupSalePaid(sale, paymentMethod === "CARD_MACHINE" ? "card machine" : paymentMethod.toLowerCase())
 
     return NextResponse.json(sale, { status: 201 })
   } catch (error) {
