@@ -4,7 +4,6 @@ import { ChangeEvent, useEffect, useMemo, useRef, useState } from "react"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
-import { AdminNotifications } from "@/components/admin-notifications"
 import {
   Dialog,
   DialogContent,
@@ -843,12 +842,6 @@ export default function AdminPosPage() {
           </p>
         </div>
         <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
-          <div className="flex items-center justify-end sm:hidden">
-            <AdminNotifications enabled />
-          </div>
-          <div className="hidden items-center sm:flex">
-            <AdminNotifications enabled />
-          </div>
           {cartCount > 0 && (
             <Button type="button" className="h-auto min-h-11 sm:min-w-36" onClick={() => setPosStep("CHECKOUT")}>
               <ShoppingCart className="mr-2 h-4 w-4" />
@@ -894,23 +887,13 @@ export default function AdminPosPage() {
       <div className="grid gap-3">
         <Card className={cn(posStep === "CHECKOUT" && "hidden")}>
           <CardContent className="p-4">
+            {(posStep !== "CATEGORIES" || cartCount > 0) && (
             <div className="mb-4 flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
               <div className="flex flex-wrap gap-2">
-                <Button
-                  type="button"
-                  variant={posStep === "CATEGORIES" && !searchTerm ? "default" : "outline"}
-                  onClick={() => {
-                    setActiveCategory("ALL")
-                    setSearchTerm("")
-                    setPosStep("CATEGORIES")
-                  }}
-                >
-                  Categories
-                </Button>
-                {activeCategory !== "ALL" && (
-                  <Button type="button" variant="secondary" onClick={() => setPosStep("ITEMS")}>
+                {activeCategory !== "ALL" && posStep === "ITEMS" && (
+                  <span className="inline-flex min-h-10 items-center rounded-md bg-muted px-4 text-sm font-medium text-foreground">
                     {getProductCategoryLabel(activeCategory)}
-                  </Button>
+                  </span>
                 )}
                 {cartCount > 0 && (
                   <Button type="button" variant="outline" onClick={() => setPosStep("CHECKOUT")}>
@@ -919,6 +902,7 @@ export default function AdminPosPage() {
                   </Button>
                 )}
               </div>
+              {posStep === "ITEMS" && (
               <div className="relative lg:w-96">
                 <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
                 <Input
@@ -926,14 +910,14 @@ export default function AdminPosPage() {
                   onChange={(event) => {
                     const value = event.target.value
                     setSearchTerm(value)
-                    setPosStep(value.trim() ? "ITEMS" : "CATEGORIES")
-                    if (value.trim()) setActiveCategory("ALL")
                   }}
-                  placeholder="Search POS..."
+                  placeholder={`Search ${getProductCategoryLabel(activeCategory)}...`}
                   className="pl-9"
                 />
               </div>
+              )}
             </div>
+            )}
 
             {loading ? (
               <div className="flex items-center justify-center py-24">
