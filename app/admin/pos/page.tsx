@@ -843,9 +843,13 @@ export default function AdminPosPage() {
         </div>
         <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
           {cartCount > 0 && (
-            <Button type="button" className="h-auto min-h-11 sm:min-w-36" onClick={() => setPosStep("CHECKOUT")}>
-              <ShoppingCart className="mr-2 h-4 w-4" />
-              Checkout · {formatPrice(cartSummary.total)}
+            <Button
+              type="button"
+              className="h-auto min-h-14 px-6 text-base font-semibold shadow-md sm:min-w-64"
+              onClick={() => setPosStep("CHECKOUT")}
+            >
+              <ShoppingCart className="mr-2 h-5 w-5" />
+              Go to checkout · {formatPrice(cartSummary.total)}
             </Button>
           )}
           <Button type="button" variant="outline" className="h-auto min-h-11 sm:min-w-32" onClick={openQuickAdd}>
