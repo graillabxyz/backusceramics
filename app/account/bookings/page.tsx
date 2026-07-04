@@ -17,11 +17,16 @@ interface Booking {
   preferredDate?: string | null
   participants: number
   notes?: string | null
+  paymentReference?: string | null
+  paymentSessionId?: string | null
+  holdExpiresAt?: string | null
+  confirmedAt?: string | null
   createdAt: string
 }
 
 const statusLabels: Record<string, string> = {
   PENDING: "Pending",
+  CONFIRMING_PAYMENT: "Confirming payment",
   CONFIRMED: "Confirmed",
   COMPLETED: "Completed",
   CANCELLED: "Cancelled",
@@ -31,19 +36,25 @@ function statusTone(status: string) {
   if (status === "CONFIRMED") {
     return "border-emerald-200 bg-emerald-50 text-emerald-800 dark:border-emerald-900/60 dark:bg-emerald-950/40 dark:text-emerald-300"
   }
+  if (status === "CONFIRMING_PAYMENT") {
+    return "border-amber-200 bg-amber-50 text-amber-800 dark:border-amber-900/60 dark:bg-amber-950/40 dark:text-amber-300"
+  }
   if (status === "PENDING") return "border-primary/20 bg-primary/10 text-primary"
   return "border-border bg-muted text-muted-foreground"
 }
 
 function BookingCard({ booking }: { booking: Booking }) {
   const workshop = workshops.find((item) => item.id === booking.workshopId)
+  const displayStatus = booking.status === "PENDING" && (booking.paymentReference || booking.paymentSessionId)
+    ? "CONFIRMING_PAYMENT"
+    : booking.status
   const calendarDate = parsePreferredDateForCalendar(booking.preferredDate)
   const calendarEvent = calendarDate
     ? {
         title: `${workshop?.title || booking.workshopId} at Backus Ceramics`,
         dateKey: calendarDate.dateKey,
         timeLabel: calendarDate.timeLabel,
-        description: `${booking.participants} participant${booking.participants === 1 ? "" : "s"} · ${statusLabels[booking.status] || booking.status}`,
+        description: `${booking.participants} participant${booking.participants === 1 ? "" : "s"} · ${statusLabels[displayStatus] || displayStatus}`,
       }
     : null
 
@@ -54,8 +65,8 @@ function BookingCard({ booking }: { booking: Booking }) {
           <div className="min-w-0">
             <div className="flex flex-wrap items-center gap-2">
               <h3 className="font-heading text-lg font-bold text-foreground">{workshop?.title || booking.workshopId}</h3>
-              <Badge className={statusTone(booking.status)} variant="outline">
-                {statusLabels[booking.status] || booking.status}
+              <Badge className={statusTone(displayStatus)} variant="outline">
+                {statusLabels[displayStatus] || displayStatus}
               </Badge>
             </div>
             <div className="mt-3 grid gap-2 text-sm text-muted-foreground sm:grid-cols-2">
@@ -90,8 +101,14 @@ function BookingCard({ booking }: { booking: Booking }) {
 export default function MyBookingsPage() {
   const [bookings, setBookings] = useState<Booking[]>([])
   const [loading, setLoading] = useState(true)
+  const [recentPaymentReference, setRecentPaymentReference] = useState("")
 
   useEffect(() => {
+    const params = typeof window !== "undefined" ? new URLSearchParams(window.location.search) : null
+    const paymentSucceeded = params?.get("payment") === "success"
+    const reference = params?.get("reference") || ""
+    if (paymentSucceeded) setRecentPaymentReference(reference || "recent payment")
+
     async function loadBookings() {
       try {
         const res = await fetch("/api/bookings")
@@ -103,7 +120,21 @@ export default function MyBookingsPage() {
       }
     }
 
-    loadBookings()
+    void loadBookings()
+
+    let interval: number | undefined
+    if (paymentSucceeded) {
+      let attempts = 0
+      interval = window.setInterval(() => {
+        attempts += 1
+        void loadBookings()
+        if (attempts >= 8 && interval) window.clearInterval(interval)
+      }, 2500)
+    }
+
+    return () => {
+      if (interval) window.clearInterval(interval)
+    }
   }, [])
 
   const upcomingBookings = useMemo(
@@ -127,6 +158,17 @@ export default function MyBookingsPage() {
 
   return (
     <div className="space-y-8">
+      {recentPaymentReference && (
+        <Card className="border-emerald-200 bg-emerald-50 text-emerald-950 dark:border-emerald-900/60 dark:bg-emerald-950/30 dark:text-emerald-200">
+          <CardContent className="p-5">
+            <p className="font-semibold">Payment received</p>
+            <p className="mt-1 text-sm leading-relaxed">
+              We are confirming the booking status with the payment provider. This page will refresh automatically for a few moments.
+            </p>
+          </CardContent>
+        </Card>
+      )}
+
       <section className="grid gap-4 sm:grid-cols-3">
         <Card className="border-border/80">
           <CardContent className="p-5">

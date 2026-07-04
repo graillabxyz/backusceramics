@@ -238,6 +238,9 @@ model PosSale {
   operatorId String?
   operator  User?  @relation("PosSaleOperator", fields: [operatorId], references: [id])
 
+  subtotal      Int    @default(0)
+  discountTotal Int    @default(0)
+  taxTotal      Int    @default(0)
   total         Int
   currency      String @default("IDR")
   status        String @default("PAID")
@@ -272,6 +275,10 @@ model PosSaleItem {
   categorySnapshot String
   unitPrice        Int
   quantity         Int
+  subtotal         Int @default(0)
+  discountAmount   Int @default(0)
+  taxRate          Int @default(0)
+  taxAmount        Int @default(0)
   lineTotal        Int
 
   @@index([saleId])

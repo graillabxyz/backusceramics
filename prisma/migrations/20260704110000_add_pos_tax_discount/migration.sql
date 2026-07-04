@@ -1,0 +1,18 @@
+ALTER TABLE "PosSale"
+ADD COLUMN "subtotal" INTEGER NOT NULL DEFAULT 0,
+ADD COLUMN "discountTotal" INTEGER NOT NULL DEFAULT 0,
+ADD COLUMN "taxTotal" INTEGER NOT NULL DEFAULT 0;
+
+ALTER TABLE "PosSaleItem"
+ADD COLUMN "subtotal" INTEGER NOT NULL DEFAULT 0,
+ADD COLUMN "discountAmount" INTEGER NOT NULL DEFAULT 0,
+ADD COLUMN "taxRate" INTEGER NOT NULL DEFAULT 0,
+ADD COLUMN "taxAmount" INTEGER NOT NULL DEFAULT 0;
+
+UPDATE "PosSale"
+SET "subtotal" = "total"
+WHERE "subtotal" = 0;
+
+UPDATE "PosSaleItem"
+SET "subtotal" = "unitPrice" * "quantity"
+WHERE "subtotal" = 0;

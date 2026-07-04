@@ -29,15 +29,18 @@ import {
 } from "@/lib/pos-catalog"
 import { cn } from "@/lib/utils"
 import {
+  ArrowLeft,
   CheckCircle2,
   Eye,
   ImagePlus,
   Loader2,
+  Minimize2,
   Pencil,
   Plus,
   RefreshCw,
   Search,
   ShoppingBag,
+  Store,
   Trash2,
 } from "lucide-react"
 import Link from "next/link"
@@ -119,12 +122,14 @@ export default function AdminProductsPage() {
   const [uploading, setUploading] = useState(false)
   const [error, setError] = useState("")
   const [success, setSuccess] = useState("")
+  const [imageUploadNotice, setImageUploadNotice] = useState("")
   const [searchTerm, setSearchTerm] = useState("")
   const [filterCategory, setFilterCategory] = useState("ALL")
   const [filterStatus, setFilterStatus] = useState("ALL")
   const [editingProduct, setEditingProduct] = useState<PosProduct | null>(null)
   const [isDialogOpen, setIsDialogOpen] = useState(false)
   const [formData, setFormData] = useState<ProductFormState>(emptyForm)
+  const [isPosFullscreen, setIsPosFullscreen] = useState(false)
 
   const filteredProducts = useMemo(() => {
     return products.filter((product) => {
@@ -152,11 +157,23 @@ export default function AdminProductsPage() {
     () => products.filter((product) => product.status === "DRAFT" || product.price <= 0).length,
     [products]
   )
+  const formImages = useMemo(() => parseProductImageUrls(formData.imageUrls), [formData.imageUrls])
   const formIsCup = isCupCategory(formData.category)
   const formIsDraft = formData.status === "DRAFT"
 
   useEffect(() => {
     fetchProducts()
+  }, [])
+
+  useEffect(() => {
+    if (typeof window === "undefined") return
+
+    const params = new URLSearchParams(window.location.search)
+    if (params.get("posFullscreen") === "1" || window.localStorage.getItem("backus-pos-fullscreen") === "1") {
+      window.localStorage.setItem("backus-pos-fullscreen", "1")
+      setIsPosFullscreen(true)
+      window.dispatchEvent(new CustomEvent("backus-pos-kiosk-change", { detail: { enabled: true } }))
+    }
   }, [])
 
   const fetchProducts = async () => {
@@ -176,6 +193,7 @@ export default function AdminProductsPage() {
   const openCreate = () => {
     setEditingProduct(null)
     setFormData(emptyForm)
+    setImageUploadNotice("")
     setError("")
     setSuccess("")
     setIsDialogOpen(true)
@@ -197,6 +215,7 @@ export default function AdminProductsPage() {
       showInShop: product.showInShop,
       featured: product.featured,
     })
+    setImageUploadNotice("")
     setError("")
     setSuccess("")
     setIsDialogOpen(true)
@@ -267,6 +286,7 @@ export default function AdminProductsPage() {
     if (!file) return
 
     setUploading(true)
+    setImageUploadNotice("")
     setError("")
 
     try {
@@ -280,6 +300,7 @@ export default function AdminProductsPage() {
         ...current,
         imageUrls: [current.imageUrls, data.url].filter(Boolean).join("\n"),
       }))
+      setImageUploadNotice("Image uploaded and previewed below.")
     } catch (uploadError) {
       console.error("Product image upload failed", uploadError)
       setError("Could not upload that image.")
@@ -287,6 +308,19 @@ export default function AdminProductsPage() {
       setUploading(false)
       event.target.value = ""
     }
+  }
+
+  const exitPosFullscreen = () => {
+    if (typeof window === "undefined") return
+
+    window.localStorage.removeItem("backus-pos-fullscreen")
+    window.dispatchEvent(new CustomEvent("backus-pos-kiosk-change", { detail: { enabled: false } }))
+    setIsPosFullscreen(false)
+
+    const params = new URLSearchParams(window.location.search)
+    params.delete("posFullscreen")
+    const nextSearch = params.toString()
+    window.history.replaceState(null, "", `${window.location.pathname}${nextSearch ? `?${nextSearch}` : ""}`)
   }
 
   const handleSave = async () => {
@@ -349,7 +383,7 @@ export default function AdminProductsPage() {
   }
 
   return (
-    <div className="space-y-8">
+    <div className={cn("space-y-8", isPosFullscreen && "space-y-4")}>
       <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
         <div>
           <h1 className="font-heading text-3xl font-bold text-foreground">Products</h1>
@@ -358,6 +392,20 @@ export default function AdminProductsPage() {
           </p>
         </div>
         <div className="flex flex-col gap-3 sm:flex-row">
+          {isPosFullscreen && (
+            <>
+              <Button asChild variant="outline" className="w-full sm:w-auto">
+                <Link href="/admin/pos?posFullscreen=1">
+                  <ArrowLeft className="mr-2 h-4 w-4" />
+                  Back to POS
+                </Link>
+              </Button>
+              <Button type="button" variant="outline" className="w-full sm:w-auto" onClick={exitPosFullscreen}>
+                <Minimize2 className="mr-2 h-4 w-4" />
+                Exit fullscreen
+              </Button>
+            </>
+          )}
           <Button
             type="button"
             variant="secondary"
@@ -369,7 +417,7 @@ export default function AdminProductsPage() {
             Sync defaults
           </Button>
           <Button asChild variant="outline" className="w-full sm:w-auto">
-            <Link href="/admin/wares">
+            <Link href={`/admin/wares${isPosFullscreen ? "?posFullscreen=1" : ""}`}>
               <Eye className="mr-2 h-4 w-4" />
               Preview wares page
             </Link>
@@ -810,10 +858,33 @@ export default function AdminProductsPage() {
                   <Textarea
                     id="imageUrls"
                     value={formData.imageUrls}
-                    onChange={(event) => handleFormChange("imageUrls", event.target.value)}
+                    onChange={(event) => {
+                      handleFormChange("imageUrls", event.target.value)
+                      setImageUploadNotice("")
+                    }}
                     rows={3}
                     placeholder="/uploads/cup.jpg or https://..."
                   />
+                  {imageUploadNotice && (
+                    <p className="flex items-center gap-2 text-sm font-medium text-emerald-700 dark:text-emerald-400">
+                      <CheckCircle2 className="h-4 w-4" />
+                      {imageUploadNotice}
+                    </p>
+                  )}
+                  {formImages.length > 0 ? (
+                    <div className="grid grid-cols-3 gap-2 sm:grid-cols-5">
+                      {formImages.map((image) => (
+                        <div key={image} className="overflow-hidden rounded-md border border-border bg-muted">
+                          <img src={image} alt="" className="aspect-square w-full object-cover" />
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <div className="flex items-center gap-2 rounded-md border border-dashed border-border px-3 py-4 text-sm text-muted-foreground">
+                      <Store className="h-4 w-4" />
+                      Image previews will appear here after upload or URL entry.
+                    </div>
+                  )}
                   <p className="text-xs text-muted-foreground">Add one image URL per line. The first image is used as the main thumbnail.</p>
                 </div>
               </div>

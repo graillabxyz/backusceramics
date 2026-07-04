@@ -3,6 +3,7 @@ import { auth } from "@/lib/auth"
 import { prisma } from "@/lib/prisma"
 import { canUsePos } from "@/lib/permissions"
 import { formatPrice } from "@/lib/pos-catalog"
+import { calculatePosLineTotals, normalizePosDiscountType, normalizePosTaxRate } from "@/lib/pos-sale-calculations"
 import {
   createXenditPaymentSession,
   XenditApiError,
@@ -13,11 +14,17 @@ import { recordAnalyticsEvent } from "@/lib/analytics-server"
 interface SaleItemRequest {
   productId: string
   quantity: number
+  taxRate: ReturnType<typeof normalizePosTaxRate>
+  discountType: ReturnType<typeof normalizePosDiscountType>
+  discountValue: number
 }
 
 interface RawSaleItemRequest {
   productId?: unknown
   quantity?: unknown
+  taxRate?: unknown
+  discountType?: unknown
+  discountValue?: unknown
 }
 
 function sanitizeReference(value: string) {
@@ -74,6 +81,9 @@ export async function POST(req: NextRequest) {
   const saleItems: SaleItemRequest[] = items.map((item: RawSaleItemRequest) => ({
     productId: String(item.productId || ""),
     quantity: Number(item.quantity || 0),
+    taxRate: normalizePosTaxRate(item.taxRate),
+    discountType: normalizePosDiscountType(item.discountType),
+    discountValue: Number(item.discountValue || 0),
   }))
 
   if (saleItems.length === 0 || saleItems.some((item) => !item.productId || !Number.isInteger(item.quantity) || item.quantity < 1)) {
@@ -86,6 +96,9 @@ export async function POST(req: NextRequest) {
   try {
     const sale = await prisma.$transaction(async (tx) => {
       const snapshots = []
+      let subtotal = 0
+      let discountTotal = 0
+      let taxTotal = 0
       let total = 0
 
       for (const item of saleItems) {
@@ -121,8 +134,17 @@ export async function POST(req: NextRequest) {
           })
         }
 
-        const lineTotal = product.price * item.quantity
-        total += lineTotal
+        const lineTotals = calculatePosLineTotals({
+          unitPrice: product.price,
+          quantity: item.quantity,
+          taxRate: item.taxRate,
+          discountType: item.discountType,
+          discountValue: item.discountValue,
+        })
+        subtotal += lineTotals.subtotal
+        discountTotal += lineTotals.discountAmount
+        taxTotal += lineTotals.taxAmount
+        total += lineTotals.total
         snapshots.push({
           productId: product.id,
           nameSnapshot: product.name,
@@ -130,13 +152,20 @@ export async function POST(req: NextRequest) {
           categorySnapshot: product.category,
           unitPrice: product.price,
           quantity: item.quantity,
-          lineTotal,
+          subtotal: lineTotals.subtotal,
+          discountAmount: lineTotals.discountAmount,
+          taxRate: lineTotals.taxRate,
+          taxAmount: lineTotals.taxAmount,
+          lineTotal: lineTotals.total,
         })
       }
 
       return tx.posSale.create({
         data: {
           operatorId: session.user.id,
+          subtotal,
+          discountTotal,
+          taxTotal,
           total,
           status: "PENDING_PAYMENT",
           paymentMethod: "ONLINE",
@@ -172,9 +201,9 @@ export async function POST(req: NextRequest) {
       items: sale.items.map((item) => ({
         reference_id: item.productId || item.id,
         type: "PHYSICAL_PRODUCT",
-        name: item.nameSnapshot,
-        net_unit_amount: item.unitPrice,
-        quantity: item.quantity,
+        name: item.quantity > 1 ? `${item.nameSnapshot} x ${item.quantity}` : item.nameSnapshot,
+        net_unit_amount: Math.max(item.lineTotal, 0),
+        quantity: 1,
         category: item.categorySnapshot,
       })),
       metadata: {

@@ -365,6 +365,10 @@ export default function AdminBookingsPage() {
         </Card>
       </div>
 
+      <div className="rounded-md border border-amber-300 bg-amber-50 px-4 py-3 text-sm leading-relaxed text-amber-950">
+        Online checkout creates a short pending hold while the customer pays. Paid Xendit sessions should become confirmed automatically; onsite payment requests should be coordinated on WhatsApp and then marked confirmed after payment.
+      </div>
+
       <Tabs defaultValue="requests" className="space-y-4">
         <TabsList className="grid w-full grid-cols-3 lg:w-fit">
           <TabsTrigger value="requests">Requests</TabsTrigger>

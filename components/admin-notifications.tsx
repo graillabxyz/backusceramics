@@ -97,7 +97,7 @@ export function AdminNotifications({ enabled }: { enabled: boolean }) {
       </Button>
 
       {open && (
-        <div className="absolute right-0 top-11 z-50 w-[min(380px,calc(100vw-2rem))] overflow-hidden rounded-lg border border-border bg-background shadow-xl">
+        <div className="fixed left-2 right-2 top-20 z-[90] max-h-[min(72vh,520px)] overflow-hidden rounded-lg border border-border bg-background shadow-xl sm:absolute sm:left-auto sm:right-0 sm:top-11 sm:w-[380px] sm:max-h-none">
           <div className="flex items-center justify-between gap-3 border-b border-border px-4 py-3">
             <div>
               <p className="text-sm font-semibold text-foreground">Notifications</p>
@@ -108,7 +108,7 @@ export function AdminNotifications({ enabled }: { enabled: boolean }) {
             </Button>
           </div>
 
-          <div className="max-h-[420px] overflow-y-auto">
+          <div className="max-h-[calc(min(72vh,520px)-72px)] overflow-y-auto sm:max-h-[420px]">
             {notifications.length === 0 ? (
               <p className="px-4 py-8 text-center text-sm text-muted-foreground">No notifications yet.</p>
             ) : (

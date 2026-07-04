@@ -3,6 +3,7 @@ import { auth } from "@/lib/auth"
 import { prisma } from "@/lib/prisma"
 import { canUsePos } from "@/lib/permissions"
 import { POS_PAYMENT_METHODS } from "@/lib/pos-catalog"
+import { calculatePosLineTotals, normalizePosDiscountType, normalizePosTaxRate } from "@/lib/pos-sale-calculations"
 import { sendPosReceiptEmail } from "@/lib/pos-receipts"
 import { recordAnalyticsEvent } from "@/lib/analytics-server"
 import { notifyCupSalePaid } from "@/lib/admin-notification-events"
@@ -10,11 +11,17 @@ import { notifyCupSalePaid } from "@/lib/admin-notification-events"
 interface SaleItemRequest {
   productId: string
   quantity: number
+  taxRate: ReturnType<typeof normalizePosTaxRate>
+  discountType: ReturnType<typeof normalizePosDiscountType>
+  discountValue: number
 }
 
 interface RawSaleItemRequest {
   productId?: unknown
   quantity?: unknown
+  taxRate?: unknown
+  discountType?: unknown
+  discountValue?: unknown
 }
 
 export async function POST(req: NextRequest) {
@@ -35,6 +42,9 @@ export async function POST(req: NextRequest) {
   const saleItems: SaleItemRequest[] = items.map((item: RawSaleItemRequest) => ({
     productId: String(item.productId || ""),
     quantity: Number(item.quantity || 0),
+    taxRate: normalizePosTaxRate(item.taxRate),
+    discountType: normalizePosDiscountType(item.discountType),
+    discountValue: Number(item.discountValue || 0),
   }))
 
   if (saleItems.length === 0 || saleItems.some((item) => !item.productId || !Number.isInteger(item.quantity) || item.quantity < 1)) {
@@ -44,6 +54,9 @@ export async function POST(req: NextRequest) {
   try {
     const sale = await prisma.$transaction(async (tx) => {
       const snapshots = []
+      let subtotal = 0
+      let discountTotal = 0
+      let taxTotal = 0
       let total = 0
 
       for (const item of saleItems) {
@@ -81,8 +94,17 @@ export async function POST(req: NextRequest) {
           })
         }
 
-        const lineTotal = product.price * item.quantity
-        total += lineTotal
+        const lineTotals = calculatePosLineTotals({
+          unitPrice: product.price,
+          quantity: item.quantity,
+          taxRate: item.taxRate,
+          discountType: item.discountType,
+          discountValue: item.discountValue,
+        })
+        subtotal += lineTotals.subtotal
+        discountTotal += lineTotals.discountAmount
+        taxTotal += lineTotals.taxAmount
+        total += lineTotals.total
         snapshots.push({
           productId: product.id,
           nameSnapshot: product.name,
@@ -90,13 +112,20 @@ export async function POST(req: NextRequest) {
           categorySnapshot: product.category,
           unitPrice: product.price,
           quantity: item.quantity,
-          lineTotal,
+          subtotal: lineTotals.subtotal,
+          discountAmount: lineTotals.discountAmount,
+          taxRate: lineTotals.taxRate,
+          taxAmount: lineTotals.taxAmount,
+          lineTotal: lineTotals.total,
         })
       }
 
       return tx.posSale.create({
         data: {
           operatorId: session.user.id,
+          subtotal,
+          discountTotal,
+          taxTotal,
           total,
           status: "PAID",
           paymentMethod,

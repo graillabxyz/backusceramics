@@ -3,7 +3,7 @@
 import { Suspense, useMemo, useState } from "react"
 import Link from "next/link"
 import { useSearchParams } from "next/navigation"
-import { ArrowLeft, CalendarDays, Clock, Loader2 } from "lucide-react"
+import { ArrowLeft, CalendarDays, Clock, Loader2, MessageCircle } from "lucide-react"
 import { Navigation } from "@/components/navigation"
 import { Footer } from "@/components/footer"
 import { BrandClosingSection } from "@/components/brand-closing-section"
@@ -123,6 +123,9 @@ function ClassCheckoutContent() {
 
   const selectedSeatCount = Number(people || 1)
   const total = price * selectedSeatCount
+  const onsitePaymentWhatsAppUrl = `https://wa.me/6282145890402?text=${encodeURIComponent(
+    `Hi! I'd like to arrange onsite payment for ${title} on ${dateLabel} at ${timeLabel}.`
+  )}`
   const participantOptions = Array.from({ length: maxSeats }, (_, index) => index + 1)
   const paymentMeetings = prepaid
     ? meetings
@@ -494,8 +497,18 @@ function ClassCheckoutContent() {
               </div>
 
               <p className="rounded-md bg-muted/50 p-3 text-sm leading-relaxed text-muted-foreground">
-                Online payment confirms your seat. We will hold the selected {paymentMeetings.length === 1 ? "class time" : "program days"} while you complete secure payment through Xendit.
+                Online payment confirms your seat immediately. We will hold the selected {paymentMeetings.length === 1 ? "class time" : "program days"} for 5 minutes while you complete secure payment through Xendit.
               </p>
+
+              <div className="rounded-md border border-border bg-background p-3 text-sm leading-relaxed text-muted-foreground">
+                Need to arrange payment at the studio instead? Message us on WhatsApp before coming in so we can confirm that the class time is still available.
+                <Button variant="outline" size="sm" className="mt-3 w-full" asChild>
+                  <a href={onsitePaymentWhatsAppUrl} target="_blank" rel="noopener noreferrer">
+                    <MessageCircle className="mr-2 h-4 w-4" />
+                    Ask about onsite payment
+                  </a>
+                </Button>
+              </div>
 
               {error && <p className="text-sm text-destructive">{error}</p>}
               {success && <p className="text-sm font-medium text-emerald-600 dark:text-emerald-400">{success}</p>}

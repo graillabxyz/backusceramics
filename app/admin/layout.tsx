@@ -1,6 +1,6 @@
 "use client"
 
-import React from "react"
+import React, { useEffect, useState } from "react"
 import Link from "next/link"
 import { usePathname } from "next/navigation"
 import { cn } from "@/lib/utils"
@@ -25,7 +25,6 @@ import {
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { AdminNotifications } from "@/components/admin-notifications"
-import { useState } from "react"
 
 const navItems = [
   { href: "/admin", label: "Dashboard", icon: LayoutDashboard, exact: true, access: "admin" },
@@ -50,6 +49,28 @@ export default function AdminLayout({
   const [sidebarOpen, setSidebarOpen] = useState(false)
   const [userMenuOpen, setUserMenuOpen] = useState(false)
   const isPosRoute = pathname === "/admin/pos" || pathname.startsWith("/admin/pos/")
+  const isProductsRoute = pathname === "/admin/products" || pathname.startsWith("/admin/products/")
+  const isWaresRoute = pathname === "/admin/wares" || pathname.startsWith("/admin/wares/")
+  const [posKioskMode, setPosKioskMode] = useState(false)
+  const isPosKioskRoute = posKioskMode && (isPosRoute || isProductsRoute || isWaresRoute)
+
+  useEffect(() => {
+    if (typeof window === "undefined") return
+
+    const syncKioskMode = () => {
+      const params = new URLSearchParams(window.location.search)
+      setPosKioskMode(params.get("posFullscreen") === "1" || window.localStorage.getItem("backus-pos-fullscreen") === "1")
+    }
+
+    syncKioskMode()
+    window.addEventListener("storage", syncKioskMode)
+    window.addEventListener("backus-pos-kiosk-change", syncKioskMode)
+
+    return () => {
+      window.removeEventListener("storage", syncKioskMode)
+      window.removeEventListener("backus-pos-kiosk-change", syncKioskMode)
+    }
+  }, [pathname])
 
   if (isLoading) {
     return (
@@ -84,7 +105,8 @@ export default function AdminLayout({
       <header className={cn(
         "fixed top-0 left-0 right-0 z-50 border-b border-border bg-background",
         isPosRoute ? "h-16 px-4" : "px-0",
-        isPosRoute ? "xl:hidden" : "lg:hidden"
+        isPosRoute ? "xl:hidden" : "lg:hidden",
+        isPosKioskRoute && "hidden"
       )}>
         <div className={cn("flex h-16 items-center justify-between gap-3", !isPosRoute && "px-4")}>
           <div className="flex items-center gap-3">
@@ -185,7 +207,8 @@ export default function AdminLayout({
       <aside className={cn(
         "fixed left-0 top-0 bottom-0 w-64 bg-background border-r border-border z-40 transition-transform",
         isPosRoute ? "xl:translate-x-0" : "lg:translate-x-0",
-        sidebarOpen ? "translate-x-0" : "-translate-x-full"
+        sidebarOpen ? "translate-x-0" : "-translate-x-full",
+        isPosKioskRoute && "hidden"
       )}>
         <div className="p-6">
           <div className="flex items-center gap-3 mb-8">
@@ -256,7 +279,7 @@ export default function AdminLayout({
       </aside>
 
       {/* Mobile Overlay */}
-      {sidebarOpen && (
+      {sidebarOpen && !isPosKioskRoute && (
         <div 
           className={cn("fixed inset-0 bg-background/80 backdrop-blur-sm z-30", isPosRoute ? "xl:hidden" : "lg:hidden")}
           onClick={() => setSidebarOpen(false)}
@@ -264,14 +287,17 @@ export default function AdminLayout({
       )}
 
       {/* Main Content */}
-      <main className={cn(isPosRoute ? "pt-16 xl:pl-64 xl:pt-0" : "pt-28 lg:pl-64 lg:pt-0")}>
+      <main className={cn(
+        isPosKioskRoute ? "min-h-screen" : isPosRoute ? "pt-16 xl:pl-64 xl:pt-0" : "pt-28 lg:pl-64 lg:pt-0"
+      )}>
         <div className={cn(
           "hidden border-b border-border bg-background/80 px-6 py-3 backdrop-blur lg:px-8",
-          isPosRoute ? "xl:flex xl:items-center xl:justify-end" : "lg:flex lg:items-center lg:justify-end"
+          isPosRoute ? "xl:flex xl:items-center xl:justify-end" : "lg:flex lg:items-center lg:justify-end",
+          isPosKioskRoute && "hidden"
         )}>
           <AdminNotifications enabled={isFullAdminRole(user?.role)} />
         </div>
-        <div className="p-4 sm:p-6 lg:p-8">
+        <div className={cn(isPosKioskRoute ? "p-2 sm:p-3 lg:p-4" : "p-4 sm:p-6 lg:p-8")}>
           {children}
         </div>
       </main>

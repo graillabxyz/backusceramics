@@ -6,11 +6,18 @@ interface ReceiptItem {
   skuSnapshot?: string | null
   quantity: number
   unitPrice: number
+  subtotal?: number
+  discountAmount?: number
+  taxRate?: number
+  taxAmount?: number
   lineTotal: number
 }
 
 interface ReceiptSale {
   id: string
+  subtotal?: number
+  discountTotal?: number
+  taxTotal?: number
   total: number
   currency: string
   paymentMethod: string
@@ -47,6 +54,8 @@ function buildReceiptHtml(sale: ReceiptSale) {
       <td style="padding:12px 0;border-bottom:1px solid #eee;">
         <strong>${escapeHtml(item.nameSnapshot)}</strong>
         ${item.skuSnapshot ? `<br><span style="color:#777;font-size:12px;">${escapeHtml(item.skuSnapshot)}</span>` : ""}
+        ${item.discountAmount ? `<br><span style="color:#777;font-size:12px;">Discount -${formatPrice(item.discountAmount)}</span>` : ""}
+        ${item.taxAmount ? `<br><span style="color:#777;font-size:12px;">Tax ${item.taxRate || 0}% ${formatPrice(item.taxAmount)}</span>` : ""}
       </td>
       <td style="padding:12px 0;border-bottom:1px solid #eee;text-align:center;">${item.quantity}</td>
       <td style="padding:12px 0;border-bottom:1px solid #eee;text-align:right;">${formatPrice(item.lineTotal)}</td>
@@ -73,8 +82,11 @@ function buildReceiptHtml(sale: ReceiptSale) {
         </thead>
         <tbody>${rows}</tbody>
       </table>
-      <div style="padding:20px 0;text-align:right;font-size:20px;font-weight:700;">
-        ${formatPrice(sale.total)}
+      <div style="padding:20px 0;text-align:right;">
+        <div style="font-size:13px;color:#777;">Subtotal ${formatPrice(sale.subtotal ?? sale.total)}</div>
+        ${(sale.discountTotal || 0) > 0 ? `<div style="font-size:13px;color:#777;">Discount -${formatPrice(sale.discountTotal || 0)}</div>` : ""}
+        ${(sale.taxTotal || 0) > 0 ? `<div style="font-size:13px;color:#777;">Tax ${formatPrice(sale.taxTotal || 0)}</div>` : ""}
+        <div style="margin-top:8px;font-size:20px;font-weight:700;">${formatPrice(sale.total)}</div>
       </div>
       <p style="padding-top:20px;border-top:1px solid #e8e1d8;color:#777;font-size:13px;">
         Backus Ceramics, Bali. If you have questions about this purchase, reply to this email or message us on WhatsApp.

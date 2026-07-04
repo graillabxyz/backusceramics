@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useMemo, useRef, useState } from "react"
+import { ChangeEvent, useEffect, useMemo, useRef, useState } from "react"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
@@ -18,6 +18,7 @@ import { Label } from "@/components/ui/label"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Switch } from "@/components/ui/switch"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
+import { Textarea } from "@/components/ui/textarea"
 import Link from "next/link"
 import {
   formatPrice,
@@ -33,6 +34,7 @@ import { cn } from "@/lib/utils"
 import {
   CheckCircle2,
   CreditCard,
+  ImagePlus,
   Loader2,
   Mail,
   Maximize2,
@@ -47,6 +49,13 @@ import {
   Store,
   Trash2,
 } from "lucide-react"
+import {
+  calculatePosLineTotals,
+  normalizePosDiscountType,
+  normalizePosTaxRate,
+  type PosDiscountType,
+  type PosTaxRate,
+} from "@/lib/pos-sale-calculations"
 
 interface PosProduct {
   id: string
@@ -70,30 +79,39 @@ interface PosProduct {
 interface CartItem {
   product: PosProduct
   quantity: number
+  taxRate: PosTaxRate
+  discountType: PosDiscountType
+  discountValue: string
 }
 
 interface QuickProductForm {
   name: string
   sku: string
   category: string
+  description: string
   volumeMl: string
+  imageUrls: string
   price: string
   quantity: string
   status: string
   cafeOnly: boolean
   showInShop: boolean
+  featured: boolean
 }
 
 const quickProductDefaults: QuickProductForm = {
   name: "",
   sku: "",
   category: "CUPS",
+  description: "",
   volumeMl: "",
+  imageUrls: "",
   price: "",
   quantity: "1",
   status: "AVAILABLE",
   cafeOnly: false,
   showInShop: true,
+  featured: false,
 }
 
 function firstImage(product: PosProduct) {
@@ -102,6 +120,24 @@ function firstImage(product: PosProduct) {
 
 function cupVolumeLabel(product: PosProduct) {
   return isCupCategory(product.category) && product.volumeMl ? `${product.volumeMl} ml` : ""
+}
+
+function defaultTaxRate(product: PosProduct): PosTaxRate {
+  return normalizeProductCategory(product.category) === "F_AND_B" ? 15 : 10
+}
+
+function toImageText(value: string | null) {
+  return parseProductImageUrls(value).join("\n")
+}
+
+function cartLineTotals(item: CartItem) {
+  return calculatePosLineTotals({
+    unitPrice: item.product.price,
+    quantity: item.quantity,
+    taxRate: item.taxRate,
+    discountType: item.discountType,
+    discountValue: Number(item.discountValue || 0),
+  })
 }
 
 export default function AdminPosPage() {
@@ -119,8 +155,12 @@ export default function AdminPosPage() {
   const [customerName, setCustomerName] = useState("")
   const [paymentMethod, setPaymentMethod] = useState("CARD_MACHINE")
   const [isQuickAddOpen, setIsQuickAddOpen] = useState(false)
+  const [isQuickEditOpen, setIsQuickEditOpen] = useState(false)
   const [savingProduct, setSavingProduct] = useState(false)
+  const [uploadingImage, setUploadingImage] = useState(false)
+  const [imageUploadNotice, setImageUploadNotice] = useState("")
   const [quickProduct, setQuickProduct] = useState<QuickProductForm>(quickProductDefaults)
+  const [editingProduct, setEditingProduct] = useState<PosProduct | null>(null)
   const [isFullscreen, setIsFullscreen] = useState(false)
 
   const posProducts = useMemo(
@@ -148,8 +188,16 @@ export default function AdminPosPage() {
     })
   }, [activeCategory, posProducts, searchTerm])
 
-  const cartTotal = useMemo(
-    () => cart.reduce((sum, item) => sum + item.product.price * item.quantity, 0),
+  const cartSummary = useMemo(
+    () => cart.reduce((summary, item) => {
+      const totals = cartLineTotals(item)
+      return {
+        subtotal: summary.subtotal + totals.subtotal,
+        discountTotal: summary.discountTotal + totals.discountAmount,
+        taxTotal: summary.taxTotal + totals.taxAmount,
+        total: summary.total + totals.total,
+      }
+    }, { subtotal: 0, discountTotal: 0, taxTotal: 0, total: 0 }),
     [cart]
   )
 
@@ -159,9 +207,21 @@ export default function AdminPosPage() {
   )
   const quickProductIsCup = isCupCategory(quickProduct.category)
   const quickProductIsDraft = quickProduct.status === "DRAFT"
+  const quickProductImages = useMemo(() => parseProductImageUrls(quickProduct.imageUrls), [quickProduct.imageUrls])
 
   useEffect(() => {
     fetchProducts()
+  }, [])
+
+  useEffect(() => {
+    if (typeof window === "undefined") return
+
+    const params = new URLSearchParams(window.location.search)
+    if (params.get("posFullscreen") === "1" || window.localStorage.getItem("backus-pos-fullscreen") === "1") {
+      window.localStorage.setItem("backus-pos-fullscreen", "1")
+      setIsFullscreen(true)
+      window.dispatchEvent(new CustomEvent("backus-pos-kiosk-change", { detail: { enabled: true } }))
+    }
   }, [])
 
   useEffect(() => {
@@ -198,8 +258,32 @@ export default function AdminPosPage() {
 
   const openQuickAdd = () => {
     setQuickProduct(quickProductDefaults)
+    setEditingProduct(null)
+    setImageUploadNotice("")
     setError("")
     setIsQuickAddOpen(true)
+  }
+
+  const openQuickEdit = (product: PosProduct) => {
+    setEditingProduct(product)
+    setQuickProduct({
+      name: product.name,
+      sku: product.sku || "",
+      category: normalizeProductCategory(product.category),
+      description: product.description || "",
+      volumeMl: product.volumeMl ? product.volumeMl.toString() : "",
+      imageUrls: toImageText(product.imageUrls),
+      price: product.price ? product.price.toString() : "",
+      quantity: product.quantity.toString(),
+      status: product.status,
+      cafeOnly: product.cafeOnly,
+      showInShop: product.showInShop,
+      featured: product.featured,
+    })
+    setImageUploadNotice("")
+    setError("")
+    setSuccess("")
+    setIsQuickEditOpen(true)
   }
 
   const updateQuickProduct = <K extends keyof QuickProductForm>(key: K, value: QuickProductForm[K]) => {
@@ -224,7 +308,7 @@ export default function AdminPosPage() {
       }
 
       if (key === "status" && value === "DRAFT") {
-        return { ...current, status: "DRAFT", showInShop: false }
+        return { ...current, status: "DRAFT", showInShop: false, featured: false }
       }
 
       return { ...current, [key]: value }
@@ -243,8 +327,10 @@ export default function AdminPosPage() {
       volumeMl: isCupCategory(quickProduct.category) && quickProduct.volumeMl.trim()
         ? Number(quickProduct.volumeMl)
         : null,
+      imageUrls: quickProductImages,
       status: quickProduct.status,
       showInShop: quickProduct.cafeOnly || quickProductIsDraft ? false : quickProduct.showInShop,
+      featured: quickProductIsDraft ? false : quickProduct.featured,
     }
 
     try {
@@ -274,6 +360,81 @@ export default function AdminPosPage() {
     }
   }
 
+  const handleQuickEditProduct = async () => {
+    if (!editingProduct) return
+
+    setSavingProduct(true)
+    setError("")
+    setSuccess("")
+
+    const payload = {
+      ...quickProduct,
+      price: quickProduct.price.trim() ? Number(quickProduct.price) : 0,
+      quantity: quickProduct.quantity.trim() ? Number(quickProduct.quantity) : 0,
+      volumeMl: isCupCategory(quickProduct.category) && quickProduct.volumeMl.trim()
+        ? Number(quickProduct.volumeMl)
+        : null,
+      imageUrls: quickProductImages,
+      showInShop: quickProduct.cafeOnly || quickProductIsDraft ? false : quickProduct.showInShop,
+      featured: quickProductIsDraft ? false : quickProduct.featured,
+    }
+
+    try {
+      const res = await fetch(`/api/pos/products/${editingProduct.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      })
+      const data = await res.json()
+
+      if (!res.ok) {
+        setError(data.error || "Could not update product")
+        return
+      }
+
+      setProducts((current) => current.map((product) => product.id === data.id ? data : product))
+      setCart((current) => current.map((item) => item.product.id === data.id ? { ...item, product: data } : item))
+      setSuccess(`${data.name} was updated.`)
+      setIsQuickEditOpen(false)
+      setEditingProduct(null)
+      setQuickProduct(quickProductDefaults)
+    } catch (productError) {
+      console.error("Quick POS product edit failed", productError)
+      setError("Could not update product.")
+    } finally {
+      setSavingProduct(false)
+    }
+  }
+
+  const handleQuickImageUpload = async (event: ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0]
+    if (!file) return
+
+    setUploadingImage(true)
+    setImageUploadNotice("")
+    setError("")
+
+    try {
+      const uploadForm = new FormData()
+      uploadForm.append("file", file)
+      const res = await fetch("/api/upload", { method: "POST", body: uploadForm })
+      const data = await res.json()
+      if (!res.ok || !data.url) throw new Error(data.error || "Upload failed")
+
+      setQuickProduct((current) => ({
+        ...current,
+        imageUrls: [current.imageUrls, data.url].filter(Boolean).join("\n"),
+      }))
+      setImageUploadNotice("Image uploaded and added below.")
+    } catch (uploadError) {
+      console.error("POS product image upload failed", uploadError)
+      setError("Could not upload that image.")
+    } finally {
+      setUploadingImage(false)
+      event.target.value = ""
+    }
+  }
+
   const addToCart = (product: PosProduct) => {
     setSuccess("")
     setError("")
@@ -290,7 +451,7 @@ export default function AdminPosPage() {
           item.product.id === product.id ? { ...item, quantity: item.quantity + 1 } : item
         )
       }
-      return [...current, { product, quantity: 1 }]
+      return [...current, { product, quantity: 1, taxRate: 0, discountType: "NONE", discountValue: "" }]
     })
   }
 
@@ -304,6 +465,12 @@ export default function AdminPosPage() {
     })
   }
 
+  const updateCartItem = (productId: string, updates: Partial<Omit<CartItem, "product">>) => {
+    setCart((current) => current.map((item) => (
+      item.product.id === productId ? { ...item, ...updates } : item
+    )))
+  }
+
   const clearCheckoutState = () => {
     setCart([])
     setReceiptEmail("")
@@ -315,6 +482,9 @@ export default function AdminPosPage() {
     items: cart.map((item) => ({
       productId: item.product.id,
       quantity: item.quantity,
+      taxRate: item.taxRate,
+      discountType: item.discountType,
+      discountValue: Number(item.discountValue || 0),
     })),
     receiptEmail: receiptEmail.trim() || undefined,
     customerName: customerName.trim() || undefined,
@@ -391,6 +561,10 @@ export default function AdminPosPage() {
     if (!element) return
 
     setError("")
+    if (typeof window !== "undefined") {
+      window.localStorage.setItem("backus-pos-fullscreen", "1")
+      window.dispatchEvent(new CustomEvent("backus-pos-kiosk-change", { detail: { enabled: true } }))
+    }
     try {
       if (element.requestFullscreen) {
         await element.requestFullscreen()
@@ -410,6 +584,10 @@ export default function AdminPosPage() {
     } catch (fullscreenError) {
       console.error("Could not exit browser fullscreen for POS", fullscreenError)
     } finally {
+      if (typeof window !== "undefined") {
+        window.localStorage.removeItem("backus-pos-fullscreen")
+        window.dispatchEvent(new CustomEvent("backus-pos-kiosk-change", { detail: { enabled: false } }))
+      }
       setIsFullscreen(false)
     }
   }
@@ -423,12 +601,203 @@ export default function AdminPosPage() {
     void enterFullscreen()
   }
 
+  const renderQuickProductFields = (prefix: string) => (
+    <div className="grid gap-4 py-4 sm:grid-cols-2">
+      <div className="space-y-2 sm:col-span-2">
+        <Label htmlFor={`${prefix}Name`}>Product name</Label>
+        <Input
+          id={`${prefix}Name`}
+          value={quickProduct.name}
+          onChange={(event) => updateQuickProduct("name", event.target.value)}
+          placeholder="e.g., Blue cup, iced latte, incense holder"
+        />
+      </div>
+
+      <div className="space-y-2">
+        <Label htmlFor={`${prefix}Sku`}>SKU or shelf code</Label>
+        <Input
+          id={`${prefix}Sku`}
+          value={quickProduct.sku}
+          onChange={(event) => updateQuickProduct("sku", event.target.value)}
+          placeholder="Optional"
+        />
+      </div>
+
+      <div className="space-y-2">
+        <Label>Category</Label>
+        <Select value={quickProduct.category} onValueChange={(category) => updateQuickProduct("category", category)}>
+          <SelectTrigger>
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            {POS_PRODUCT_CATEGORIES.map((category) => (
+              <SelectItem key={category.id} value={category.id}>
+                {category.label}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      </div>
+
+      <div className="space-y-2">
+        <Label>Status</Label>
+        <Select value={quickProduct.status} onValueChange={(status) => updateQuickProduct("status", status)}>
+          <SelectTrigger>
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            {POS_PRODUCT_STATUSES.map((status) => (
+              <SelectItem key={status} value={status}>
+                {status.toLowerCase()}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+        {quickProductIsDraft && (
+          <p className="text-xs text-muted-foreground">Drafts can be saved with only a name and finished later.</p>
+        )}
+      </div>
+
+      {quickProductIsCup && (
+        <div className="space-y-2">
+          <Label htmlFor={`${prefix}VolumeMl`}>Volume (ml)</Label>
+          <Input
+            id={`${prefix}VolumeMl`}
+            inputMode="numeric"
+            value={quickProduct.volumeMl}
+            onChange={(event) => updateQuickProduct("volumeMl", event.target.value)}
+            placeholder="180"
+          />
+        </div>
+      )}
+
+      <div className="space-y-2">
+        <Label htmlFor={`${prefix}Price`}>Price (IDR){quickProductIsDraft && <span className="text-muted-foreground"> optional</span>}</Label>
+        <Input
+          id={`${prefix}Price`}
+          inputMode="numeric"
+          value={quickProduct.price}
+          onChange={(event) => updateQuickProduct("price", event.target.value)}
+          placeholder="250000"
+        />
+      </div>
+
+      <div className="space-y-2">
+        <Label htmlFor={`${prefix}Quantity`}>Quantity{quickProductIsDraft && <span className="text-muted-foreground"> optional</span>}</Label>
+        <Input
+          id={`${prefix}Quantity`}
+          inputMode="numeric"
+          value={quickProduct.quantity}
+          onChange={(event) => updateQuickProduct("quantity", event.target.value)}
+          placeholder={quickProductIsDraft ? "Add later" : "1"}
+        />
+      </div>
+
+      <div className="space-y-2 sm:col-span-2">
+        <Label htmlFor={`${prefix}Description`}>Description</Label>
+        <Textarea
+          id={`${prefix}Description`}
+          value={quickProduct.description}
+          onChange={(event) => updateQuickProduct("description", event.target.value)}
+          rows={3}
+          placeholder="Optional details for the wares page or staff notes"
+        />
+      </div>
+
+      <div className="space-y-3 sm:col-span-2">
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+          <div>
+            <Label htmlFor={`${prefix}ImageUrls`}>Images</Label>
+            <p className="text-xs text-muted-foreground">Upload or paste one image URL per line. The first image is the thumbnail.</p>
+          </div>
+          <label className="inline-flex cursor-pointer items-center justify-center gap-2 rounded-md border border-border px-3 py-2 text-sm font-medium hover:bg-muted">
+            {uploadingImage ? <Loader2 className="h-4 w-4 animate-spin" /> : <ImagePlus className="h-4 w-4" />}
+            {uploadingImage ? "Uploading..." : "Upload image"}
+            <input type="file" accept="image/*" className="hidden" onChange={handleQuickImageUpload} disabled={uploadingImage} />
+          </label>
+        </div>
+        <Textarea
+          id={`${prefix}ImageUrls`}
+          value={quickProduct.imageUrls}
+          onChange={(event) => {
+            updateQuickProduct("imageUrls", event.target.value)
+            setImageUploadNotice("")
+          }}
+          rows={3}
+          placeholder="/uploads/cup.jpg or https://..."
+        />
+        {imageUploadNotice && (
+          <p className="flex items-center gap-2 text-sm font-medium text-emerald-700 dark:text-emerald-400">
+            <CheckCircle2 className="h-4 w-4" />
+            {imageUploadNotice}
+          </p>
+        )}
+        {quickProductImages.length > 0 && (
+          <div className="grid grid-cols-3 gap-2 sm:grid-cols-5">
+            {quickProductImages.map((image) => (
+              <div key={image} className="overflow-hidden rounded-md border border-border bg-muted">
+                <img src={image} alt="" className="aspect-square w-full object-cover" />
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
+      <div className="flex items-center justify-between rounded-md border border-border p-3">
+        <div>
+          <Label htmlFor={`${prefix}CafeOnly`}>Cafe only</Label>
+          <p className="text-xs text-muted-foreground">F&B and cashier-only items.</p>
+        </div>
+        <Switch
+          id={`${prefix}CafeOnly`}
+          checked={quickProduct.cafeOnly}
+          onCheckedChange={(checked) => updateQuickProduct("cafeOnly", checked)}
+        />
+      </div>
+
+      <div className="flex items-center justify-between rounded-md border border-border p-3">
+        <div>
+          <Label htmlFor={`${prefix}ShowInShop`}>Show on wares page</Label>
+          <p className="text-xs text-muted-foreground">Keep off for cafe-only products.</p>
+        </div>
+        <Switch
+          id={`${prefix}ShowInShop`}
+          checked={quickProduct.showInShop && !quickProduct.cafeOnly && !quickProductIsDraft}
+          disabled={quickProduct.cafeOnly || quickProductIsDraft}
+          onCheckedChange={(checked) => updateQuickProduct("showInShop", checked)}
+        />
+      </div>
+
+      <div className="flex items-center justify-between rounded-md border border-border p-3 sm:col-span-2">
+        <div>
+          <Label htmlFor={`${prefix}Featured`}>Featured</Label>
+          <p className="text-xs text-muted-foreground">Place this piece near the top of the wares page.</p>
+        </div>
+        <Switch
+          id={`${prefix}Featured`}
+          checked={quickProduct.featured && !quickProductIsDraft}
+          disabled={quickProductIsDraft}
+          onCheckedChange={(checked) => updateQuickProduct("featured", checked)}
+        />
+      </div>
+
+      <div className="rounded-md border border-border bg-muted/40 p-3 sm:col-span-2">
+        <div className="flex items-start gap-3">
+          <ShoppingBag className="mt-0.5 h-4 w-4 text-muted-foreground" />
+          <p className="text-sm text-muted-foreground">
+            Available products can be checked out immediately. Drafts are visible for setup but disabled until finished.
+          </p>
+        </div>
+      </div>
+    </div>
+  )
+
   return (
     <div
       ref={posRootRef}
       className={cn(
-        "space-y-6",
-        isFullscreen && "fixed inset-0 z-[80] overflow-auto bg-muted/30 p-4 sm:p-5 lg:p-6"
+        "space-y-4",
+        isFullscreen && "fixed inset-0 z-[80] h-[100dvh] overflow-auto overscroll-none bg-muted/30 p-2 sm:p-3 lg:p-4"
       )}
     >
       <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
@@ -457,6 +826,12 @@ export default function AdminPosPage() {
           <div className="hidden items-center sm:flex">
             <AdminNotifications enabled />
           </div>
+          <Button asChild variant="outline" className="h-auto min-h-12 sm:min-w-36">
+            <Link href={`/admin/products${isFullscreen ? "?posFullscreen=1" : ""}`}>
+              <Pencil className="mr-2 h-4 w-4" />
+              Edit products
+            </Link>
+          </Button>
           <Button
             type="button"
             variant={isFullscreen ? "secondary" : "outline"}
@@ -483,9 +858,9 @@ export default function AdminPosPage() {
         </div>
       )}
 
-      <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_360px] xl:grid-cols-[minmax(0,1fr)_420px]">
+      <div className="grid gap-3 lg:grid-cols-[minmax(0,1fr)_360px] xl:grid-cols-[minmax(0,1fr)_400px]">
         <Card>
-          <CardHeader className="gap-4">
+          <CardHeader className="gap-3 p-4">
             <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
               <CardTitle className="flex items-center gap-2 font-heading text-xl">
                 <Store className="h-5 w-5" />
@@ -508,9 +883,9 @@ export default function AdminPosPage() {
               </div>
             </div>
           </CardHeader>
-          <CardContent>
+          <CardContent className="p-4 pt-0">
             <Tabs value={activeCategory} onValueChange={setActiveCategory}>
-              <TabsList className="mb-5 flex h-auto flex-wrap justify-start gap-2 bg-transparent p-0">
+              <TabsList className="mb-4 flex h-auto flex-wrap justify-start gap-2 bg-transparent p-0">
                 <TabsTrigger value="ALL" className="rounded-full border border-border px-4 py-2 data-[state=active]:bg-primary data-[state=active]:text-primary-foreground">
                   All
                 </TabsTrigger>
@@ -543,7 +918,7 @@ export default function AdminPosPage() {
                 ) : (
                   <div
                     className={cn(
-                      "grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-3 xl:grid-cols-4",
+                      "grid auto-rows-fr grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5",
                       isFullscreen ? "lg:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-6" : "2xl:grid-cols-4"
                     )}
                   >
@@ -575,7 +950,7 @@ export default function AdminPosPage() {
                                   <ShoppingCart className="h-7 w-7 text-muted-foreground" />
                                 </div>
                               )}
-                              <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/90 via-black/65 to-transparent p-3 pt-12 text-white">
+                              <div className="absolute inset-x-0 bottom-0 min-h-[7rem] bg-gradient-to-t from-black/90 via-black/65 to-transparent p-3 pt-12 text-white">
                                 <div className="flex items-end justify-between gap-2">
                                   <div className="min-w-0">
                                     <p className="line-clamp-2 text-sm font-semibold leading-tight">{product.name}</p>
@@ -599,14 +974,13 @@ export default function AdminPosPage() {
                             </div>
                           </button>
                           <Button
-                            asChild
                             size="icon"
                             variant="secondary"
                             className="absolute right-2 top-2 z-10 h-8 w-8 bg-background/85 text-foreground shadow-sm hover:bg-background"
+                            onClick={() => openQuickEdit(product)}
+                            aria-label={`Quick edit ${product.name}`}
                           >
-                            <Link href={`/admin/products?edit=${product.id}`} aria-label={`Edit ${product.name}`}>
-                              <Pencil className="h-4 w-4" />
-                            </Link>
+                            <Pencil className="h-4 w-4" />
                           </Button>
                         </div>
                       )
@@ -642,12 +1016,16 @@ export default function AdminPosPage() {
               </div>
             ) : (
               <div className={cn("space-y-3", isFullscreen && "lg:max-h-[26vh] lg:overflow-y-auto lg:pr-1")}>
-                {cart.map((item) => (
+                {cart.map((item) => {
+                  const totals = cartLineTotals(item)
+                  const suggestedTaxRate = defaultTaxRate(item.product)
+
+                  return (
                   <div key={item.product.id} className="rounded-md border border-border p-3">
                     <div className="flex items-start justify-between gap-3">
                       <div>
                         <p className="font-medium text-foreground">{item.product.name}</p>
-                        <p className="text-sm text-muted-foreground">{formatPrice(item.product.price)}</p>
+                        <p className="text-sm text-muted-foreground">{formatPrice(item.product.price)} each</p>
                       </div>
                       <Button variant="ghost" size="icon" onClick={() => updateCartQuantity(item.product.id, 0)}>
                         <Trash2 className="h-4 w-4" />
@@ -663,21 +1041,115 @@ export default function AdminPosPage() {
                           <Plus className="h-4 w-4" />
                         </Button>
                       </div>
-                      <p className="font-semibold text-foreground">{formatPrice(item.product.price * item.quantity)}</p>
+                      <p className="font-semibold text-foreground">{formatPrice(totals.total)}</p>
+                    </div>
+
+                    <div className="mt-4 space-y-3 rounded-md bg-muted/35 p-3">
+                      <div className="space-y-2">
+                        <div className="flex items-center justify-between gap-2">
+                          <Label className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Tax</Label>
+                          <span className="text-[11px] text-muted-foreground">Suggested: {suggestedTaxRate}%</span>
+                        </div>
+                        <div className="grid grid-cols-3 gap-2">
+                          {[0, 10, 15].map((rate) => (
+                            <Button
+                              key={rate}
+                              type="button"
+                              size="sm"
+                              variant={item.taxRate === rate ? "default" : "outline"}
+                              className="h-9 px-2 text-xs"
+                              onClick={() => updateCartItem(item.product.id, { taxRate: normalizePosTaxRate(rate) })}
+                            >
+                              {rate === 0 ? "No tax" : `${rate}%`}
+                            </Button>
+                          ))}
+                        </div>
+                      </div>
+
+                      <div className="grid gap-2 sm:grid-cols-[130px_1fr]">
+                        <div className="space-y-1">
+                          <Label className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Discount</Label>
+                          <Select
+                            value={item.discountType}
+                            onValueChange={(value) => {
+                              const discountType = normalizePosDiscountType(value)
+                              updateCartItem(item.product.id, {
+                                discountType,
+                                discountValue: discountType === "NONE" ? "" : item.discountValue,
+                              })
+                            }}
+                          >
+                            <SelectTrigger className="h-9">
+                              <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="NONE">None</SelectItem>
+                              <SelectItem value="PERCENT">Percent</SelectItem>
+                              <SelectItem value="AMOUNT">Amount</SelectItem>
+                            </SelectContent>
+                          </Select>
+                        </div>
+                        {item.discountType !== "NONE" && (
+                          <div className="space-y-1">
+                            <Label className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                              {item.discountType === "PERCENT" ? "Percent off" : "Amount off"}
+                            </Label>
+                            <Input
+                              className="h-9"
+                              inputMode="numeric"
+                              value={item.discountValue}
+                              onChange={(event) => updateCartItem(item.product.id, { discountValue: event.target.value })}
+                              placeholder={item.discountType === "PERCENT" ? "10" : "50000"}
+                            />
+                          </div>
+                        )}
+                      </div>
+
+                      <div className="space-y-1 border-t border-border pt-2 text-xs text-muted-foreground">
+                        <div className="flex items-center justify-between">
+                          <span>Line subtotal</span>
+                          <span>{formatPrice(totals.subtotal)}</span>
+                        </div>
+                        {totals.discountAmount > 0 && (
+                          <div className="flex items-center justify-between">
+                            <span>Discount</span>
+                            <span>-{formatPrice(totals.discountAmount)}</span>
+                          </div>
+                        )}
+                        {totals.taxAmount > 0 && (
+                          <div className="flex items-center justify-between">
+                            <span>Tax ({totals.taxRate}%)</span>
+                            <span>{formatPrice(totals.taxAmount)}</span>
+                          </div>
+                        )}
+                      </div>
                     </div>
                   </div>
-                ))}
+                  )
+                })}
               </div>
             )}
 
             <div className="rounded-md bg-muted/50 p-4">
               <div className="flex items-center justify-between text-sm text-muted-foreground">
                 <span>Subtotal</span>
-                <span>{formatPrice(cartTotal)}</span>
+                <span>{formatPrice(cartSummary.subtotal)}</span>
               </div>
+              {cartSummary.discountTotal > 0 && (
+                <div className="mt-1 flex items-center justify-between text-sm text-muted-foreground">
+                  <span>Discounts</span>
+                  <span>-{formatPrice(cartSummary.discountTotal)}</span>
+                </div>
+              )}
+              {cartSummary.taxTotal > 0 && (
+                <div className="mt-1 flex items-center justify-between text-sm text-muted-foreground">
+                  <span>Tax</span>
+                  <span>{formatPrice(cartSummary.taxTotal)}</span>
+                </div>
+              )}
               <div className="mt-2 flex items-center justify-between text-xl font-bold text-foreground">
                 <span>Total</span>
-                <span>{formatPrice(cartTotal)}</span>
+                <span>{formatPrice(cartSummary.total)}</span>
               </div>
             </div>
 
@@ -762,131 +1234,7 @@ export default function AdminPosPage() {
             </DialogDescription>
           </DialogHeader>
 
-          <div className="grid gap-4 py-4 sm:grid-cols-2">
-            <div className="space-y-2 sm:col-span-2">
-              <Label htmlFor="quickName">Product name</Label>
-              <Input
-                id="quickName"
-                value={quickProduct.name}
-                onChange={(event) => updateQuickProduct("name", event.target.value)}
-                placeholder="e.g., Blue cup, iced latte, incense holder"
-              />
-            </div>
-
-            <div className="space-y-2">
-              <Label htmlFor="quickSku">SKU or shelf code</Label>
-              <Input
-                id="quickSku"
-                value={quickProduct.sku}
-                onChange={(event) => updateQuickProduct("sku", event.target.value)}
-                placeholder="Optional"
-              />
-            </div>
-
-            <div className="space-y-2">
-              <Label>Category</Label>
-              <Select value={quickProduct.category} onValueChange={(category) => updateQuickProduct("category", category)}>
-                <SelectTrigger>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {POS_PRODUCT_CATEGORIES.map((category) => (
-                    <SelectItem key={category.id} value={category.id}>
-                      {category.label}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-
-            <div className="space-y-2">
-              <Label>Status</Label>
-              <Select value={quickProduct.status} onValueChange={(status) => updateQuickProduct("status", status)}>
-                <SelectTrigger>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {POS_PRODUCT_STATUSES.map((status) => (
-                    <SelectItem key={status} value={status}>
-                      {status.toLowerCase()}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-              {quickProductIsDraft && (
-                <p className="text-xs text-muted-foreground">Drafts can be saved with only a name and finished later.</p>
-              )}
-            </div>
-
-            {quickProductIsCup && (
-              <div className="space-y-2">
-                <Label htmlFor="quickVolumeMl">Volume (ml)</Label>
-                <Input
-                  id="quickVolumeMl"
-                  inputMode="numeric"
-                  value={quickProduct.volumeMl}
-                  onChange={(event) => updateQuickProduct("volumeMl", event.target.value)}
-                  placeholder="180"
-                />
-              </div>
-            )}
-
-            <div className="space-y-2">
-              <Label htmlFor="quickPrice">Price (IDR){quickProductIsDraft && <span className="text-muted-foreground"> optional</span>}</Label>
-              <Input
-                id="quickPrice"
-                inputMode="numeric"
-                value={quickProduct.price}
-                onChange={(event) => updateQuickProduct("price", event.target.value)}
-                placeholder="250000"
-              />
-            </div>
-
-            <div className="space-y-2">
-              <Label htmlFor="quickQuantity">Quantity{quickProductIsDraft && <span className="text-muted-foreground"> optional</span>}</Label>
-              <Input
-                id="quickQuantity"
-                inputMode="numeric"
-                value={quickProduct.quantity}
-                onChange={(event) => updateQuickProduct("quantity", event.target.value)}
-                placeholder={quickProductIsDraft ? "Add later" : "1"}
-              />
-            </div>
-
-            <div className="flex items-center justify-between rounded-md border border-border p-3">
-              <div>
-                <Label htmlFor="quickCafeOnly">Cafe only</Label>
-                <p className="text-xs text-muted-foreground">F&B and cashier-only items.</p>
-              </div>
-              <Switch
-                id="quickCafeOnly"
-                checked={quickProduct.cafeOnly}
-                onCheckedChange={(checked) => updateQuickProduct("cafeOnly", checked)}
-              />
-            </div>
-
-            <div className="flex items-center justify-between rounded-md border border-border p-3">
-              <div>
-                <Label htmlFor="quickShowInShop">Show on wares page</Label>
-                <p className="text-xs text-muted-foreground">Keep off for cafe-only products.</p>
-              </div>
-              <Switch
-                id="quickShowInShop"
-                checked={quickProduct.showInShop && !quickProduct.cafeOnly && !quickProductIsDraft}
-                disabled={quickProduct.cafeOnly || quickProductIsDraft}
-                onCheckedChange={(checked) => updateQuickProduct("showInShop", checked)}
-              />
-            </div>
-
-            <div className="rounded-md border border-border bg-muted/40 p-3 sm:col-span-2">
-              <div className="flex items-start gap-3">
-                <ShoppingBag className="mt-0.5 h-4 w-4 text-muted-foreground" />
-                <p className="text-sm text-muted-foreground">
-                  Available products can be checked out immediately. Drafts are visible for setup but disabled until finished in Products.
-                </p>
-              </div>
-            </div>
-          </div>
+          {renderQuickProductFields("quick")}
 
           <DialogFooter>
             <Button variant="outline" onClick={() => setIsQuickAddOpen(false)}>
@@ -895,6 +1243,29 @@ export default function AdminPosPage() {
             <Button onClick={handleQuickAddProduct} disabled={savingProduct}>
               {savingProduct && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
               {quickProductIsDraft ? "Save draft" : "Add to POS"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={isQuickEditOpen} onOpenChange={setIsQuickEditOpen}>
+        <DialogContent className="max-h-[92vh] max-w-2xl overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle className="font-heading text-2xl">Quick edit product</DialogTitle>
+            <DialogDescription>
+              Update price, stock, sales channel, and images without leaving the POS.
+            </DialogDescription>
+          </DialogHeader>
+
+          {renderQuickProductFields("quickEdit")}
+
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setIsQuickEditOpen(false)}>
+              Cancel
+            </Button>
+            <Button onClick={handleQuickEditProduct} disabled={savingProduct || !editingProduct}>
+              {savingProduct && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+              Save changes
             </Button>
           </DialogFooter>
         </DialogContent>
