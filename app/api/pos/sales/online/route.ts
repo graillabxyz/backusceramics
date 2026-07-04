@@ -93,6 +93,9 @@ export async function POST(req: NextRequest) {
         if (!product || product.status !== "AVAILABLE") {
           throw new Error(`${product?.name || "Product"} is not available`)
         }
+        if (product.price <= 0) {
+          throw new Error(`${product.name} needs a price before it can be sold`)
+        }
         if (product.quantity < item.quantity) {
           throw new Error(`Only ${product.quantity} ${product.name} available`)
         }

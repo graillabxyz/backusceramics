@@ -18,6 +18,7 @@ import { Label } from "@/components/ui/label"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Switch } from "@/components/ui/switch"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
+import Link from "next/link"
 import {
   formatPrice,
   getProductCategoryLabel,
@@ -121,20 +122,30 @@ export default function AdminPosPage() {
   const [quickProduct, setQuickProduct] = useState<QuickProductForm>(quickProductDefaults)
   const [isFullscreen, setIsFullscreen] = useState(false)
 
-  const availableProducts = useMemo(
-    () => products.filter((product) => product.status === "AVAILABLE" && product.quantity > 0),
+  const posProducts = useMemo(
+    () => products.filter((product) => product.quantity > 0 && product.status !== "SOLD" && product.status !== "ARCHIVED"),
     [products]
+  )
+
+  const availableProducts = useMemo(
+    () => posProducts.filter((product) => product.status === "AVAILABLE" && product.price > 0),
+    [posProducts]
+  )
+
+  const draftProducts = useMemo(
+    () => posProducts.filter((product) => product.status !== "AVAILABLE" || product.price <= 0),
+    [posProducts]
   )
 
   const filteredProducts = useMemo(() => {
     const search = searchTerm.trim().toLowerCase()
-    return availableProducts.filter((product) => {
+    return posProducts.filter((product) => {
       const matchesCategory = activeCategory === "ALL" || normalizeProductCategory(product.category) === activeCategory
       const matchesSearch = !search || [product.name, product.sku || "", product.description || ""]
         .some((value) => value.toLowerCase().includes(search))
       return matchesCategory && matchesSearch
     })
-  }, [activeCategory, availableProducts, searchTerm])
+  }, [activeCategory, posProducts, searchTerm])
 
   const cartTotal = useMemo(
     () => cart.reduce((sum, item) => sum + item.product.price * item.quantity, 0),
@@ -265,6 +276,11 @@ export default function AdminPosPage() {
   const addToCart = (product: PosProduct) => {
     setSuccess("")
     setError("")
+    if (product.status !== "AVAILABLE" || product.price <= 0) {
+      setError(`${product.name} needs a price and Available status before checkout.`)
+      return
+    }
+
     setCart((current) => {
       const existing = current.find((item) => item.product.id === product.id)
       if (existing) {
@@ -427,12 +443,14 @@ export default function AdminPosPage() {
           </div>
           <div className="grid grid-cols-2 gap-3 sm:w-80">
             <div className="rounded-md border border-border bg-background p-3">
-              <p className="text-xs text-muted-foreground">Available products</p>
+              <p className="text-xs text-muted-foreground">Ready to sell</p>
               <p className="text-2xl font-semibold text-foreground">{availableProducts.length}</p>
             </div>
             <div className="rounded-md border border-border bg-background p-3">
-              <p className="text-xs text-muted-foreground">Cart</p>
-              <p className="text-2xl font-semibold text-foreground">{cartCount}</p>
+              <p className="text-xs text-muted-foreground">Needs setup</p>
+              <Link href="/admin/products" className="block text-2xl font-semibold text-foreground hover:text-primary">
+                {draftProducts.length}
+              </Link>
             </div>
           </div>
           <div className="hidden items-center sm:flex">
@@ -514,7 +532,7 @@ export default function AdminPosPage() {
                 ) : filteredProducts.length === 0 ? (
                   <div className="py-24 text-center">
                     <ShoppingCart className="mx-auto mb-4 h-12 w-12 text-muted-foreground" />
-                    <p className="font-medium text-foreground">No available products here</p>
+                    <p className="font-medium text-foreground">No POS products here</p>
                     <p className="mt-1 text-sm text-muted-foreground">Try another category or add inventory right here.</p>
                     <Button type="button" className="mt-5" onClick={openQuickAdd}>
                       <Plus className="mr-2 h-4 w-4" />
@@ -532,13 +550,18 @@ export default function AdminPosPage() {
                       const image = firstImage(product)
                       const inCart = cart.find((item) => item.product.id === product.id)?.quantity || 0
                       const volume = cupVolumeLabel(product)
+                      const canSell = product.status === "AVAILABLE" && product.price > 0
 
                       return (
                         <button
                           key={product.id}
                           type="button"
                           onClick={() => addToCart(product)}
-                          className="group overflow-hidden rounded-md border border-border bg-background text-left shadow-sm transition hover:border-primary hover:shadow-md"
+                          aria-disabled={!canSell}
+                          className={cn(
+                            "group overflow-hidden rounded-md border border-border bg-background text-left shadow-sm transition hover:border-primary hover:shadow-md",
+                            !canSell && "border-dashed opacity-75 hover:border-border hover:shadow-sm"
+                          )}
                         >
                           <div className="aspect-[4/3] bg-muted">
                             {image ? (
@@ -558,11 +581,16 @@ export default function AdminPosPage() {
                                   {volume && <span> · {volume}</span>}
                                 </p>
                               </div>
-                              {product.cafeOnly && <Badge variant="outline">Cafe</Badge>}
+                              <div className="flex flex-col items-end gap-1">
+                                {product.cafeOnly && <Badge variant="outline">Cafe</Badge>}
+                                {!canSell && <Badge variant="secondary">Needs price</Badge>}
+                              </div>
                             </div>
                             <div className="flex items-center justify-between">
-                              <p className="font-semibold text-foreground">{formatPrice(product.price)}</p>
-                              <p className="text-xs text-muted-foreground">{product.quantity - inCart} left</p>
+                              <p className="font-semibold text-foreground">{product.price > 0 ? formatPrice(product.price) : "Set price"}</p>
+                              <p className="text-xs text-muted-foreground">
+                                {canSell ? `${product.quantity - inCart} left` : product.status.toLowerCase()}
+                              </p>
                             </div>
                           </div>
                         </button>
@@ -839,7 +867,7 @@ export default function AdminPosPage() {
               <div className="flex items-start gap-3">
                 <ShoppingBag className="mt-0.5 h-4 w-4 text-muted-foreground" />
                 <p className="text-sm text-muted-foreground">
-                  Available products show on this POS immediately. Drafts stay hidden until they are finished from Products.
+                  Available products can be checked out immediately. Drafts are visible for setup but disabled until finished in Products.
                 </p>
               </div>
             </div>

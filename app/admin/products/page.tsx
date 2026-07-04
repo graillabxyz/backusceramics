@@ -121,6 +121,7 @@ export default function AdminProductsPage() {
   const [success, setSuccess] = useState("")
   const [searchTerm, setSearchTerm] = useState("")
   const [filterCategory, setFilterCategory] = useState("ALL")
+  const [filterStatus, setFilterStatus] = useState("ALL")
   const [editingProduct, setEditingProduct] = useState<PosProduct | null>(null)
   const [isDialogOpen, setIsDialogOpen] = useState(false)
   const [formData, setFormData] = useState<ProductFormState>(emptyForm)
@@ -134,9 +135,10 @@ export default function AdminProductsPage() {
         product.description || "",
       ].some((value) => value.toLowerCase().includes(search))
       const matchesCategory = filterCategory === "ALL" || normalizeProductCategory(product.category) === filterCategory
-      return matchesSearch && matchesCategory
+      const matchesStatus = filterStatus === "ALL" || product.status === filterStatus
+      return matchesSearch && matchesCategory && matchesStatus
     })
-  }, [filterCategory, products, searchTerm])
+  }, [filterCategory, filterStatus, products, searchTerm])
 
   const shopCount = useMemo(
     () => products.filter((product) => product.showInShop && !product.cafeOnly && product.status === "AVAILABLE").length,
@@ -144,6 +146,10 @@ export default function AdminProductsPage() {
   )
   const draftCount = useMemo(
     () => products.filter((product) => product.status === "DRAFT").length,
+    [products]
+  )
+  const setupCount = useMemo(
+    () => products.filter((product) => product.status === "DRAFT" || product.price <= 0).length,
     [products]
   )
   const formIsCup = isCupCategory(formData.category)
@@ -360,18 +366,32 @@ export default function AdminProductsPage() {
       </div>
 
       <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-        <div className="rounded-md border border-border bg-background p-4">
+        <button
+          type="button"
+          className={cn(
+            "rounded-md border border-border bg-background p-4 text-left transition hover:border-primary",
+            filterStatus === "ALL" && "border-primary"
+          )}
+          onClick={() => setFilterStatus("ALL")}
+        >
           <p className="text-sm text-muted-foreground">Catalog items</p>
           <p className="mt-1 text-2xl font-semibold text-foreground">{products.length}</p>
-        </div>
+        </button>
         <div className="rounded-md border border-border bg-background p-4">
           <p className="text-sm text-muted-foreground">Visible on wares page</p>
           <p className="mt-1 text-2xl font-semibold text-foreground">{shopCount}</p>
         </div>
-        <div className="rounded-md border border-border bg-background p-4">
+        <button
+          type="button"
+          className={cn(
+            "rounded-md border border-border bg-background p-4 text-left transition hover:border-primary",
+            filterStatus === "DRAFT" && "border-primary"
+          )}
+          onClick={() => setFilterStatus("DRAFT")}
+        >
           <p className="text-sm text-muted-foreground">Drafts</p>
           <p className="mt-1 text-2xl font-semibold text-foreground">{draftCount}</p>
-        </div>
+        </button>
         <div className="rounded-md border border-border bg-background p-4">
           <p className="text-sm text-muted-foreground">Cafe-only</p>
           <p className="mt-1 text-2xl font-semibold text-foreground">
@@ -395,7 +415,7 @@ export default function AdminProductsPage() {
 
       <Card>
         <CardContent className="pt-6">
-          <div className="flex flex-col gap-4 sm:flex-row">
+          <div className="flex flex-col gap-4 lg:flex-row">
             <div className="relative flex-1">
               <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
               <Input
@@ -405,26 +425,55 @@ export default function AdminProductsPage() {
                 className="pl-9"
               />
             </div>
-            <Select value={filterCategory} onValueChange={setFilterCategory}>
-              <SelectTrigger className="w-full sm:w-56">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="ALL">All categories</SelectItem>
-                {POS_PRODUCT_CATEGORIES.map((category) => (
-                  <SelectItem key={category.id} value={category.id}>
-                    {category.label}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+            <div className="grid gap-3 sm:grid-cols-3 lg:w-[42rem]">
+              <Select value={filterCategory} onValueChange={setFilterCategory}>
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="ALL">All categories</SelectItem>
+                  {POS_PRODUCT_CATEGORIES.map((category) => (
+                    <SelectItem key={category.id} value={category.id}>
+                      {category.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <Select value={filterStatus} onValueChange={setFilterStatus}>
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="ALL">All statuses</SelectItem>
+                  {POS_PRODUCT_STATUSES.map((status) => (
+                    <SelectItem key={status} value={status}>
+                      {status.toLowerCase()}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <Button
+                type="button"
+                variant={filterStatus === "DRAFT" ? "default" : "outline"}
+                onClick={() => setFilterStatus("DRAFT")}
+              >
+                Drafts ({draftCount})
+              </Button>
+            </div>
           </div>
+          {setupCount > 0 && (
+            <div className="mt-4 rounded-md border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+              {setupCount} products need setup before checkout. Use the Drafts filter to add prices, stock, and Available status.
+            </div>
+          )}
         </CardContent>
       </Card>
 
       <Card>
         <CardHeader>
-          <CardTitle className="font-heading text-xl">Catalog ({filteredProducts.length})</CardTitle>
+          <CardTitle className="font-heading text-xl">
+            {filterStatus === "DRAFT" ? "Drafts" : "Catalog"} ({filteredProducts.length})
+          </CardTitle>
         </CardHeader>
         <CardContent>
           {loading ? (
