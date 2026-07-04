@@ -8,7 +8,6 @@ import {
   POS_PRODUCT_STATUSES,
   serializeProductImageUrls,
 } from "@/lib/pos-catalog"
-import { syncDefaultPosProducts } from "@/lib/pos-default-sync"
 
 function slugify(value: string) {
   return value
@@ -48,8 +47,6 @@ export async function GET() {
   if (!session || !canUsePos(session.user.role)) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
   }
-
-  await syncDefaultPosProducts({ createdBy: session.user.id })
 
   const products = await prisma.posProduct.findMany({
     orderBy: [

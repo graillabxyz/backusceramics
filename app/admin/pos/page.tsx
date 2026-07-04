@@ -17,7 +17,6 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Switch } from "@/components/ui/switch"
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Textarea } from "@/components/ui/textarea"
 import Link from "next/link"
 import {
@@ -26,7 +25,6 @@ import {
   isCupCategory,
   normalizeProductCategory,
   parseProductImageUrls,
-  POS_PAYMENT_METHODS,
   POS_PRODUCT_CATEGORIES,
   POS_PRODUCT_STATUSES,
 } from "@/lib/pos-catalog"
@@ -46,7 +44,6 @@ import {
   Send,
   ShoppingBag,
   ShoppingCart,
-  Store,
   Trash2,
 } from "lucide-react"
 import {
@@ -140,6 +137,20 @@ function cartLineTotals(item: CartItem) {
   })
 }
 
+const POS_PAYMENT_OPTIONS = [
+  { value: "CARD_MACHINE", label: "Card" },
+  { value: "QRIS", label: "QRIS" },
+  { value: "CASH", label: "Cash" },
+  { value: "TRANSFER", label: "Transfer" },
+] as const
+
+function paymentCompletionLabel(method: string) {
+  if (method === "CASH") return "Record cash payment"
+  if (method === "QRIS") return "Paid with QRIS"
+  if (method === "TRANSFER") return "Record transfer payment"
+  return "Paid with card machine"
+}
+
 export default function AdminPosPage() {
   const posRootRef = useRef<HTMLDivElement | null>(null)
   const [products, setProducts] = useState<PosProduct[]>([])
@@ -159,9 +170,11 @@ export default function AdminPosPage() {
   const [savingProduct, setSavingProduct] = useState(false)
   const [uploadingImage, setUploadingImage] = useState(false)
   const [imageUploadNotice, setImageUploadNotice] = useState("")
+  const [imageUploadError, setImageUploadError] = useState("")
   const [quickProduct, setQuickProduct] = useState<QuickProductForm>(quickProductDefaults)
   const [editingProduct, setEditingProduct] = useState<PosProduct | null>(null)
   const [isFullscreen, setIsFullscreen] = useState(false)
+  const [posStep, setPosStep] = useState<"CATEGORIES" | "ITEMS" | "CHECKOUT">("CATEGORIES")
 
   const posProducts = useMemo(
     () => products.filter((product) => product.quantity > 0 && product.status !== "SOLD" && product.status !== "ARCHIVED"),
@@ -180,13 +193,20 @@ export default function AdminPosPage() {
 
   const filteredProducts = useMemo(() => {
     const search = searchTerm.trim().toLowerCase()
-    return posProducts.filter((product) => {
+    return availableProducts.filter((product) => {
       const matchesCategory = activeCategory === "ALL" || normalizeProductCategory(product.category) === activeCategory
       const matchesSearch = !search || [product.name, product.sku || "", product.description || ""]
         .some((value) => value.toLowerCase().includes(search))
       return matchesCategory && matchesSearch
     })
-  }, [activeCategory, posProducts, searchTerm])
+  }, [activeCategory, availableProducts, searchTerm])
+
+  const categoryCounts = useMemo(() => {
+    return POS_PRODUCT_CATEGORIES.reduce<Record<string, number>>((counts, category) => {
+      counts[category.id] = availableProducts.filter((product) => normalizeProductCategory(product.category) === category.id).length
+      return counts
+    }, {})
+  }, [availableProducts])
 
   const cartSummary = useMemo(
     () => cart.reduce((summary, item) => {
@@ -260,6 +280,7 @@ export default function AdminPosPage() {
     setQuickProduct(quickProductDefaults)
     setEditingProduct(null)
     setImageUploadNotice("")
+    setImageUploadError("")
     setError("")
     setIsQuickAddOpen(true)
   }
@@ -281,6 +302,7 @@ export default function AdminPosPage() {
       featured: product.featured,
     })
     setImageUploadNotice("")
+    setImageUploadError("")
     setError("")
     setSuccess("")
     setIsQuickEditOpen(true)
@@ -347,7 +369,8 @@ export default function AdminPosPage() {
       }
 
       setProducts((current) => [data, ...current])
-      setActiveCategory(normalizeProductCategory(data.category))
+      setActiveCategory("ALL")
+      setPosStep("CATEGORIES")
       setSearchTerm("")
       setSuccess(data.status === "DRAFT" ? `${data.name} was saved as a draft.` : `${data.name} was added to POS inventory.`)
       setIsQuickAddOpen(false)
@@ -412,14 +435,17 @@ export default function AdminPosPage() {
 
     setUploadingImage(true)
     setImageUploadNotice("")
-    setError("")
+    setImageUploadError("")
 
     try {
       const uploadForm = new FormData()
       uploadForm.append("file", file)
       const res = await fetch("/api/upload", { method: "POST", body: uploadForm })
-      const data = await res.json()
-      if (!res.ok || !data.url) throw new Error(data.error || "Upload failed")
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok || !data.url) {
+        console.error("POS product image upload failed details", { status: res.status, response: data })
+        throw new Error(data.error || "Upload failed")
+      }
 
       setQuickProduct((current) => ({
         ...current,
@@ -428,7 +454,7 @@ export default function AdminPosPage() {
       setImageUploadNotice("Image uploaded and added below.")
     } catch (uploadError) {
       console.error("POS product image upload failed", uploadError)
-      setError("Could not upload that image.")
+      setImageUploadError("That image could not be uploaded. Try a smaller JPG, PNG, or WebP.")
     } finally {
       setUploadingImage(false)
       event.target.value = ""
@@ -453,6 +479,9 @@ export default function AdminPosPage() {
       }
       return [...current, { product, quantity: 1, taxRate: 0, discountType: "NONE", discountValue: "" }]
     })
+    setActiveCategory("ALL")
+    setSearchTerm("")
+    setPosStep("CATEGORIES")
   }
 
   const updateCartQuantity = (productId: string, quantity: number) => {
@@ -722,6 +751,7 @@ export default function AdminPosPage() {
           onChange={(event) => {
             updateQuickProduct("imageUrls", event.target.value)
             setImageUploadNotice("")
+            setImageUploadError("")
           }}
           rows={3}
           placeholder="/uploads/cup.jpg or https://..."
@@ -730,6 +760,11 @@ export default function AdminPosPage() {
           <p className="flex items-center gap-2 text-sm font-medium text-emerald-700 dark:text-emerald-400">
             <CheckCircle2 className="h-4 w-4" />
             {imageUploadNotice}
+          </p>
+        )}
+        {imageUploadError && (
+          <p className="rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive">
+            {imageUploadError}
           </p>
         )}
         {quickProductImages.length > 0 && (
@@ -800,32 +835,30 @@ export default function AdminPosPage() {
         isFullscreen && "fixed inset-0 z-[80] h-[100dvh] overflow-auto overscroll-none bg-muted/30 p-2 sm:p-3 lg:p-4"
       )}
     >
-      <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
+      <div className="sticky top-0 z-40 -mx-2 flex flex-col gap-3 border-b border-border bg-muted/95 px-2 py-3 backdrop-blur sm:-mx-3 sm:px-3 lg:-mx-4 lg:flex-row lg:items-center lg:justify-between lg:px-4">
         <div>
-          <h1 className="font-heading text-3xl font-bold text-foreground">Point of Sale</h1>
-          <p className="mt-1 text-muted-foreground">
-            Fast cashier checkout for ceramic wares and cafe-only items.
+          <h1 className="font-heading text-2xl font-bold text-foreground">Point of Sale</h1>
+          <p className="mt-1 text-sm text-muted-foreground">
+            {availableProducts.length} ready to sell · {draftProducts.length} need setup
           </p>
         </div>
-        <div className="flex flex-col gap-3 sm:flex-row sm:items-stretch">
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
           <div className="flex items-center justify-end sm:hidden">
             <AdminNotifications enabled />
-          </div>
-          <div className="grid grid-cols-2 gap-3 sm:w-80">
-            <div className="rounded-md border border-border bg-background p-3">
-              <p className="text-xs text-muted-foreground">Ready to sell</p>
-              <p className="text-2xl font-semibold text-foreground">{availableProducts.length}</p>
-            </div>
-            <div className="rounded-md border border-border bg-background p-3">
-              <p className="text-xs text-muted-foreground">Needs setup</p>
-              <Link href="/admin/products" className="block text-2xl font-semibold text-foreground hover:text-primary">
-                {draftProducts.length}
-              </Link>
-            </div>
           </div>
           <div className="hidden items-center sm:flex">
             <AdminNotifications enabled />
           </div>
+          {cartCount > 0 && (
+            <Button type="button" className="h-auto min-h-11 sm:min-w-36" onClick={() => setPosStep("CHECKOUT")}>
+              <ShoppingCart className="mr-2 h-4 w-4" />
+              Checkout · {formatPrice(cartSummary.total)}
+            </Button>
+          )}
+          <Button type="button" variant="outline" className="h-auto min-h-11 sm:min-w-32" onClick={openQuickAdd}>
+            <Plus className="mr-2 h-4 w-4" />
+            Add product
+          </Button>
           <Button asChild variant="outline" className="h-auto min-h-12 sm:min-w-36">
             <Link href={`/admin/products${isFullscreen ? "?posFullscreen=1" : ""}`}>
               <Pencil className="mr-2 h-4 w-4" />
@@ -835,7 +868,7 @@ export default function AdminPosPage() {
           <Button
             type="button"
             variant={isFullscreen ? "secondary" : "outline"}
-            className="h-auto min-h-12 sm:min-w-40"
+            className="h-auto min-h-11 sm:min-w-40"
             onClick={toggleFullscreen}
             aria-pressed={isFullscreen}
           >
@@ -858,164 +891,198 @@ export default function AdminPosPage() {
         </div>
       )}
 
-      <div className="grid gap-3 lg:grid-cols-[minmax(0,1fr)_360px] xl:grid-cols-[minmax(0,1fr)_400px]">
-        <Card>
-          <CardHeader className="gap-3 p-4">
-            <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
-              <CardTitle className="flex items-center gap-2 font-heading text-xl">
-                <Store className="h-5 w-5" />
-                Products
-              </CardTitle>
-              <div className="flex flex-col gap-2 sm:flex-row md:items-center">
-                <Button type="button" onClick={openQuickAdd}>
+      <div className="grid gap-3">
+        <Card className={cn(posStep === "CHECKOUT" && "hidden")}>
+          <CardContent className="p-4">
+            <div className="mb-4 flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+              <div className="flex flex-wrap gap-2">
+                <Button
+                  type="button"
+                  variant={posStep === "CATEGORIES" && !searchTerm ? "default" : "outline"}
+                  onClick={() => {
+                    setActiveCategory("ALL")
+                    setSearchTerm("")
+                    setPosStep("CATEGORIES")
+                  }}
+                >
+                  Categories
+                </Button>
+                {activeCategory !== "ALL" && (
+                  <Button type="button" variant="secondary" onClick={() => setPosStep("ITEMS")}>
+                    {getProductCategoryLabel(activeCategory)}
+                  </Button>
+                )}
+                {cartCount > 0 && (
+                  <Button type="button" variant="outline" onClick={() => setPosStep("CHECKOUT")}>
+                    <ShoppingCart className="mr-2 h-4 w-4" />
+                    Checkout ({cartCount})
+                  </Button>
+                )}
+              </div>
+              <div className="relative lg:w-96">
+                <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                <Input
+                  value={searchTerm}
+                  onChange={(event) => {
+                    const value = event.target.value
+                    setSearchTerm(value)
+                    setPosStep(value.trim() ? "ITEMS" : "CATEGORIES")
+                    if (value.trim()) setActiveCategory("ALL")
+                  }}
+                  placeholder="Search POS..."
+                  className="pl-9"
+                />
+              </div>
+            </div>
+
+            {loading ? (
+              <div className="flex items-center justify-center py-24">
+                <Loader2 className="h-8 w-8 animate-spin text-primary" />
+              </div>
+            ) : posStep === "CATEGORIES" && !searchTerm.trim() ? (
+              <div className="grid auto-rows-fr grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-4">
+                {POS_PRODUCT_CATEGORIES.map((category) => {
+                  const count = categoryCounts[category.id] || 0
+                  return (
+                    <button
+                      key={category.id}
+                      type="button"
+                      disabled={count === 0}
+                      onClick={() => {
+                        setActiveCategory(category.id)
+                        setPosStep("ITEMS")
+                      }}
+                      className={cn(
+                        "flex min-h-32 flex-col justify-between rounded-md border border-border bg-background p-5 text-left transition hover:border-primary hover:shadow-sm",
+                        count === 0 && "cursor-not-allowed opacity-45 hover:border-border hover:shadow-none"
+                      )}
+                    >
+                      <span className="font-heading text-2xl font-semibold text-foreground">{category.label}</span>
+                      <span className="text-sm text-muted-foreground">{count} sellable item{count === 1 ? "" : "s"}</span>
+                    </button>
+                  )
+                })}
+              </div>
+            ) : filteredProducts.length === 0 ? (
+              <div className="py-24 text-center">
+                <ShoppingCart className="mx-auto mb-4 h-12 w-12 text-muted-foreground" />
+                <p className="font-medium text-foreground">No sellable products here</p>
+                <p className="mt-1 text-sm text-muted-foreground">Only available products with prices appear on the POS.</p>
+                <Button type="button" className="mt-5" onClick={openQuickAdd}>
                   <Plus className="mr-2 h-4 w-4" />
                   Add product
                 </Button>
-                <div className="relative md:w-80">
-                  <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-                  <Input
-                    value={searchTerm}
-                    onChange={(event) => setSearchTerm(event.target.value)}
-                    placeholder="Search POS..."
-                    className="pl-9"
-                  />
-                </div>
               </div>
-            </div>
-          </CardHeader>
-          <CardContent className="p-4 pt-0">
-            <Tabs value={activeCategory} onValueChange={setActiveCategory}>
-              <TabsList className="mb-4 flex h-auto flex-wrap justify-start gap-2 bg-transparent p-0">
-                <TabsTrigger value="ALL" className="rounded-full border border-border px-4 py-2 data-[state=active]:bg-primary data-[state=active]:text-primary-foreground">
-                  All
-                </TabsTrigger>
-                {POS_PRODUCT_CATEGORIES.map((category) => (
-                  <TabsTrigger
-                    key={category.id}
-                    value={category.id}
-                    className="rounded-full border border-border px-4 py-2 data-[state=active]:bg-primary data-[state=active]:text-primary-foreground"
+            ) : (
+              <div className="space-y-4">
+                <div className="flex items-center justify-between gap-3">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={() => {
+                      setActiveCategory("ALL")
+                      setSearchTerm("")
+                      setPosStep("CATEGORIES")
+                    }}
                   >
-                    {category.label}
-                  </TabsTrigger>
-                ))}
-              </TabsList>
+                    Back to categories
+                  </Button>
+                  <p className="text-sm text-muted-foreground">{filteredProducts.length} item{filteredProducts.length === 1 ? "" : "s"}</p>
+                </div>
+                <div
+                  className={cn(
+                    "grid auto-rows-fr grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5",
+                    isFullscreen ? "lg:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-6" : "2xl:grid-cols-6"
+                  )}
+                >
+                  {filteredProducts.map((product) => {
+                    const image = firstImage(product)
+                    const inCart = cart.find((item) => item.product.id === product.id)?.quantity || 0
+                    const volume = cupVolumeLabel(product)
 
-              <TabsContent value={activeCategory} className="mt-0">
-                {loading ? (
-                  <div className="flex items-center justify-center py-24">
-                    <Loader2 className="h-8 w-8 animate-spin text-primary" />
-                  </div>
-                ) : filteredProducts.length === 0 ? (
-                  <div className="py-24 text-center">
-                    <ShoppingCart className="mx-auto mb-4 h-12 w-12 text-muted-foreground" />
-                    <p className="font-medium text-foreground">No POS products here</p>
-                    <p className="mt-1 text-sm text-muted-foreground">Try another category or add inventory right here.</p>
-                    <Button type="button" className="mt-5" onClick={openQuickAdd}>
-                      <Plus className="mr-2 h-4 w-4" />
-                      Add product
-                    </Button>
-                  </div>
-                ) : (
-                  <div
-                    className={cn(
-                      "grid auto-rows-fr grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5",
-                      isFullscreen ? "lg:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-6" : "2xl:grid-cols-4"
-                    )}
-                  >
-                    {filteredProducts.map((product) => {
-                      const image = firstImage(product)
-                      const inCart = cart.find((item) => item.product.id === product.id)?.quantity || 0
-                      const volume = cupVolumeLabel(product)
-                      const canSell = product.status === "AVAILABLE" && product.price > 0
-
-                      return (
-                        <div
-                          key={product.id}
-                          className={cn(
-                            "group relative overflow-hidden rounded-md border border-border bg-muted text-left shadow-sm transition hover:border-primary hover:shadow-md",
-                            !canSell && "border-dashed opacity-85 hover:border-border hover:shadow-sm"
-                          )}
+                    return (
+                      <div
+                        key={product.id}
+                        className="group relative overflow-hidden rounded-md border border-border bg-muted text-left shadow-sm transition hover:border-primary hover:shadow-md"
+                      >
+                        <button
+                          type="button"
+                          onClick={() => addToCart(product)}
+                          className="block w-full text-left"
                         >
-                          <button
-                            type="button"
-                            onClick={() => addToCart(product)}
-                            aria-disabled={!canSell}
-                            className="block w-full text-left"
-                          >
-                            <div className="relative aspect-square overflow-hidden">
-                              {image ? (
-                                <img src={image} alt="" className="h-full w-full object-cover transition duration-200 group-hover:scale-[1.03]" />
-                              ) : (
-                                <div className="flex h-full w-full items-center justify-center bg-muted">
-                                  <ShoppingCart className="h-7 w-7 text-muted-foreground" />
-                                </div>
-                              )}
-                              <div className="absolute inset-x-0 bottom-0 min-h-[7rem] bg-gradient-to-t from-black/90 via-black/65 to-transparent p-3 pt-12 text-white">
-                                <div className="flex items-end justify-between gap-2">
-                                  <div className="min-w-0">
-                                    <p className="line-clamp-2 text-sm font-semibold leading-tight">{product.name}</p>
-                                    <p className="mt-1 truncate text-[11px] uppercase tracking-wide text-white/75">
-                                      {product.sku || getProductCategoryLabel(product.category)}
-                                      {volume && <span> · {volume}</span>}
-                                    </p>
-                                  </div>
-                                  <div className="flex shrink-0 flex-col items-end gap-1">
-                                    {product.cafeOnly && <span className="rounded bg-white/15 px-1.5 py-0.5 text-[10px] font-medium text-white">Cafe</span>}
-                                    {!canSell && <span className="rounded bg-white/20 px-1.5 py-0.5 text-[10px] font-medium text-white">Needs price</span>}
-                                  </div>
-                                </div>
-                                <div className="mt-2 flex items-center justify-between gap-2">
-                                  <p className="text-sm font-semibold">{product.price > 0 ? formatPrice(product.price) : "Set price"}</p>
-                                  <p className="text-[11px] text-white/75">
-                                    {canSell ? `${product.quantity - inCart} left` : product.status.toLowerCase()}
+                          <div className="relative aspect-square overflow-hidden">
+                            {image ? (
+                              <img src={image} alt="" className="h-full w-full object-cover transition duration-200 group-hover:scale-[1.03]" />
+                            ) : (
+                              <div className="flex h-full w-full items-center justify-center bg-muted">
+                                <ShoppingCart className="h-7 w-7 text-muted-foreground" />
+                              </div>
+                            )}
+                            <div className="absolute inset-x-0 bottom-0 min-h-[7rem] bg-gradient-to-t from-black/90 via-black/65 to-transparent p-3 pt-12 text-white">
+                              <div className="flex items-end justify-between gap-2">
+                                <div className="min-w-0">
+                                  <p className="line-clamp-2 text-sm font-semibold leading-tight">{product.name}</p>
+                                  <p className="mt-1 truncate text-[11px] uppercase tracking-wide text-white/75">
+                                    {product.sku || getProductCategoryLabel(product.category)}
+                                    {volume && <span> · {volume}</span>}
                                   </p>
                                 </div>
+                                {product.cafeOnly && <span className="shrink-0 rounded bg-white/15 px-1.5 py-0.5 text-[10px] font-medium text-white">Cafe</span>}
+                              </div>
+                              <div className="mt-2 flex items-center justify-between gap-2">
+                                <p className="text-sm font-semibold">{formatPrice(product.price)}</p>
+                                <p className="text-[11px] text-white/75">{product.quantity - inCart} left</p>
                               </div>
                             </div>
-                          </button>
-                          <Button
-                            size="icon"
-                            variant="secondary"
-                            className="absolute right-2 top-2 z-10 h-8 w-8 bg-background/85 text-foreground shadow-sm hover:bg-background"
-                            onClick={() => openQuickEdit(product)}
-                            aria-label={`Quick edit ${product.name}`}
-                          >
-                            <Pencil className="h-4 w-4" />
-                          </Button>
-                        </div>
-                      )
-                    })}
-                  </div>
-                )}
-              </TabsContent>
-            </Tabs>
+                          </div>
+                        </button>
+                        <Button
+                          size="icon"
+                          variant="secondary"
+                          className="absolute right-2 top-2 z-10 h-8 w-8 bg-background/85 text-foreground shadow-sm hover:bg-background"
+                          onClick={() => openQuickEdit(product)}
+                          aria-label={`Quick edit ${product.name}`}
+                        >
+                          <Pencil className="h-4 w-4" />
+                        </Button>
+                      </div>
+                    )
+                  })}
+                </div>
+              </div>
+            )}
           </CardContent>
         </Card>
 
-        <Card
-          className={cn(
-            isFullscreen
-              ? "lg:sticky lg:top-0 lg:max-h-[calc(100vh-3rem)] lg:self-start lg:overflow-y-auto"
-              : "lg:sticky lg:top-20 lg:self-start xl:top-6"
-          )}
-        >
+        <Card className={cn(posStep !== "CHECKOUT" && "hidden")}>
           <CardHeader>
-            <CardTitle className="flex items-center justify-between font-heading text-xl">
-              <span className="flex items-center gap-2">
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+              <CardTitle className="flex items-center gap-2 font-heading text-2xl">
                 <ShoppingCart className="h-5 w-5" />
                 Checkout
-              </span>
-              <Badge variant="secondary">{cartCount} items</Badge>
-            </CardTitle>
+                <Badge variant="secondary">{cartCount} items</Badge>
+              </CardTitle>
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => {
+                  setActiveCategory("ALL")
+                  setSearchTerm("")
+                  setPosStep("CATEGORIES")
+                }}
+              >
+                Back to categories
+              </Button>
+            </div>
           </CardHeader>
-          <CardContent className="space-y-5">
+          <CardContent className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_420px]">
             {cart.length === 0 ? (
-              <div className="rounded-md border border-dashed border-border py-12 text-center">
+              <div className="rounded-md border border-dashed border-border py-20 text-center xl:col-span-2">
                 <ShoppingCart className="mx-auto mb-3 h-10 w-10 text-muted-foreground" />
                 <p className="text-sm text-muted-foreground">Tap products to add them here.</p>
               </div>
             ) : (
-              <div className={cn("space-y-3", isFullscreen && "lg:max-h-[26vh] lg:overflow-y-auto lg:pr-1")}>
+              <div className="space-y-3">
                 {cart.map((item) => {
                   const totals = cartLineTotals(item)
                   const suggestedTaxRate = defaultTaxRate(item.product)
@@ -1130,6 +1197,8 @@ export default function AdminPosPage() {
               </div>
             )}
 
+            {cart.length > 0 && (
+            <div className="space-y-5 rounded-md border border-border bg-background p-4 shadow-sm">
             <div className="rounded-md bg-muted/50 p-4">
               <div className="flex items-center justify-between text-sm text-muted-foreground">
                 <span>Subtotal</span>
@@ -1179,19 +1248,20 @@ export default function AdminPosPage() {
               </div>
 
               <div className="space-y-2">
-                <Label>Machine payment type</Label>
-                <Select value={paymentMethod} onValueChange={setPaymentMethod}>
-                  <SelectTrigger>
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {POS_PAYMENT_METHODS.filter((method) => method !== "ONLINE").map((method) => (
-                      <SelectItem key={method} value={method}>
-                        {method === "CARD_MACHINE" ? "Card machine" : method.toLowerCase()}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+                <Label>Payment method</Label>
+                <div className="grid grid-cols-2 gap-2">
+                  {POS_PAYMENT_OPTIONS.map((method) => (
+                    <Button
+                      key={method.value}
+                      type="button"
+                      variant={paymentMethod === method.value ? "default" : "outline"}
+                      className="justify-center"
+                      onClick={() => setPaymentMethod(method.value)}
+                    >
+                      {method.label}
+                    </Button>
+                  ))}
+                </div>
               </div>
             </div>
 
@@ -1202,7 +1272,7 @@ export default function AdminPosPage() {
                 disabled={cart.length === 0 || checkingOut || onlineLoading}
               >
                 {checkingOut ? <Loader2 className="mr-2 h-5 w-5 animate-spin" /> : <CreditCard className="mr-2 h-5 w-5" />}
-                Paid with card machine
+                {paymentCompletionLabel(paymentMethod)}
               </Button>
 
               <Button
@@ -1221,17 +1291,24 @@ export default function AdminPosPage() {
                 </Button>
               )}
             </div>
+            </div>
+            )}
           </CardContent>
         </Card>
       </div>
 
       <Dialog open={isQuickAddOpen} onOpenChange={setIsQuickAddOpen}>
-        <DialogContent className="max-h-[92vh] max-w-2xl overflow-y-auto">
+        <DialogContent className="max-h-[92vh] max-w-[calc(100vw-1rem)] overflow-y-auto md:max-w-3xl xl:max-w-4xl">
           <DialogHeader>
             <DialogTitle className="font-heading text-2xl">Add product to POS</DialogTitle>
             <DialogDescription>
               Use this for quick cashier inventory. Detailed photos and long descriptions can still be edited later in Products.
             </DialogDescription>
+            {error && (
+              <div className="rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive">
+                {error}
+              </div>
+            )}
           </DialogHeader>
 
           {renderQuickProductFields("quick")}
@@ -1249,12 +1326,17 @@ export default function AdminPosPage() {
       </Dialog>
 
       <Dialog open={isQuickEditOpen} onOpenChange={setIsQuickEditOpen}>
-        <DialogContent className="max-h-[92vh] max-w-2xl overflow-y-auto">
+        <DialogContent className="max-h-[92vh] max-w-[calc(100vw-1rem)] overflow-y-auto md:max-w-3xl xl:max-w-4xl">
           <DialogHeader>
             <DialogTitle className="font-heading text-2xl">Quick edit product</DialogTitle>
             <DialogDescription>
               Update price, stock, sales channel, and images without leaving the POS.
             </DialogDescription>
+            {error && (
+              <div className="rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive">
+                {error}
+              </div>
+            )}
           </DialogHeader>
 
           {renderQuickProductFields("quickEdit")}

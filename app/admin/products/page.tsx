@@ -37,7 +37,6 @@ import {
   Minimize2,
   Pencil,
   Plus,
-  RefreshCw,
   Search,
   ShoppingBag,
   Store,
@@ -118,11 +117,11 @@ export default function AdminProductsPage() {
   const [products, setProducts] = useState<PosProduct[]>([])
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
-  const [syncingDefaults, setSyncingDefaults] = useState(false)
   const [uploading, setUploading] = useState(false)
   const [error, setError] = useState("")
   const [success, setSuccess] = useState("")
   const [imageUploadNotice, setImageUploadNotice] = useState("")
+  const [imageUploadError, setImageUploadError] = useState("")
   const [searchTerm, setSearchTerm] = useState("")
   const [filterCategory, setFilterCategory] = useState("ALL")
   const [filterStatus, setFilterStatus] = useState("ALL")
@@ -194,6 +193,7 @@ export default function AdminProductsPage() {
     setEditingProduct(null)
     setFormData(emptyForm)
     setImageUploadNotice("")
+    setImageUploadError("")
     setError("")
     setSuccess("")
     setIsDialogOpen(true)
@@ -216,6 +216,7 @@ export default function AdminProductsPage() {
       featured: product.featured,
     })
     setImageUploadNotice("")
+    setImageUploadError("")
     setError("")
     setSuccess("")
     setIsDialogOpen(true)
@@ -236,31 +237,6 @@ export default function AdminProductsPage() {
     const nextSearch = params.toString()
     window.history.replaceState(null, "", `${window.location.pathname}${nextSearch ? `?${nextSearch}` : ""}`)
   }, [loading, products])
-
-  const handleSyncDefaults = async () => {
-    setSyncingDefaults(true)
-    setError("")
-    setSuccess("")
-
-    try {
-      const res = await fetch("/api/pos/products/defaults", { method: "POST" })
-      const data = await res.json()
-      if (!res.ok) {
-        setError(data.error || "Could not sync default products")
-        return
-      }
-
-      await fetchProducts()
-      setSuccess(
-        `Synced ${data.total} default items: ${data.created} created, ${data.updated} class items updated, ${data.skipped} cafe items already existed. Cafe items are drafts until prices are set.`
-      )
-    } catch (syncError) {
-      console.error("Default POS product sync failed", syncError)
-      setError("Could not sync default products.")
-    } finally {
-      setSyncingDefaults(false)
-    }
-  }
 
   const handleFormChange = <K extends keyof ProductFormState>(key: K, value: ProductFormState[K]) => {
     setFormData((current) => {
@@ -287,14 +263,17 @@ export default function AdminProductsPage() {
 
     setUploading(true)
     setImageUploadNotice("")
-    setError("")
+    setImageUploadError("")
 
     try {
       const uploadForm = new FormData()
       uploadForm.append("file", file)
       const res = await fetch("/api/upload", { method: "POST", body: uploadForm })
-      const data = await res.json()
-      if (!res.ok || !data.url) throw new Error(data.error || "Upload failed")
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok || !data.url) {
+        console.error("Product image upload failed details", { status: res.status, response: data })
+        throw new Error(data.error || "Upload failed")
+      }
 
       setFormData((current) => ({
         ...current,
@@ -303,7 +282,7 @@ export default function AdminProductsPage() {
       setImageUploadNotice("Image uploaded and previewed below.")
     } catch (uploadError) {
       console.error("Product image upload failed", uploadError)
-      setError("Could not upload that image.")
+      setImageUploadError("That image could not be uploaded. Try a smaller JPG, PNG, or WebP.")
     } finally {
       setUploading(false)
       event.target.value = ""
@@ -406,16 +385,6 @@ export default function AdminProductsPage() {
               </Button>
             </>
           )}
-          <Button
-            type="button"
-            variant="secondary"
-            className="w-full sm:w-auto"
-            onClick={handleSyncDefaults}
-            disabled={syncingDefaults || loading}
-          >
-            {syncingDefaults ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <RefreshCw className="mr-2 h-4 w-4" />}
-            Sync defaults
-          </Button>
           <Button asChild variant="outline" className="w-full sm:w-auto">
             <Link href={`/admin/wares${isPosFullscreen ? "?posFullscreen=1" : ""}`}>
               <Eye className="mr-2 h-4 w-4" />
@@ -716,7 +685,7 @@ export default function AdminProductsPage() {
       </Card>
 
       <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
-        <DialogContent className="grid max-h-[92vh] max-w-3xl grid-rows-[auto_minmax(0,1fr)_auto] gap-0 overflow-hidden p-0 sm:p-6">
+        <DialogContent className="grid max-h-[92vh] max-w-[calc(100vw-1rem)] grid-rows-[auto_minmax(0,1fr)_auto] gap-0 overflow-hidden p-0 sm:p-6 md:max-w-3xl xl:max-w-6xl">
           <DialogHeader className="border-b border-border px-4 py-4 text-left sm:border-0 sm:px-0 sm:py-0">
             <DialogTitle className="font-heading text-2xl">
               {editingProduct ? "Edit product" : "Add product"}
@@ -724,9 +693,15 @@ export default function AdminProductsPage() {
             <DialogDescription>
               Drafts only need a name. Add price, stock, images, and sales channels when the piece is ready.
             </DialogDescription>
+            {error && (
+              <div className="rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive">
+                {error}
+              </div>
+            )}
           </DialogHeader>
 
-          <div className="min-h-0 space-y-4 overflow-y-auto px-4 py-4 sm:px-0">
+          <div className="min-h-0 overflow-y-auto px-4 py-4 sm:px-0">
+            <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_minmax(360px,0.8fr)]">
             <section className="rounded-md border border-border bg-muted/20 p-4">
               <div className="mb-4">
                 <h3 className="font-heading text-lg font-semibold text-foreground">Product details</h3>
@@ -861,6 +836,7 @@ export default function AdminProductsPage() {
                     onChange={(event) => {
                       handleFormChange("imageUrls", event.target.value)
                       setImageUploadNotice("")
+                      setImageUploadError("")
                     }}
                     rows={3}
                     placeholder="/uploads/cup.jpg or https://..."
@@ -869,6 +845,11 @@ export default function AdminProductsPage() {
                     <p className="flex items-center gap-2 text-sm font-medium text-emerald-700 dark:text-emerald-400">
                       <CheckCircle2 className="h-4 w-4" />
                       {imageUploadNotice}
+                    </p>
+                  )}
+                  {imageUploadError && (
+                    <p className="rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive">
+                      {imageUploadError}
                     </p>
                   )}
                   {formImages.length > 0 ? (
@@ -890,7 +871,7 @@ export default function AdminProductsPage() {
               </div>
             </section>
 
-            <section className="rounded-md border border-border bg-muted/20 p-4">
+            <section className="rounded-md border border-border bg-muted/20 p-4 xl:col-span-2">
               <div className="mb-4">
                 <h3 className="font-heading text-lg font-semibold text-foreground">Sales channels</h3>
                 <p className="text-sm text-muted-foreground">
@@ -938,6 +919,7 @@ export default function AdminProductsPage() {
                 </div>
               </div>
             </section>
+            </div>
           </div>
 
           <DialogFooter className="border-t border-border bg-background px-4 py-3 sm:px-0 sm:pb-0">

@@ -24,6 +24,24 @@ async function uploadToSupabaseStorage(file: File, buffer: Buffer) {
   const supabase = createClient(supabaseUrl, serviceRoleKey, {
     auth: { persistSession: false },
   })
+
+  const { data: buckets, error: bucketListError } = await supabase.storage.listBuckets()
+  if (bucketListError) {
+    throw new Error(`Could not inspect storage buckets: ${bucketListError.message}`)
+  }
+
+  if (!buckets?.some((item) => item.name === bucket)) {
+    const { error: createBucketError } = await supabase.storage.createBucket(bucket, {
+      public: true,
+      fileSizeLimit: 8 * 1024 * 1024,
+      allowedMimeTypes: ["image/jpeg", "image/png", "image/webp", "image/gif"],
+    })
+
+    if (createBucketError && !createBucketError.message.toLowerCase().includes("already exists")) {
+      throw new Error(`Could not create storage bucket "${bucket}": ${createBucketError.message}`)
+    }
+  }
+
   const filename = `products/${getUploadFilename(file)}`
   const { error } = await supabase.storage.from(bucket).upload(filename, buffer, {
     contentType: file.type || "image/jpeg",
@@ -31,7 +49,7 @@ async function uploadToSupabaseStorage(file: File, buffer: Buffer) {
   })
 
   if (error) {
-    throw new Error(error.message)
+    throw new Error(`Could not upload to storage bucket "${bucket}": ${error.message}`)
   }
 
   const { data } = supabase.storage.from(bucket).getPublicUrl(filename)
@@ -69,7 +87,14 @@ export async function POST(req: NextRequest) {
     }
   } catch (error) {
     console.error("Supabase product image upload failed", error)
-    return NextResponse.json({ error: "Image upload failed" }, { status: 500 })
+    return NextResponse.json(
+      {
+        error: "Image upload failed",
+        code: "SUPABASE_STORAGE_UPLOAD_FAILED",
+        detail: error instanceof Error ? error.message : "Unknown storage error",
+      },
+      { status: 500 }
+    )
   }
 
   // Create uploads directory if it doesn't exist
