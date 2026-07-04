@@ -202,6 +202,22 @@ export default function AdminProductsPage() {
     setIsDialogOpen(true)
   }
 
+  useEffect(() => {
+    if (loading || products.length === 0 || typeof window === "undefined") return
+
+    const params = new URLSearchParams(window.location.search)
+    const editId = params.get("edit")
+    if (!editId) return
+
+    const product = products.find((item) => item.id === editId)
+    if (!product) return
+
+    openEdit(product)
+    params.delete("edit")
+    const nextSearch = params.toString()
+    window.history.replaceState(null, "", `${window.location.pathname}${nextSearch ? `?${nextSearch}` : ""}`)
+  }, [loading, products])
+
   const handleSyncDefaults = async () => {
     setSyncingDefaults(true)
     setError("")
@@ -537,13 +553,14 @@ export default function AdminProductsPage() {
                           </div>
 
                           <div className="mt-4 flex items-center justify-between gap-3">
-                          <div>
+                            <div>
                               <p className="font-semibold text-foreground">{productPriceLabel(product)}</p>
                               <p className="text-xs text-muted-foreground">{productQuantityLabel(product)}</p>
                             </div>
                             <div className="flex gap-2">
-                              <Button variant="outline" size="icon" onClick={() => openEdit(product)}>
+                              <Button variant="outline" size="sm" onClick={() => openEdit(product)}>
                                 <Pencil className="h-4 w-4" />
+                                Edit
                               </Button>
                               <Button
                                 variant="outline"
@@ -625,8 +642,9 @@ export default function AdminProductsPage() {
                         </TableCell>
                         <TableCell className="text-right">
                           <div className="flex items-center justify-end gap-2">
-                            <Button variant="ghost" size="icon" onClick={() => openEdit(product)}>
+                            <Button variant="outline" size="sm" onClick={() => openEdit(product)}>
                               <Pencil className="h-4 w-4" />
+                              Edit
                             </Button>
                             <Button
                               variant="ghost"
@@ -756,7 +774,7 @@ export default function AdminProductsPage() {
                     </SelectContent>
                   </Select>
                   {formIsDraft && (
-                    <p className="text-xs text-muted-foreground">Draft products stay hidden from POS selling and the wares page.</p>
+                    <p className="text-xs text-muted-foreground">Draft products cannot be sold or shown on the wares page until marked available.</p>
                   )}
                 </div>
               </div>

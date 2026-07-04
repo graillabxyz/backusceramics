@@ -38,6 +38,7 @@ import {
   Maximize2,
   Minimize2,
   Minus,
+  Pencil,
   Plus,
   Search,
   Send,
@@ -542,8 +543,8 @@ export default function AdminPosPage() {
                 ) : (
                   <div
                     className={cn(
-                      "grid gap-3 sm:grid-cols-2",
-                      isFullscreen ? "xl:grid-cols-3 2xl:grid-cols-4" : "2xl:grid-cols-3"
+                      "grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-3 xl:grid-cols-4",
+                      isFullscreen ? "lg:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-6" : "2xl:grid-cols-4"
                     )}
                   >
                     {filteredProducts.map((product) => {
@@ -553,47 +554,61 @@ export default function AdminPosPage() {
                       const canSell = product.status === "AVAILABLE" && product.price > 0
 
                       return (
-                        <button
+                        <div
                           key={product.id}
-                          type="button"
-                          onClick={() => addToCart(product)}
-                          aria-disabled={!canSell}
                           className={cn(
-                            "group overflow-hidden rounded-md border border-border bg-background text-left shadow-sm transition hover:border-primary hover:shadow-md",
-                            !canSell && "border-dashed opacity-75 hover:border-border hover:shadow-sm"
+                            "group relative overflow-hidden rounded-md border border-border bg-muted text-left shadow-sm transition hover:border-primary hover:shadow-md",
+                            !canSell && "border-dashed opacity-85 hover:border-border hover:shadow-sm"
                           )}
                         >
-                          <div className="aspect-[4/3] bg-muted">
-                            {image ? (
-                              <img src={image} alt="" className="h-full w-full object-cover" />
-                            ) : (
-                              <div className="flex h-full w-full items-center justify-center">
-                                <ShoppingCart className="h-8 w-8 text-muted-foreground" />
-                              </div>
-                            )}
-                          </div>
-                          <div className="space-y-3 p-4">
-                            <div className="flex items-start justify-between gap-3">
-                              <div>
-                                <p className="font-semibold leading-snug text-foreground">{product.name}</p>
-                                <p className="mt-1 text-xs text-muted-foreground">
-                                  {product.sku || getProductCategoryLabel(product.category)}
-                                  {volume && <span> · {volume}</span>}
-                                </p>
-                              </div>
-                              <div className="flex flex-col items-end gap-1">
-                                {product.cafeOnly && <Badge variant="outline">Cafe</Badge>}
-                                {!canSell && <Badge variant="secondary">Needs price</Badge>}
+                          <button
+                            type="button"
+                            onClick={() => addToCart(product)}
+                            aria-disabled={!canSell}
+                            className="block w-full text-left"
+                          >
+                            <div className="relative aspect-square overflow-hidden">
+                              {image ? (
+                                <img src={image} alt="" className="h-full w-full object-cover transition duration-200 group-hover:scale-[1.03]" />
+                              ) : (
+                                <div className="flex h-full w-full items-center justify-center bg-muted">
+                                  <ShoppingCart className="h-7 w-7 text-muted-foreground" />
+                                </div>
+                              )}
+                              <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/90 via-black/65 to-transparent p-3 pt-12 text-white">
+                                <div className="flex items-end justify-between gap-2">
+                                  <div className="min-w-0">
+                                    <p className="line-clamp-2 text-sm font-semibold leading-tight">{product.name}</p>
+                                    <p className="mt-1 truncate text-[11px] uppercase tracking-wide text-white/75">
+                                      {product.sku || getProductCategoryLabel(product.category)}
+                                      {volume && <span> · {volume}</span>}
+                                    </p>
+                                  </div>
+                                  <div className="flex shrink-0 flex-col items-end gap-1">
+                                    {product.cafeOnly && <span className="rounded bg-white/15 px-1.5 py-0.5 text-[10px] font-medium text-white">Cafe</span>}
+                                    {!canSell && <span className="rounded bg-white/20 px-1.5 py-0.5 text-[10px] font-medium text-white">Needs price</span>}
+                                  </div>
+                                </div>
+                                <div className="mt-2 flex items-center justify-between gap-2">
+                                  <p className="text-sm font-semibold">{product.price > 0 ? formatPrice(product.price) : "Set price"}</p>
+                                  <p className="text-[11px] text-white/75">
+                                    {canSell ? `${product.quantity - inCart} left` : product.status.toLowerCase()}
+                                  </p>
+                                </div>
                               </div>
                             </div>
-                            <div className="flex items-center justify-between">
-                              <p className="font-semibold text-foreground">{product.price > 0 ? formatPrice(product.price) : "Set price"}</p>
-                              <p className="text-xs text-muted-foreground">
-                                {canSell ? `${product.quantity - inCart} left` : product.status.toLowerCase()}
-                              </p>
-                            </div>
-                          </div>
-                        </button>
+                          </button>
+                          <Button
+                            asChild
+                            size="icon"
+                            variant="secondary"
+                            className="absolute right-2 top-2 z-10 h-8 w-8 bg-background/85 text-foreground shadow-sm hover:bg-background"
+                          >
+                            <Link href={`/admin/products?edit=${product.id}`} aria-label={`Edit ${product.name}`}>
+                              <Pencil className="h-4 w-4" />
+                            </Link>
+                          </Button>
+                        </div>
                       )
                     })}
                   </div>
