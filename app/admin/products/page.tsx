@@ -93,6 +93,9 @@ const emptyForm: ProductFormState = {
   featured: false,
 }
 
+const nativeSelectClassName =
+  "border-input focus-visible:border-ring focus-visible:ring-ring/50 h-11 w-full rounded-md border bg-transparent px-3 py-2 text-base shadow-xs outline-none transition-[color,box-shadow] focus-visible:ring-[3px] disabled:cursor-not-allowed disabled:opacity-50 md:h-9 md:text-sm"
+
 function toImageText(value: string | null) {
   return parseProductImageUrls(value).join("\n")
 }
@@ -241,17 +244,23 @@ export default function AdminProductsPage() {
   const handleFormChange = <K extends keyof ProductFormState>(key: K, value: ProductFormState[K]) => {
     setFormData((current) => {
       if (key === "cafeOnly" && value === true) {
-        return { ...current, cafeOnly: true, showInShop: false }
+        return { ...current, cafeOnly: true, category: "F_AND_B", showInShop: false, volumeMl: "" }
+      }
+      if (key === "cafeOnly" && value === false && current.category === "F_AND_B") {
+        return { ...current, cafeOnly: false, category: "CUPS" }
       }
       if (key === "status" && value === "DRAFT") {
         return { ...current, status: "DRAFT", showInShop: false, featured: false }
       }
       if (key === "category") {
-        const category = String(value)
-        if (!isCupCategory(category)) {
-          return { ...current, category, volumeMl: "" }
+        const category = normalizeProductCategory(value)
+        if (category === "F_AND_B") {
+          return { ...current, category, cafeOnly: true, showInShop: false, volumeMl: "" }
         }
-        return { ...current, category }
+        if (!isCupCategory(category)) {
+          return { ...current, category, cafeOnly: false, showInShop: false, volumeMl: "" }
+        }
+        return { ...current, category, cafeOnly: false }
       }
       return { ...current, [key]: value }
     })
@@ -732,19 +741,19 @@ export default function AdminProductsPage() {
                 </div>
 
                 <div className="space-y-2">
-                  <Label>Category</Label>
-                  <Select value={formData.category} onValueChange={(category) => handleFormChange("category", category)}>
-                    <SelectTrigger>
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {POS_PRODUCT_CATEGORIES.map((category) => (
-                        <SelectItem key={category.id} value={category.id}>
-                          {category.label}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
+                  <Label htmlFor="category">Category</Label>
+                  <select
+                    id="category"
+                    value={formData.category}
+                    onChange={(event) => handleFormChange("category", event.target.value)}
+                    className={nativeSelectClassName}
+                  >
+                    {POS_PRODUCT_CATEGORIES.map((category) => (
+                      <option key={category.id} value={category.id}>
+                        {category.label}
+                      </option>
+                    ))}
+                  </select>
                 </div>
 
                 <div className="space-y-2">

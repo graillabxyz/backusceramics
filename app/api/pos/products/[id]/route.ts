@@ -79,6 +79,10 @@ export async function PATCH(req: NextRequest, { params }: ProductRouteContext) {
 
   if ("category" in data) {
     updateData.category = nextCategory
+    if (nextCategory === "F_AND_B") updateData.cafeOnly = true
+    if (nextCategory && currentProduct.category === "F_AND_B" && nextCategory !== "F_AND_B" && !("cafeOnly" in data)) {
+      updateData.cafeOnly = false
+    }
     if (nextCategory && !isCupCategory(nextCategory)) updateData.showInShop = false
   }
 
@@ -120,8 +124,10 @@ export async function PATCH(req: NextRequest, { params }: ProductRouteContext) {
   }
 
   if ("cafeOnly" in data) {
-    updateData.cafeOnly = Boolean(data.cafeOnly)
-    if (Boolean(data.cafeOnly)) updateData.showInShop = false
+    const category = nextCategory || currentProduct.category
+    const cafeOnly = category === "F_AND_B" || Boolean(data.cafeOnly)
+    updateData.cafeOnly = cafeOnly
+    if (cafeOnly) updateData.showInShop = false
   }
 
   if ("showInShop" in data) {

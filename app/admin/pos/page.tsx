@@ -119,6 +119,9 @@ const quickProductDefaults: QuickProductForm = {
   featured: false,
 }
 
+const nativeSelectClassName =
+  "border-input focus-visible:border-ring focus-visible:ring-ring/50 h-11 w-full rounded-md border bg-transparent px-3 py-2 text-base shadow-xs outline-none transition-[color,box-shadow] focus-visible:ring-[3px] disabled:cursor-not-allowed disabled:opacity-50 md:h-9 md:text-sm"
+
 function firstImage(product: PosProduct) {
   return parseProductImageUrls(product.imageUrls)[0] || ""
 }
@@ -321,7 +324,7 @@ export default function AdminPosPage() {
       }
 
       if (key === "category") {
-        const category = String(value)
+        const category = normalizeProductCategory(value)
         if (category === "F_AND_B") {
           return { ...current, category, cafeOnly: true, showInShop: false, volumeMl: "" }
         }
@@ -663,19 +666,19 @@ export default function AdminPosPage() {
       </div>
 
       <div className="space-y-2">
-        <Label>Category</Label>
-        <Select value={quickProduct.category} onValueChange={(category) => updateQuickProduct("category", category)}>
-          <SelectTrigger>
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            {POS_PRODUCT_CATEGORIES.map((category) => (
-              <SelectItem key={category.id} value={category.id}>
-                {category.label}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
+        <Label htmlFor={`${prefix}Category`}>Category</Label>
+        <select
+          id={`${prefix}Category`}
+          value={quickProduct.category}
+          onChange={(event) => updateQuickProduct("category", event.target.value)}
+          className={nativeSelectClassName}
+        >
+          {POS_PRODUCT_CATEGORIES.map((category) => (
+            <option key={category.id} value={category.id}>
+              {category.label}
+            </option>
+          ))}
+        </select>
       </div>
 
       <div className="space-y-2">

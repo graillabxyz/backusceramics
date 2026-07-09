@@ -82,7 +82,7 @@ export async function POST(req: NextRequest) {
   const isDraft = status === "DRAFT"
   const price = data.price === "" || data.price === null || data.price === undefined ? null : Number(data.price)
   const quantity = data.quantity === "" || data.quantity === null || data.quantity === undefined ? null : Number(data.quantity)
-  const cafeOnly = Boolean(data.cafeOnly)
+  const cafeOnly = category === "F_AND_B" || Boolean(data.cafeOnly)
   const showInShop = cafeOnly || isDraft || !isCupCategory(category) ? false : Boolean(data.showInShop)
   const volumeMl = parseVolumeMl(data.volumeMl, category)
 
