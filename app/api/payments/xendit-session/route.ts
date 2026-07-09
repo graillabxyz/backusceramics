@@ -11,12 +11,12 @@ import {
 } from "@/lib/xendit"
 import { isRequestBodyTooLarge } from "@/lib/server-security"
 import {
+  classSeatPoolKey,
   getScheduleOffering,
   hasSessionStartPassed,
   parseDateKey,
   parsePreferredDate,
   parseWeekdays,
-  sessionKey,
 } from "@/lib/class-schedule"
 import { recordAnalyticsEvent } from "@/lib/analytics-server"
 
@@ -189,10 +189,8 @@ async function getAvailableSeats({
   try {
     existingBookings = await prisma.classBooking.findMany({
       where: {
-        workshopId,
         ...activeBookingStatusWhere(),
         preferredDate: { startsWith: dateKey },
-        ...(schedule ? { scheduleId: schedule.id } : {}),
       },
       select: {
         preferredDate: true,
@@ -213,7 +211,6 @@ async function getAvailableSeats({
   try {
     holds = await prisma.classHold.findMany({
       where: {
-        workshopId,
         timeLabel,
         status: "ACTIVE",
         startDate: { lte: sessionDate },
@@ -233,11 +230,11 @@ async function getAvailableSeats({
     })
   }
 
-  const key = sessionKey(workshopId, dateKey, timeLabel)
+  const key = classSeatPoolKey(dateKey, timeLabel)
   const bookedSeats = existingBookings.reduce((sum, booking) => {
     const preferred = parsePreferredDate(booking.preferredDate)
     if (!preferred) return sum
-    return sessionKey(workshopId, preferred.dateKey, preferred.timeLabel) === key
+    return classSeatPoolKey(preferred.dateKey, preferred.timeLabel) === key
       ? sum + booking.participants
       : sum
   }, 0)

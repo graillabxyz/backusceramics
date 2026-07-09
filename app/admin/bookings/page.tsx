@@ -11,8 +11,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Textarea } from "@/components/ui/textarea"
-import { Archive, CalendarDays, CalendarPlus, CheckCircle2, CircleDashed, Clock, GraduationCap, Loader2, Trash2, Users } from "lucide-react"
-import { dayNames, parseDateKey, parseScheduleDays, parseTimeLabel, scheduleOfferings } from "@/lib/class-schedule"
+import { Archive, CalendarDays, CalendarPlus, CheckCircle2, CircleDashed, Clock, GraduationCap, Loader2, Pencil, Trash2, Users } from "lucide-react"
+import { dayNames, parseDateKey, parseScheduleDays, parseTimeHour, parseTimeLabel, scheduleOfferings } from "@/lib/class-schedule"
 
 interface Booking {
   id: string
@@ -90,6 +90,7 @@ const initialHoldForm = {
   startDate: "",
   endDate: "",
   notes: "",
+  allowCustomTime: false,
 }
 
 const initialScheduleForm = {
@@ -136,6 +137,14 @@ function formatDate(value: string | null) {
   })
 }
 
+function inputDateValue(value: string | null) {
+  if (!value) return ""
+  if (/^\d{4}-\d{2}-\d{2}$/.test(value)) return value
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return value.slice(0, 10)
+  return date.toLocaleDateString("en-CA")
+}
+
 function formatDateRange(startDate: string, endDate: string | null) {
   return `${formatDate(startDate)} - ${endDate ? formatDate(endDate) : "ongoing"}`
 }
@@ -160,6 +169,19 @@ function dateKeyWeekday(dateKey: string) {
   return Number.isNaN(date.getTime()) ? new Date().getDay() : date.getDay()
 }
 
+function isCustomHoldSlot(workshopId: string, timeLabel: string, weekdays: number[]) {
+  const workshop = classOptions.find((item) => item.id === workshopId)
+  if (!workshop) return true
+
+  const validTimes = (workshop.schedule || []).map(parseTimeLabel)
+  const validWeekdays = new Set((workshop.schedule || []).flatMap(parseScheduleDays))
+
+  return (
+    (validTimes.length > 0 && !validTimes.includes(timeLabel)) ||
+    (validWeekdays.size > 0 && weekdays.some((day) => !validWeekdays.has(day)))
+  )
+}
+
 export default function AdminBookingsPage() {
   const [bookings, setBookings] = useState<Booking[]>([])
   const [archivedBookings, setArchivedBookings] = useState<Booking[]>([])
@@ -169,6 +191,7 @@ export default function AdminBookingsPage() {
   const [availabilityRows, setAvailabilityRows] = useState<AvailabilityRow[]>([])
   const [holdForm, setHoldForm] = useState(initialHoldForm)
   const [scheduleForm, setScheduleForm] = useState(initialScheduleForm)
+  const [editingHoldId, setEditingHoldId] = useState<string | null>(null)
   const [activeTab, setActiveTab] = useState("requests")
   const [holdAccordionValue, setHoldAccordionValue] = useState("")
   const [loading, setLoading] = useState(true)
@@ -182,7 +205,19 @@ export default function AdminBookingsPage() {
   const selectedWorkshop = classOptions.find((workshop) => workshop.id === holdForm.workshopId) || classOptions[0]
   const selectedTimes = selectedWorkshop.schedule?.map(parseTimeLabel) || []
   const selectedWeekdays = Array.from(new Set(selectedWorkshop.schedule?.flatMap(parseScheduleDays) || []))
-  const holdWeekdayChoices = selectedWeekdays.length > 0 ? selectedWeekdays : [1, 2, 3, 4, 5, 6, 0]
+  const allWeekdayChoices = [1, 2, 3, 4, 5, 6, 0]
+  const holdWeekdayChoices = holdForm.allowCustomTime
+    ? allWeekdayChoices
+    : selectedWeekdays.length > 0 ? selectedWeekdays : allWeekdayChoices
+  const allKnownTimeLabels = useMemo(() => {
+    const labels = new Set<string>()
+    for (const workshop of classOptions) {
+      for (const schedule of workshop.schedule || []) labels.add(parseTimeLabel(schedule))
+    }
+    for (const schedule of schedules) labels.add(schedule.timeLabel)
+    if (holdForm.timeLabel) labels.add(holdForm.timeLabel)
+    return Array.from(labels).sort((a, b) => parseTimeHour(a) - parseTimeHour(b) || a.localeCompare(b))
+  }, [schedules, holdForm.timeLabel])
   const maxSeats = selectedWorkshop.maxParticipants ?? 8
   const selectedScheduleOffering = classOptions.find((offering) => offering.id === scheduleForm.offeringId) || classOptions[0]
   const isRecurringSchedule = scheduleForm.category === "weekly-class"
@@ -199,7 +234,13 @@ export default function AdminBookingsPage() {
     }, {})
   }, [availabilityRows])
   const availabilityTotals = useMemo(() => {
-    return availabilityRows.reduce(
+    const uniquePools = new Map<string, AvailabilityRow>()
+    for (const row of availabilityRows) {
+      const key = `${row.dateKey}|${row.timeLabel}`
+      if (!uniquePools.has(key)) uniquePools.set(key, row)
+    }
+
+    return Array.from(uniquePools.values()).reduce(
       (totals, row) => ({
         booked: totals.booked + row.bookedSeats,
         held: totals.held + row.heldSeats,
@@ -295,34 +336,61 @@ export default function AdminBookingsPage() {
     }
   }
 
-  const createHold = async () => {
+  const resetHoldForm = () => {
+    setHoldForm(initialHoldForm)
+    setEditingHoldId(null)
+    setHoldError("")
+  }
+
+  const saveHold = async () => {
     setHoldError("")
     setSavingHold(true)
 
     try {
-      const res = await fetch("/api/class-holds", {
-        method: "POST",
+      const res = await fetch(editingHoldId ? `/api/class-holds/${editingHoldId}` : "/api/class-holds", {
+        method: editingHoldId ? "PATCH" : "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           ...holdForm,
           seats: Number(holdForm.seats),
           weekdays: holdForm.weekdays.map(Number),
-          allowCustomTime: true,
+          status: "ACTIVE",
         }),
       })
 
       if (!res.ok) {
         const data = await res.json().catch(() => ({}))
-        throw new Error(data.error || "Could not create resident schedule")
+        throw new Error(data.error || "Could not save resident schedule")
       }
 
-      setHoldForm(initialHoldForm)
+      resetHoldForm()
+      setHoldAccordionValue("")
       await Promise.all([fetchHolds(), fetchAvailability()])
     } catch (err) {
-      setHoldError(err instanceof Error ? err.message : "Could not create resident schedule")
+      setHoldError(err instanceof Error ? err.message : "Could not save resident schedule")
     } finally {
       setSavingHold(false)
     }
+  }
+
+  const openEditHold = (hold: ClassHold) => {
+    const weekdays = parseWeekdayList(hold.weekdays)
+    setHoldForm({
+      studentName: hold.studentName,
+      studentEmail: hold.studentEmail || "",
+      workshopId: hold.workshopId,
+      timeLabel: hold.timeLabel,
+      seats: hold.seats.toString(),
+      weekdays: weekdays.map(String),
+      startDate: inputDateValue(hold.startDate),
+      endDate: inputDateValue(hold.endDate),
+      notes: hold.notes || "",
+      allowCustomTime: isCustomHoldSlot(hold.workshopId, hold.timeLabel, weekdays),
+    })
+    setEditingHoldId(hold.id)
+    setHoldError("")
+    setActiveTab("holds")
+    setHoldAccordionValue("add-hold")
   }
 
   const createSchedule = async () => {
@@ -408,7 +476,9 @@ export default function AdminBookingsPage() {
       startDate: row.dateKey,
       endDate: row.dateKey,
       notes: `Manual seat block for ${row.title}. Replace this note with the customer's name and source before saving.`,
+      allowCustomTime: true,
     })
+    setEditingHoldId(null)
     setHoldError("")
     setActiveTab("holds")
     setHoldAccordionValue("add-hold")
@@ -805,7 +875,7 @@ export default function AdminBookingsPage() {
 
           <Card>
             <CardContent className="px-5">
-              <Accordion type="single" collapsible value={holdAccordionValue} onValueChange={setHoldAccordionValue}>
+              <Accordion type="single" collapsible>
                 <AccordionItem value="add-schedule">
                   <AccordionTrigger className="py-0 hover:no-underline">
                     <div className="flex items-center gap-3">
@@ -1000,10 +1070,15 @@ export default function AdminBookingsPage() {
                           <TableCell>
                             <Badge variant={hold.status === "ACTIVE" ? "secondary" : "outline"}>{hold.status}</Badge>
                           </TableCell>
-                          <TableCell className="pr-5 text-right">
-                            <Button variant="ghost" size="icon" onClick={() => deleteHold(hold.id)} aria-label={`Delete hold for ${hold.studentName}`}>
-                              <Trash2 className="h-4 w-4" />
-                            </Button>
+                          <TableCell className="pr-5">
+                            <div className="flex justify-end gap-1">
+                              <Button variant="ghost" size="icon" onClick={() => openEditHold(hold)} aria-label={`Edit hold for ${hold.studentName}`}>
+                                <Pencil className="h-4 w-4" />
+                              </Button>
+                              <Button variant="ghost" size="icon" onClick={() => deleteHold(hold.id)} aria-label={`Delete hold for ${hold.studentName}`}>
+                                <Trash2 className="h-4 w-4" />
+                              </Button>
+                            </div>
                           </TableCell>
                         </TableRow>
                       )
@@ -1016,7 +1091,7 @@ export default function AdminBookingsPage() {
 
           <Card>
             <CardContent className="px-5">
-              <Accordion type="single" collapsible>
+              <Accordion type="single" collapsible value={holdAccordionValue} onValueChange={setHoldAccordionValue}>
                 <AccordionItem value="add-hold">
                   <AccordionTrigger className="py-0 hover:no-underline">
                     <div className="flex items-center gap-3">
@@ -1024,8 +1099,12 @@ export default function AdminBookingsPage() {
                         <Users className="h-4 w-4" />
                       </div>
                       <div>
-                        <p className="font-heading text-base font-bold text-foreground">Add resident hold</p>
-                        <p className="text-sm font-normal text-muted-foreground">Reserve wheel or handbuilding seats for resident students.</p>
+                        <p className="font-heading text-base font-bold text-foreground">
+                          {editingHoldId ? "Edit resident hold" : "Add resident hold"}
+                        </p>
+                        <p className="text-sm font-normal text-muted-foreground">
+                          Reserve or adjust resident seats. Custom times are for approved schedule changes.
+                        </p>
                       </div>
                     </div>
                   </AccordionTrigger>
@@ -1055,12 +1134,15 @@ export default function AdminBookingsPage() {
                           value={holdForm.workshopId}
                           onValueChange={(value) => {
                             const nextWorkshop = classOptions.find((workshop) => workshop.id === value) || classOptions[0]
+                            const nextWeekdays = (nextWorkshop.schedule?.flatMap(parseScheduleDays) || []).slice(0, 1).map(String)
                             setHoldForm((prev) => ({
                               ...prev,
                               workshopId: value,
-                              timeLabel: nextWorkshop.schedule?.[0] ? parseTimeLabel(nextWorkshop.schedule[0]) : "",
+                              timeLabel: prev.allowCustomTime
+                                ? prev.timeLabel
+                                : nextWorkshop.schedule?.[0] ? parseTimeLabel(nextWorkshop.schedule[0]) : "",
                               seats: "1",
-                              weekdays: (nextWorkshop.schedule?.flatMap(parseScheduleDays) || []).slice(0, 1).map(String),
+                              weekdays: prev.allowCustomTime ? prev.weekdays : nextWeekdays,
                             }))
                           }}
                         >
@@ -1075,8 +1157,42 @@ export default function AdminBookingsPage() {
                         </Select>
                       </div>
                       <div className="space-y-2">
-                        <Label>Time</Label>
-                        {selectedTimes.length > 0 ? (
+                        <div className="flex flex-wrap items-center justify-between gap-2">
+                          <Label>Time</Label>
+                          <label className="flex items-center gap-2 text-xs font-medium text-muted-foreground">
+                            <input
+                              type="checkbox"
+                              checked={holdForm.allowCustomTime}
+                              onChange={(event) => {
+                                const enabled = event.target.checked
+                                setHoldForm((prev) => ({
+                                  ...prev,
+                                  allowCustomTime: enabled,
+                                  weekdays: enabled
+                                    ? prev.weekdays
+                                    : selectedWeekdays.slice(0, 1).map(String),
+                                  timeLabel: enabled
+                                    ? prev.timeLabel
+                                    : selectedTimes[0] || prev.timeLabel,
+                                }))
+                              }}
+                              className="h-4 w-4 rounded border-border"
+                            />
+                            Use any studio time
+                          </label>
+                        </div>
+                        {holdForm.allowCustomTime ? (
+                          <Select value={holdForm.timeLabel} onValueChange={(value) => setHoldForm((prev) => ({ ...prev, timeLabel: value }))}>
+                            <SelectTrigger>
+                              <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                              {allKnownTimeLabels.map((time) => (
+                                <SelectItem key={time} value={time}>{time}</SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                        ) : selectedTimes.length > 0 ? (
                           <Select value={holdForm.timeLabel} onValueChange={(value) => setHoldForm((prev) => ({ ...prev, timeLabel: value }))}>
                             <SelectTrigger>
                               <SelectValue />
@@ -1093,6 +1209,11 @@ export default function AdminBookingsPage() {
                             onChange={(event) => setHoldForm((prev) => ({ ...prev, timeLabel: event.target.value }))}
                             placeholder="10:00 - 12:00 PM"
                           />
+                        )}
+                        {holdForm.allowCustomTime && (
+                          <p className="text-xs leading-relaxed text-muted-foreground">
+                            Use this for approved resident schedule changes. It still blocks the shared seat pool for that exact date and time.
+                          </p>
                         )}
                       </div>
                       <div className="space-y-2">
@@ -1158,14 +1279,27 @@ export default function AdminBookingsPage() {
                           rows={2}
                         />
                       </div>
-                      <Button
-                        onClick={createHold}
-                        disabled={savingHold || !holdForm.studentName || !holdForm.startDate || holdForm.weekdays.length === 0}
-                        className="h-10"
-                      >
-                        {savingHold && <Loader2 className="h-4 w-4 animate-spin" />}
-                        Add Hold
-                      </Button>
+                      <div className="flex flex-col gap-2 sm:flex-row lg:flex-col">
+                        <Button
+                          onClick={saveHold}
+                          disabled={savingHold || !holdForm.studentName || !holdForm.startDate || holdForm.weekdays.length === 0}
+                          className="h-10"
+                        >
+                          {savingHold && <Loader2 className="h-4 w-4 animate-spin" />}
+                          {editingHoldId ? "Update Hold" : "Add Hold"}
+                        </Button>
+                        {editingHoldId && (
+                          <Button
+                            type="button"
+                            variant="outline"
+                            onClick={resetHoldForm}
+                            disabled={savingHold}
+                            className="h-10"
+                          >
+                            Cancel edit
+                          </Button>
+                        )}
+                      </div>
                     </div>
                     {holdError && <p className="mt-3 text-sm text-destructive">{holdError}</p>}
                   </AccordionContent>

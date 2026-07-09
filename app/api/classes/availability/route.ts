@@ -7,13 +7,13 @@ import {
   buildRangeSessionsFromSchedules,
   buildWeekSessions,
   buildWeekSessionsFromSchedules,
+  classSeatPoolKey,
   type CalendarSession,
   formatDateKey,
   hasSessionStartPassed,
   parseDateKey,
   parsePreferredDate,
   parseWeekdays,
-  sessionKey,
   startOfWeek,
 } from "@/lib/class-schedule"
 import { isFullAdminRole } from "@/lib/permissions"
@@ -52,7 +52,7 @@ function removeStartedSessions(sessions: CalendarSession[]) {
 
 function buildAvailabilityResponse(rangeStart: Date, sessions: CalendarSession[], bookedSeats = new Map<string, number>(), heldSeats = new Map<string, number>(), holdDetails = new Map<string, { id: string; studentName: string; seats: number }[]>()) {
   const availability = sessions.map((session) => {
-    const key = session.scheduleId || sessionKey(session.workshop.id, session.dateKey, session.timeLabel)
+    const key = classSeatPoolKey(session.dateKey, session.timeLabel)
     const maxParticipants = session.maxParticipants ?? session.workshop.maxParticipants ?? 8
     const booked = bookedSeats.get(key) || 0
     const held = heldSeats.get(key) || 0
@@ -193,9 +193,7 @@ export async function GET(req: NextRequest) {
     const preferred = parsePreferredDate(booking.preferredDate)
     if (!preferred) continue
 
-    const key = booking.scheduleId
-      ? booking.scheduleId
-      : sessionKey(booking.workshopId, preferred.dateKey, preferred.timeLabel)
+    const key = classSeatPoolKey(preferred.dateKey, preferred.timeLabel)
     bookedSeats.set(key, (bookedSeats.get(key) || 0) + booking.participants)
   }
 
@@ -204,14 +202,18 @@ export async function GET(req: NextRequest) {
 
   for (const hold of holds) {
     const weekdays = parseWeekdays(hold.weekdays)
+    const countedKeys = new Set<string>()
 
     for (const session of sessions) {
-      if (session.workshop.id !== hold.workshopId || session.timeLabel !== hold.timeLabel) continue
+      if (session.timeLabel !== hold.timeLabel) continue
       if (!weekdays.includes(session.date.getDay())) continue
       if (session.date < hold.startDate) continue
       if (hold.endDate && session.date > hold.endDate) continue
 
-      const key = session.scheduleId || sessionKey(session.workshop.id, session.dateKey, session.timeLabel)
+      const key = classSeatPoolKey(session.dateKey, session.timeLabel)
+      if (countedKeys.has(key)) continue
+      countedKeys.add(key)
+
       heldSeats.set(key, (heldSeats.get(key) || 0) + hold.seats)
       holdDetails.set(key, [
         ...(holdDetails.get(key) || []),

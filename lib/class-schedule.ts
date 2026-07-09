@@ -185,6 +185,14 @@ export function sessionKey(workshopId: string, dateKey: string, timeLabel: strin
   return `${workshopId}|${dateKey}|${timeLabel}`
 }
 
+export function normalizeTimeLabel(timeLabel: string) {
+  return timeLabel.trim().replace(/\s+/g, " ")
+}
+
+export function classSeatPoolKey(dateKey: string, timeLabel: string) {
+  return `studio-seat-pool|${dateKey}|${normalizeTimeLabel(timeLabel)}`
+}
+
 export function parsePreferredDate(preferredDate?: string | null) {
   if (!preferredDate) return null
   const [datePart = "", timePart = ""] = preferredDate.split("·").map((part) => part.trim())
