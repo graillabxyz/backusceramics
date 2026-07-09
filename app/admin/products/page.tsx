@@ -145,7 +145,7 @@ export default function AdminProductsPage() {
   }, [filterCategory, filterStatus, products, searchTerm])
 
   const shopCount = useMemo(
-    () => products.filter((product) => product.showInShop && !product.cafeOnly && product.status === "AVAILABLE").length,
+    () => products.filter((product) => product.showInShop && !product.cafeOnly && product.status === "AVAILABLE" && isCupCategory(product.category)).length,
     [products]
   )
   const draftCount = useMemo(
@@ -282,7 +282,7 @@ export default function AdminProductsPage() {
       setImageUploadNotice("Image uploaded and previewed below.")
     } catch (uploadError) {
       console.error("Product image upload failed", uploadError)
-      setImageUploadError("That image could not be uploaded. Try a smaller JPG, PNG, or WebP.")
+      setImageUploadError("That image could not be uploaded. Try a smaller JPG, PNG, WebP, HEIC, or HEIF.")
     } finally {
       setUploading(false)
       event.target.value = ""
@@ -315,7 +315,7 @@ export default function AdminProductsPage() {
         ? Number(formData.volumeMl)
         : null,
       imageUrls: parseProductImageUrls(formData.imageUrls),
-      showInShop: formData.cafeOnly || formIsDraft ? false : formData.showInShop,
+      showInShop: formData.cafeOnly || formIsDraft || !formIsCup ? false : formData.showInShop,
       featured: formIsDraft ? false : formData.featured,
     }
 
@@ -367,7 +367,7 @@ export default function AdminProductsPage() {
         <div>
           <h1 className="font-heading text-3xl font-bold text-foreground">Products</h1>
           <p className="mt-1 text-muted-foreground">
-            Manage POS inventory and the hidden ceramic wares sales page.
+            Manage POS inventory and the public Wall of Cups.
           </p>
         </div>
         <div className="flex flex-col gap-3 sm:flex-row">
@@ -388,7 +388,7 @@ export default function AdminProductsPage() {
           <Button asChild variant="outline" className="w-full sm:w-auto">
             <Link href={`/admin/wares${isPosFullscreen ? "?posFullscreen=1" : ""}`}>
               <Eye className="mr-2 h-4 w-4" />
-              Preview wares page
+              Preview Wall of Cups
             </Link>
           </Button>
           <Button className="w-full sm:w-auto" onClick={openCreate}>
@@ -411,7 +411,7 @@ export default function AdminProductsPage() {
           <p className="mt-1 text-2xl font-semibold text-foreground">{products.length}</p>
         </button>
         <div className="rounded-md border border-border bg-background p-4">
-          <p className="text-sm text-muted-foreground">Visible on wares page</p>
+          <p className="text-sm text-muted-foreground">Visible on Wall of Cups</p>
           <p className="mt-1 text-2xl font-semibold text-foreground">{shopCount}</p>
         </div>
         <button
@@ -564,7 +564,7 @@ export default function AdminProductsPage() {
                               {product.cafeOnly ? "Cafe only" : "POS"}
                             </Badge>
                             {product.showInShop && !product.cafeOnly && (
-                              <Badge variant="secondary">Wares page</Badge>
+                              <Badge variant="secondary">Wall of Cups</Badge>
                             )}
                             {product.featured && <Badge variant="outline">Featured</Badge>}
                           </div>
@@ -652,7 +652,7 @@ export default function AdminProductsPage() {
                               {product.cafeOnly ? "Cafe only" : "POS"}
                             </Badge>
                             {product.showInShop && !product.cafeOnly && (
-                              <Badge variant="secondary">Wares page</Badge>
+                              <Badge variant="secondary">Wall of Cups</Badge>
                             )}
                             {product.featured && <Badge variant="outline">Featured</Badge>}
                           </div>
@@ -797,7 +797,7 @@ export default function AdminProductsPage() {
                     </SelectContent>
                   </Select>
                   {formIsDraft && (
-                    <p className="text-xs text-muted-foreground">Draft products cannot be sold or shown on the wares page until marked available.</p>
+                    <p className="text-xs text-muted-foreground">Draft products cannot be sold or shown on the Wall of Cups until marked available.</p>
                   )}
                 </div>
               </div>
@@ -827,7 +827,7 @@ export default function AdminProductsPage() {
                     <label className="inline-flex cursor-pointer items-center justify-center gap-2 rounded-md border border-border px-3 py-2 text-sm font-medium hover:bg-muted">
                       {uploading ? <Loader2 className="h-4 w-4 animate-spin" /> : <ImagePlus className="h-4 w-4" />}
                       Upload image
-                      <input type="file" accept="image/*" className="hidden" onChange={handleUpload} disabled={uploading} />
+                      <input type="file" accept="image/*,.heic,.heif,.avif" className="hidden" onChange={handleUpload} disabled={uploading} />
                     </label>
                   </div>
                   <Textarea
@@ -894,13 +894,13 @@ export default function AdminProductsPage() {
 
                 <div className="flex items-center justify-between rounded-md border border-border bg-background p-3">
                   <div>
-                    <Label htmlFor="showInShop">Show on wares page</Label>
-                    <p className="text-xs text-muted-foreground">Disabled for cafe-only products.</p>
+                    <Label htmlFor="showInShop">Show on Wall of Cups</Label>
+                    <p className="text-xs text-muted-foreground">Only available cup products can be displayed.</p>
                   </div>
                   <Switch
                     id="showInShop"
-                    checked={formData.showInShop && !formData.cafeOnly && !formIsDraft}
-                    disabled={formData.cafeOnly || formIsDraft}
+                    checked={formData.showInShop && !formData.cafeOnly && !formIsDraft && formIsCup}
+                    disabled={formData.cafeOnly || formIsDraft || !formIsCup}
                     onCheckedChange={(checked) => handleFormChange("showInShop", checked)}
                   />
                 </div>
@@ -908,7 +908,7 @@ export default function AdminProductsPage() {
                 <div className="flex items-center justify-between rounded-md border border-border bg-background p-3 md:col-span-2">
                   <div>
                     <Label htmlFor="featured">Featured</Label>
-                    <p className="text-xs text-muted-foreground">Place this piece near the top of the wares page.</p>
+                    <p className="text-xs text-muted-foreground">Place this piece near the top of the Wall of Cups.</p>
                   </div>
                   <Switch
                     id="featured"

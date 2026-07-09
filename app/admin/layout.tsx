@@ -33,7 +33,7 @@ const navItems = [
   { href: "/admin/applications", label: "Residency Apps", icon: Calendar, access: "admin" },
   { href: "/admin/pos", label: "Point of Sale", icon: Store, access: "pos" },
   { href: "/admin/products", label: "Products", icon: ShoppingBag, access: "admin" },
-  { href: "/admin/wares", label: "Wares Preview", icon: Eye, access: "admin" },
+  { href: "/admin/wares", label: "Wall of Cups", icon: Eye, access: "admin" },
   { href: "/admin/users", label: "Users", icon: Users, access: "admin" },
   { href: "/admin/analytics", label: "Analytics", icon: BarChart3, access: "analytics" },
   { href: "/admin/settings", label: "Settings", icon: Settings, access: "admin" },

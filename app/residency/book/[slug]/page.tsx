@@ -413,7 +413,7 @@ export default function ResidencyBookingPage() {
 
               <div className="mt-5 rounded-lg border border-border bg-secondary/20 px-4 py-3">
                 <p className="text-sm leading-relaxed text-muted-foreground">
-                Choose 5 days in each residency week. We avoid kids classes and only use regular studio slots that can support resident work, including the 12pm Saturday slot when available.
+                Choose 5 days in each residency week, or choose 6 days if you prefer a fuller studio rhythm. We avoid kids classes and only use regular studio slots that can support resident work, including the 12pm Saturday slot when available.
                 </p>
               </div>
             </CardContent>

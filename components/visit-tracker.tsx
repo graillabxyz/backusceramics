@@ -12,6 +12,7 @@ function getSearchValue(searchParams: URLSearchParams, key: string) {
 
 function analyticsRouteKind(pathname: string) {
   if (pathname === "/") return "home"
+  if (pathname === "/wall-of-cups") return "wall-of-cups"
   if (pathname === "/shop") return "shop"
   if (pathname.startsWith("/shop/")) return "product"
   if (pathname === "/classes/checkout") return "checkout"

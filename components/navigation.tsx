@@ -12,7 +12,8 @@ const navLinks = [
   { href: "/classes", label: "Classes" },
   { href: "/events", label: "Events" },
   { href: "/residency", label: "Residency" },
-  { href: "/shop", label: "Shop" },
+  { href: "/shop", label: "Our Shop" },
+  { href: "/wall-of-cups", label: "Wall of Cups" },
   { href: "/custom-orders", label: "Custom Orders" },
 ]
 

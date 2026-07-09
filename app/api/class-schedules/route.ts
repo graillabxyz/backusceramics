@@ -3,6 +3,9 @@ import { auth } from "@/lib/auth"
 import { prisma } from "@/lib/prisma"
 import { getScheduleOffering, parseDateKey } from "@/lib/class-schedule"
 import { isFullAdminRole } from "@/lib/permissions"
+import { cleanString, isRequestBodyTooLarge } from "@/lib/server-security"
+
+const MAX_CLASS_SCHEDULE_BODY_BYTES = 32 * 1024
 
 function parseWeekdays(value: unknown) {
   if (!Array.isArray(value)) return null
@@ -27,6 +30,10 @@ export async function POST(req: NextRequest) {
   const session = await auth()
   if (!session || !isFullAdminRole(session.user.role)) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
+  }
+
+  if (isRequestBodyTooLarge(req, MAX_CLASS_SCHEDULE_BODY_BYTES)) {
+    return NextResponse.json({ error: "Schedule request is too large" }, { status: 413 })
   }
 
   const data = await req.json()
@@ -54,14 +61,14 @@ export async function POST(req: NextRequest) {
     data: {
       createdBy: session.user.id,
       offeringId: offering.id,
-      title: data.title || offering.title,
-      category: data.category || (offering.id.includes("event") || offering.id === "private-atelier" ? "event" : "class"),
-      timeLabel: data.timeLabel,
+      title: cleanString(data.title, 160) || offering.title,
+      category: cleanString(data.category, 80) || (offering.id.includes("event") || offering.id === "private-atelier" ? "event" : "class"),
+      timeLabel: cleanString(data.timeLabel, 80),
       startDate,
       endDate,
       weekdays: weekdays ? JSON.stringify(weekdays) : null,
       maxParticipants,
-      notes: data.notes || null,
+      notes: cleanString(data.notes, 1000) || null,
     },
   })
 

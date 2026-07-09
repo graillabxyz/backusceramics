@@ -12,6 +12,12 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog"
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
@@ -35,10 +41,13 @@ import {
   Loader2,
   Mail,
   Maximize2,
+  MoreHorizontal,
   Minimize2,
   Minus,
   Pencil,
   Plus,
+  Percent,
+  ReceiptText,
   Search,
   Send,
   ShoppingBag,
@@ -118,10 +127,6 @@ function cupVolumeLabel(product: PosProduct) {
   return isCupCategory(product.category) && product.volumeMl ? `${product.volumeMl} ml` : ""
 }
 
-function defaultTaxRate(product: PosProduct): PosTaxRate {
-  return normalizeProductCategory(product.category) === "F_AND_B" ? 15 : 10
-}
-
 function toImageText(value: string | null) {
   return parseProductImageUrls(value).join("\n")
 }
@@ -174,6 +179,7 @@ export default function AdminPosPage() {
   const [editingProduct, setEditingProduct] = useState<PosProduct | null>(null)
   const [isFullscreen, setIsFullscreen] = useState(false)
   const [posStep, setPosStep] = useState<"CATEGORIES" | "ITEMS" | "CHECKOUT">("CATEGORIES")
+  const [expandedCartItemId, setExpandedCartItemId] = useState<string | null>(null)
 
   const posProducts = useMemo(
     () => products.filter((product) => product.quantity > 0 && product.status !== "SOLD" && product.status !== "ARCHIVED"),
@@ -182,11 +188,6 @@ export default function AdminPosPage() {
 
   const availableProducts = useMemo(
     () => posProducts.filter((product) => product.status === "AVAILABLE" && product.price > 0),
-    [posProducts]
-  )
-
-  const draftProducts = useMemo(
-    () => posProducts.filter((product) => product.status !== "AVAILABLE" || product.price <= 0),
     [posProducts]
   )
 
@@ -245,10 +246,12 @@ export default function AdminPosPage() {
 
   useEffect(() => {
     const handleFullscreenChange = () => {
-      setIsFullscreen(document.fullscreenElement === posRootRef.current)
+      const kioskRequested = typeof window !== "undefined" && window.localStorage.getItem("backus-pos-fullscreen") === "1"
+      setIsFullscreen(kioskRequested || document.fullscreenElement === posRootRef.current)
     }
     const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key === "Escape" && isFullscreen && !document.fullscreenElement) {
+      const kioskRequested = typeof window !== "undefined" && window.localStorage.getItem("backus-pos-fullscreen") === "1"
+      if (event.key === "Escape" && isFullscreen && !document.fullscreenElement && !kioskRequested) {
         setIsFullscreen(false)
       }
     }
@@ -323,7 +326,7 @@ export default function AdminPosPage() {
           return { ...current, category, cafeOnly: true, showInShop: false, volumeMl: "" }
         }
         if (!isCupCategory(category)) {
-          return { ...current, category, volumeMl: "" }
+          return { ...current, category, showInShop: false, volumeMl: "" }
         }
         return { ...current, category }
       }
@@ -350,7 +353,7 @@ export default function AdminPosPage() {
         : null,
       imageUrls: quickProductImages,
       status: quickProduct.status,
-      showInShop: quickProduct.cafeOnly || quickProductIsDraft ? false : quickProduct.showInShop,
+      showInShop: quickProduct.cafeOnly || quickProductIsDraft || !quickProductIsCup ? false : quickProduct.showInShop,
       featured: quickProductIsDraft ? false : quickProduct.featured,
     }
 
@@ -397,7 +400,7 @@ export default function AdminPosPage() {
         ? Number(quickProduct.volumeMl)
         : null,
       imageUrls: quickProductImages,
-      showInShop: quickProduct.cafeOnly || quickProductIsDraft ? false : quickProduct.showInShop,
+      showInShop: quickProduct.cafeOnly || quickProductIsDraft || !quickProductIsCup ? false : quickProduct.showInShop,
       featured: quickProductIsDraft ? false : quickProduct.featured,
     }
 
@@ -453,7 +456,7 @@ export default function AdminPosPage() {
       setImageUploadNotice("Image uploaded and added below.")
     } catch (uploadError) {
       console.error("POS product image upload failed", uploadError)
-      setImageUploadError("That image could not be uploaded. Try a smaller JPG, PNG, or WebP.")
+      setImageUploadError("That image could not be uploaded. Try a smaller JPG, PNG, WebP, HEIC, or HEIF.")
     } finally {
       setUploadingImage(false)
       event.target.value = ""
@@ -485,7 +488,10 @@ export default function AdminPosPage() {
 
   const updateCartQuantity = (productId: string, quantity: number) => {
     setCart((current) => {
-      if (quantity <= 0) return current.filter((item) => item.product.id !== productId)
+      if (quantity <= 0) {
+        setExpandedCartItemId((expandedId) => expandedId === productId ? null : expandedId)
+        return current.filter((item) => item.product.id !== productId)
+      }
       return current.map((item) => {
         if (item.product.id !== productId) return item
         return { ...item, quantity: Math.min(quantity, item.product.quantity) }
@@ -504,6 +510,7 @@ export default function AdminPosPage() {
     setReceiptEmail("")
     setCustomerName("")
     setPaymentMethod("CARD_MACHINE")
+    setExpandedCartItemId(null)
   }
 
   const checkoutPayload = () => ({
@@ -594,7 +601,11 @@ export default function AdminPosPage() {
       window.dispatchEvent(new CustomEvent("backus-pos-kiosk-change", { detail: { enabled: true } }))
     }
     try {
-      if (element.requestFullscreen) {
+      const standaloneDisplay = typeof window !== "undefined"
+        && (window.matchMedia("(display-mode: standalone)").matches
+          || Boolean((window.navigator as Navigator & { standalone?: boolean }).standalone))
+
+      if (!standaloneDisplay && element.requestFullscreen) {
         await element.requestFullscreen()
       }
       setIsFullscreen(true)
@@ -728,7 +739,7 @@ export default function AdminPosPage() {
           value={quickProduct.description}
           onChange={(event) => updateQuickProduct("description", event.target.value)}
           rows={3}
-          placeholder="Optional details for the wares page or staff notes"
+          placeholder="Optional details for the Wall of Cups or staff notes"
         />
       </div>
 
@@ -741,7 +752,7 @@ export default function AdminPosPage() {
           <label className="inline-flex cursor-pointer items-center justify-center gap-2 rounded-md border border-border px-3 py-2 text-sm font-medium hover:bg-muted">
             {uploadingImage ? <Loader2 className="h-4 w-4 animate-spin" /> : <ImagePlus className="h-4 w-4" />}
             {uploadingImage ? "Uploading..." : "Upload image"}
-            <input type="file" accept="image/*" className="hidden" onChange={handleQuickImageUpload} disabled={uploadingImage} />
+            <input type="file" accept="image/*,.heic,.heif,.avif" className="hidden" onChange={handleQuickImageUpload} disabled={uploadingImage} />
           </label>
         </div>
         <Textarea
@@ -791,13 +802,13 @@ export default function AdminPosPage() {
 
       <div className="flex items-center justify-between rounded-md border border-border p-3">
         <div>
-          <Label htmlFor={`${prefix}ShowInShop`}>Show on wares page</Label>
-          <p className="text-xs text-muted-foreground">Keep off for cafe-only products.</p>
+          <Label htmlFor={`${prefix}ShowInShop`}>Show on Wall of Cups</Label>
+          <p className="text-xs text-muted-foreground">Only available cup products can be displayed.</p>
         </div>
         <Switch
           id={`${prefix}ShowInShop`}
-          checked={quickProduct.showInShop && !quickProduct.cafeOnly && !quickProductIsDraft}
-          disabled={quickProduct.cafeOnly || quickProductIsDraft}
+          checked={quickProduct.showInShop && !quickProduct.cafeOnly && !quickProductIsDraft && quickProductIsCup}
+          disabled={quickProduct.cafeOnly || quickProductIsDraft || !quickProductIsCup}
           onCheckedChange={(checked) => updateQuickProduct("showInShop", checked)}
         />
       </div>
@@ -805,7 +816,7 @@ export default function AdminPosPage() {
       <div className="flex items-center justify-between rounded-md border border-border p-3 sm:col-span-2">
         <div>
           <Label htmlFor={`${prefix}Featured`}>Featured</Label>
-          <p className="text-xs text-muted-foreground">Place this piece near the top of the wares page.</p>
+          <p className="text-xs text-muted-foreground">Place this piece near the top of the Wall of Cups.</p>
         </div>
         <Switch
           id={`${prefix}Featured`}
@@ -834,45 +845,70 @@ export default function AdminPosPage() {
         isFullscreen && "fixed inset-0 z-[80] h-[100dvh] overflow-auto overscroll-none bg-muted/30 p-2 sm:p-3 lg:p-4"
       )}
     >
-      <div className="sticky top-0 z-40 -mx-2 flex flex-col gap-3 border-b border-border bg-muted/95 px-2 py-3 backdrop-blur sm:-mx-3 sm:px-3 lg:-mx-4 lg:flex-row lg:items-center lg:justify-between lg:px-4">
-        <div>
-          <h1 className="font-heading text-2xl font-bold text-foreground">Point of Sale</h1>
-          <p className="mt-1 text-sm text-muted-foreground">
-            {availableProducts.length} ready to sell · {draftProducts.length} need setup
-          </p>
-        </div>
-        <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
-          {cartCount > 0 && (
+      <div className="sticky top-0 z-40 -mx-2 border-b border-border bg-muted/95 px-2 py-2 backdrop-blur sm:-mx-3 sm:px-3 lg:-mx-4 lg:px-4">
+        <div className="flex items-center justify-between gap-2">
+          <div className="min-w-0">
+            <h1 className="truncate font-heading text-lg font-bold text-foreground sm:text-2xl">Point of Sale</h1>
+            <p className="hidden text-xs text-muted-foreground sm:block">
+              {availableProducts.length} ready to sell
+              {cartCount > 0 && ` · ${cartCount} in checkout`}
+            </p>
+          </div>
+          <div className="flex shrink-0 items-center gap-1 sm:gap-2">
+            {cartCount > 0 && posStep !== "CHECKOUT" && (
             <Button
               type="button"
-              className="h-auto min-h-14 px-6 text-base font-semibold shadow-md sm:min-w-64"
+              className="h-10 px-3 text-sm font-semibold shadow-sm sm:px-4"
               onClick={() => setPosStep("CHECKOUT")}
             >
-              <ShoppingCart className="mr-2 h-5 w-5" />
-              Go to checkout · {formatPrice(cartSummary.total)}
+              <ShoppingCart className="h-4 w-4 sm:mr-2" />
+              <span className="sr-only sm:not-sr-only">Checkout</span>
+              <span className="hidden min-[420px]:inline"> · {formatPrice(cartSummary.total)}</span>
             </Button>
-          )}
-          <Button type="button" variant="outline" className="h-auto min-h-11 sm:min-w-32" onClick={openQuickAdd}>
-            <Plus className="mr-2 h-4 w-4" />
-            Add product
-          </Button>
-          <Button asChild variant="outline" className="h-auto min-h-12 sm:min-w-36">
-            <Link href={`/admin/products${isFullscreen ? "?posFullscreen=1" : ""}`}>
-              <Pencil className="mr-2 h-4 w-4" />
-              Edit products
-            </Link>
-          </Button>
-          <Button
-            type="button"
-            variant={isFullscreen ? "secondary" : "outline"}
-            className="h-auto min-h-11 sm:min-w-40"
-            onClick={toggleFullscreen}
-            aria-pressed={isFullscreen}
-          >
-            {isFullscreen ? <Minimize2 className="mr-2 h-4 w-4" /> : <Maximize2 className="mr-2 h-4 w-4" />}
-            {isFullscreen ? "Exit fullscreen" : "Fullscreen POS"}
-          </Button>
+            )}
+            <Button type="button" variant="outline" className="h-10 px-3" onClick={openQuickAdd}>
+              <Plus className="h-4 w-4 sm:mr-2" />
+              <span className="hidden sm:inline">New product</span>
+            </Button>
+            <Button
+              type="button"
+              variant={isFullscreen ? "secondary" : "outline"}
+              className="h-10 px-3"
+              onClick={toggleFullscreen}
+              aria-pressed={isFullscreen}
+            >
+              {isFullscreen ? <Minimize2 className="h-4 w-4 md:mr-2" /> : <Maximize2 className="h-4 w-4 md:mr-2" />}
+              <span className="hidden md:inline">{isFullscreen ? "Exit fullscreen" : "Fullscreen"}</span>
+            </Button>
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button type="button" variant="outline" className="h-10 px-3" aria-label="POS actions">
+                  <MoreHorizontal className="h-5 w-5" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="w-56">
+                <DropdownMenuItem asChild>
+                  <Link href={`/admin/products${isFullscreen ? "?posFullscreen=1" : ""}`}>
+                    <Pencil className="mr-2 h-4 w-4" />
+                    Edit products
+                  </Link>
+                </DropdownMenuItem>
+                <DropdownMenuItem asChild>
+                  <Link href={`/admin/pos/sales${isFullscreen ? "?posFullscreen=1" : ""}`}>
+                    <ReceiptText className="mr-2 h-4 w-4" />
+                    Sales history
+                  </Link>
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          </div>
         </div>
+        {cartCount > 0 && posStep === "CHECKOUT" && (
+          <div className="mt-2 flex items-center justify-between rounded-md bg-background/70 px-3 py-2 text-sm sm:hidden">
+            <span className="font-medium">{cartCount} item{cartCount === 1 ? "" : "s"}</span>
+            <span className="font-semibold">{formatPrice(cartSummary.total)}</span>
+          </div>
+        )}
       </div>
 
       {error && (
@@ -891,22 +927,25 @@ export default function AdminPosPage() {
       <div className="grid gap-3">
         <Card className={cn(posStep === "CHECKOUT" && "hidden")}>
           <CardContent className="p-4">
-            {(posStep !== "CATEGORIES" || cartCount > 0) && (
+            {posStep === "ITEMS" && (
             <div className="mb-4 flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-              <div className="flex flex-wrap gap-2">
-                {activeCategory !== "ALL" && posStep === "ITEMS" && (
-                  <span className="inline-flex min-h-10 items-center rounded-md bg-muted px-4 text-sm font-medium text-foreground">
-                    {getProductCategoryLabel(activeCategory)}
-                  </span>
-                )}
-                {cartCount > 0 && (
-                  <Button type="button" variant="outline" onClick={() => setPosStep("CHECKOUT")}>
-                    <ShoppingCart className="mr-2 h-4 w-4" />
-                    Checkout ({cartCount})
-                  </Button>
-                )}
+              <div className="flex flex-wrap items-center gap-2">
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => {
+                    setActiveCategory("ALL")
+                    setSearchTerm("")
+                    setPosStep("CATEGORIES")
+                  }}
+                >
+                  Back to categories
+                </Button>
+                <span className="inline-flex min-h-10 items-center rounded-md bg-muted px-4 text-sm font-medium text-foreground">
+                  {getProductCategoryLabel(activeCategory)}
+                </span>
+                <span className="text-sm text-muted-foreground">{filteredProducts.length} item{filteredProducts.length === 1 ? "" : "s"}</span>
               </div>
-              {posStep === "ITEMS" && (
               <div className="relative lg:w-96">
                 <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
                 <Input
@@ -919,7 +958,6 @@ export default function AdminPosPage() {
                   className="pl-9"
                 />
               </div>
-              )}
             </div>
             )}
 
@@ -963,20 +1001,6 @@ export default function AdminPosPage() {
               </div>
             ) : (
               <div className="space-y-4">
-                <div className="flex items-center justify-between gap-3">
-                  <Button
-                    type="button"
-                    variant="outline"
-                    onClick={() => {
-                      setActiveCategory("ALL")
-                      setSearchTerm("")
-                      setPosStep("CATEGORIES")
-                    }}
-                  >
-                    Back to categories
-                  </Button>
-                  <p className="text-sm text-muted-foreground">{filteredProducts.length} item{filteredProducts.length === 1 ? "" : "s"}</p>
-                </div>
                 <div
                   className={cn(
                     "grid auto-rows-fr grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5",
@@ -1073,55 +1097,86 @@ export default function AdminPosPage() {
               <div className="space-y-3">
                 {cart.map((item) => {
                   const totals = cartLineTotals(item)
-                  const suggestedTaxRate = defaultTaxRate(item.product)
+                  const discountOpen = expandedCartItemId === item.product.id
+                  const hasDiscount = item.discountType !== "NONE" && totals.discountAmount > 0
 
                   return (
-                  <div key={item.product.id} className="rounded-md border border-border p-3">
-                    <div className="flex items-start justify-between gap-3">
-                      <div>
-                        <p className="font-medium text-foreground">{item.product.name}</p>
-                        <p className="text-sm text-muted-foreground">{formatPrice(item.product.price)} each</p>
+                  <div key={item.product.id} className="rounded-md border border-border bg-background px-3 py-2 shadow-sm">
+                    <div className="grid gap-2 sm:grid-cols-[minmax(0,1fr)_auto_auto] sm:items-center">
+                      <div className="min-w-0">
+                        <p className="truncate font-medium text-foreground">{item.product.name}</p>
                       </div>
-                      <Button variant="ghost" size="icon" onClick={() => updateCartQuantity(item.product.id, 0)}>
-                        <Trash2 className="h-4 w-4" />
-                      </Button>
-                    </div>
-                    <div className="mt-3 flex items-center justify-between">
+
                       <div className="flex items-center gap-2">
-                        <Button variant="outline" size="icon" onClick={() => updateCartQuantity(item.product.id, item.quantity - 1)}>
+                        <Button
+                          variant="outline"
+                          size="icon"
+                          className="h-9 w-9"
+                          onClick={() => updateCartQuantity(item.product.id, item.quantity - 1)}
+                          aria-label={`Decrease ${item.product.name} quantity`}
+                        >
                           <Minus className="h-4 w-4" />
                         </Button>
-                        <span className="w-8 text-center font-semibold">{item.quantity}</span>
-                        <Button variant="outline" size="icon" onClick={() => updateCartQuantity(item.product.id, item.quantity + 1)}>
+                        <span className="min-w-8 text-center text-base font-semibold">{item.quantity}</span>
+                        <Button
+                          variant="outline"
+                          size="icon"
+                          className="h-9 w-9"
+                          onClick={() => updateCartQuantity(item.product.id, item.quantity + 1)}
+                          aria-label={`Increase ${item.product.name} quantity`}
+                        >
                           <Plus className="h-4 w-4" />
                         </Button>
                       </div>
-                      <p className="font-semibold text-foreground">{formatPrice(totals.total)}</p>
+
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-9 w-9 justify-self-start text-muted-foreground hover:text-destructive sm:justify-self-end"
+                        onClick={() => updateCartQuantity(item.product.id, 0)}
+                        aria-label={`Remove ${item.product.name}`}
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </Button>
                     </div>
 
-                    <div className="mt-4 space-y-3 rounded-md bg-muted/35 p-3">
-                      <div className="space-y-2">
-                        <div className="flex items-center justify-between gap-2">
-                          <Label className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Tax</Label>
-                          <span className="text-[11px] text-muted-foreground">Suggested: {suggestedTaxRate}%</span>
-                        </div>
-                        <div className="grid grid-cols-3 gap-2">
-                          {[0, 10, 15].map((rate) => (
-                            <Button
-                              key={rate}
-                              type="button"
-                              size="sm"
-                              variant={item.taxRate === rate ? "default" : "outline"}
-                              className="h-9 px-2 text-xs"
-                              onClick={() => updateCartItem(item.product.id, { taxRate: normalizePosTaxRate(rate) })}
-                            >
-                              {rate === 0 ? "No tax" : `${rate}%`}
-                            </Button>
-                          ))}
-                        </div>
+                    <div className="mt-2 grid gap-2 border-t border-border pt-2 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <span className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Tax</span>
+                        {[0, 10, 15].map((rate) => (
+                          <Button
+                            key={rate}
+                            type="button"
+                            size="sm"
+                            variant={item.taxRate === rate ? "default" : "outline"}
+                            className="h-8 min-w-14 px-2 text-xs"
+                            onClick={() => updateCartItem(item.product.id, { taxRate: normalizePosTaxRate(rate) })}
+                          >
+                            {rate === 0 ? "None" : `${rate}%`}
+                          </Button>
+                        ))}
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant={discountOpen || item.discountType !== "NONE" ? "secondary" : "ghost"}
+                          className="h-8 px-2 text-xs"
+                          onClick={() => setExpandedCartItemId(discountOpen ? null : item.product.id)}
+                        >
+                          <Percent className="mr-1 h-3.5 w-3.5" />
+                          {hasDiscount ? "Discount applied" : "Discount"}
+                        </Button>
+                        {hasDiscount && (
+                          <span className="text-xs font-medium text-foreground">-{formatPrice(totals.discountAmount)}</span>
+                        )}
                       </div>
+                      <div className="text-left sm:text-right">
+                        <p className="text-lg font-bold text-foreground">{formatPrice(totals.total)}</p>
+                        <p className="text-[11px] text-muted-foreground">{item.quantity} x {formatPrice(item.product.price)}</p>
+                      </div>
+                    </div>
 
-                      <div className="grid gap-2 sm:grid-cols-[130px_1fr]">
+                    {discountOpen && (
+                      <div className="mt-2 grid gap-2 rounded-md bg-muted/35 p-2 sm:grid-cols-[140px_1fr_auto] sm:items-end">
                         <div className="space-y-1">
                           <Label className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Discount</Label>
                           <Select
@@ -1158,27 +1213,26 @@ export default function AdminPosPage() {
                             />
                           </div>
                         )}
-                      </div>
-
-                      <div className="space-y-1 border-t border-border pt-2 text-xs text-muted-foreground">
-                        <div className="flex items-center justify-between">
-                          <span>Line subtotal</span>
-                          <span>{formatPrice(totals.subtotal)}</span>
+                        <div className="space-y-1 text-xs text-muted-foreground sm:min-w-36 sm:text-right">
+                          <div className="flex items-center justify-between gap-4 sm:justify-end">
+                            <span>Subtotal</span>
+                            <span>{formatPrice(totals.subtotal)}</span>
+                          </div>
+                          {totals.discountAmount > 0 && (
+                            <div className="flex items-center justify-between gap-4 sm:justify-end">
+                              <span>Discount</span>
+                              <span>-{formatPrice(totals.discountAmount)}</span>
+                            </div>
+                          )}
+                          {totals.taxAmount > 0 && (
+                            <div className="flex items-center justify-between gap-4 sm:justify-end">
+                              <span>Tax</span>
+                              <span>{formatPrice(totals.taxAmount)}</span>
+                            </div>
+                          )}
                         </div>
-                        {totals.discountAmount > 0 && (
-                          <div className="flex items-center justify-between">
-                            <span>Discount</span>
-                            <span>-{formatPrice(totals.discountAmount)}</span>
-                          </div>
-                        )}
-                        {totals.taxAmount > 0 && (
-                          <div className="flex items-center justify-between">
-                            <span>Tax ({totals.taxRate}%)</span>
-                            <span>{formatPrice(totals.taxAmount)}</span>
-                          </div>
-                        )}
                       </div>
-                    </div>
+                    )}
                   </div>
                   )
                 })}

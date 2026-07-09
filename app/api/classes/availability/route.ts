@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server"
 import { prisma } from "@/lib/prisma"
+import { auth } from "@/lib/auth"
 import {
   addDays,
   buildDefaultRangeSessions,
@@ -15,6 +16,7 @@ import {
   sessionKey,
   startOfWeek,
 } from "@/lib/class-schedule"
+import { isFullAdminRole } from "@/lib/permissions"
 
 function parseWeekStart(value: string | null) {
   if (!value) return startOfWeek(new Date())
@@ -105,6 +107,18 @@ function activeBookingStatusWhere(now = new Date()) {
 
 export async function GET(req: NextRequest) {
   const monthStartParam = req.nextUrl.searchParams.get("monthStart")
+  const includeHoldDetails = req.nextUrl.searchParams.get("includeHoldDetails") === "1"
+  let canIncludeHoldDetails = false
+
+  if (includeHoldDetails) {
+    try {
+      const session = await auth()
+      canIncludeHoldDetails = Boolean(session && isFullAdminRole(session.user.role))
+    } catch (error) {
+      console.error("Could not verify availability hold detail access", error)
+    }
+  }
+
   const weekStart = parseWeekStart(req.nextUrl.searchParams.get("weekStart"))
   const rangeStart = monthStartParam ? parseMonthStart(monthStartParam) : weekStart
   const rangeEnd = monthStartParam ? endOfMonth(rangeStart) : addDays(weekStart, 6)
@@ -206,5 +220,11 @@ export async function GET(req: NextRequest) {
     }
   }
 
-  return buildAvailabilityResponse(rangeStart, sessions, bookedSeats, heldSeats, holdDetails)
+  return buildAvailabilityResponse(
+    rangeStart,
+    sessions,
+    bookedSeats,
+    heldSeats,
+    canIncludeHoldDetails ? holdDetails : undefined
+  )
 }

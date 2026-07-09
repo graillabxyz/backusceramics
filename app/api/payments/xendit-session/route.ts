@@ -9,6 +9,7 @@ import {
   XenditApiError,
   XenditConfigurationError,
 } from "@/lib/xendit"
+import { isRequestBodyTooLarge } from "@/lib/server-security"
 import {
   getScheduleOffering,
   hasSessionStartPassed,
@@ -20,6 +21,7 @@ import {
 import { recordAnalyticsEvent } from "@/lib/analytics-server"
 
 export const runtime = "nodejs"
+const MAX_PAYMENT_SESSION_BODY_BYTES = 64 * 1024
 
 const paymentErrorCodes = {
   configurationMissing: "PAYMENT_CONFIGURATION_MISSING",
@@ -316,6 +318,12 @@ async function handlePaymentSessionPost(req: NextRequest, trace?: PaymentTrace) 
   let data: Record<string, unknown>
   try {
     markPaymentStep(trace, "parse-body")
+    if (isRequestBodyTooLarge(req, MAX_PAYMENT_SESSION_BODY_BYTES)) {
+      return NextResponse.json(
+        { error: "Payment request is too large", code: paymentErrorCodes.invalidRequest },
+        { status: 413 }
+      )
+    }
     data = await req.json()
   } catch {
     return NextResponse.json(

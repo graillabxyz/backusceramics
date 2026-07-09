@@ -29,6 +29,7 @@ model User {
   classSchedules ClassSchedule[]
   posProducts    PosProduct[] @relation("PosProductCreator")
   posSales       PosSale[] @relation("PosSaleOperator")
+  voidedPosSales PosSale[] @relation("PosSaleVoider")
   analyticsEvents AnalyticsEvent[]
   residencyApps ResidencyApplication[]
   notificationPreference UserNotificationPreference?
@@ -135,6 +136,7 @@ model ClassBooking {
   holdExpiresAt DateTime?
   confirmedAt DateTime?
   cancelledAt DateTime?
+  archivedAt DateTime?
 
   // Contact snapshot
   contactName  String
@@ -147,6 +149,7 @@ model ClassBooking {
   @@index([paymentReference])
   @@index([paymentSessionId])
   @@index([status, holdExpiresAt])
+  @@index([status, archivedAt])
 }
 
 model ClassSchedule {
@@ -237,6 +240,8 @@ model PosSale {
   id         String @id @default(cuid())
   operatorId String?
   operator  User?  @relation("PosSaleOperator", fields: [operatorId], references: [id])
+  voidedById String?
+  voidedBy   User?  @relation("PosSaleVoider", fields: [voidedById], references: [id])
 
   subtotal      Int    @default(0)
   discountTotal Int    @default(0)
@@ -244,19 +249,22 @@ model PosSale {
   total         Int
   currency      String @default("IDR")
   status        String @default("PAID")
-  // Status values: PAID, PENDING_PAYMENT, CANCELLED
+  // Status values: PAID, PENDING_PAYMENT, CANCELLED, VOIDED
   paymentMethod String @default("CARD_MACHINE")
   paymentReference String?
   paymentSessionId String?
   receiptEmail String?
   receiptSentAt DateTime?
   notes         String?
+  voidedAt      DateTime?
+  voidReason    String?
 
   items PosSaleItem[]
 
   createdAt DateTime @default(now())
 
   @@index([operatorId])
+  @@index([voidedById])
   @@index([createdAt])
   @@index([status])
   @@index([paymentReference])

@@ -1,9 +1,11 @@
 import { NextRequest, NextResponse } from "next/server"
 import { auth } from "@/lib/auth"
 import { prisma } from "@/lib/prisma"
-import { workshops } from "@/lib/classes-data"
-import { parseDateKey, parseScheduleDays, parseTimeLabel } from "@/lib/class-schedule"
+import { parseDateKey, parseScheduleDays, parseTimeLabel, scheduleOfferings } from "@/lib/class-schedule"
 import { isFullAdminRole } from "@/lib/permissions"
+import { cleanString, isRequestBodyTooLarge, safeHeaderValue } from "@/lib/server-security"
+
+const MAX_CLASS_HOLD_BODY_BYTES = 32 * 1024
 
 function parseWeekdays(value: unknown) {
   if (!Array.isArray(value)) return []
@@ -29,12 +31,20 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
   }
 
+  if (isRequestBodyTooLarge(req, MAX_CLASS_HOLD_BODY_BYTES)) {
+    return NextResponse.json({ error: "Hold request is too large" }, { status: 413 })
+  }
+
   const data = await req.json()
-  if (!data.studentName) {
+  const studentName = cleanString(data.studentName, 160)
+  const studentEmail = safeHeaderValue(data.studentEmail, 254)
+  const notes = cleanString(data.notes, 1000)
+
+  if (!studentName) {
     return NextResponse.json({ error: "Student name is required" }, { status: 400 })
   }
 
-  const workshop = workshops.find((item) => item.id === data.workshopId)
+  const workshop = scheduleOfferings.find((item) => item.id === data.workshopId)
   if (!workshop || workshop.category === "residency") {
     return NextResponse.json({ error: "Choose a valid class workshop" }, { status: 400 })
   }
@@ -45,13 +55,17 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: `Seats must be between 1 and ${maxParticipants}` }, { status: 400 })
   }
 
+  const allowCustomTime = data.allowCustomTime === true
   const validTimes = (workshop.schedule || []).map(parseTimeLabel)
-  if (!validTimes.includes(data.timeLabel)) {
+  if (!data.timeLabel || (validTimes.length > 0 && !validTimes.includes(data.timeLabel) && !allowCustomTime)) {
     return NextResponse.json({ error: "Choose a valid class time" }, { status: 400 })
   }
 
   const validWeekdays = new Set((workshop.schedule || []).flatMap(parseScheduleDays))
-  const weekdays = parseWeekdays(data.weekdays).filter((day) => validWeekdays.has(day))
+  const requestedWeekdays = parseWeekdays(data.weekdays)
+  const weekdays = validWeekdays.size > 0 && !allowCustomTime
+    ? requestedWeekdays.filter((day) => validWeekdays.has(day))
+    : requestedWeekdays
   if (weekdays.length === 0) {
     return NextResponse.json({ error: "Choose at least one valid class day" }, { status: 400 })
   }
@@ -68,15 +82,15 @@ export async function POST(req: NextRequest) {
   const hold = await prisma.classHold.create({
     data: {
       createdBy: session.user.id,
-      studentName: data.studentName,
-      studentEmail: data.studentEmail || null,
+      studentName,
+      studentEmail: studentEmail || null,
       workshopId: workshop.id,
-      timeLabel: data.timeLabel,
+      timeLabel: cleanString(data.timeLabel, 80),
       seats,
       weekdays: JSON.stringify(weekdays),
       startDate,
       endDate,
-      notes: data.notes || null,
+      notes: notes || null,
     },
   })
 

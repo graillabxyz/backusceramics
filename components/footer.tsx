@@ -33,7 +33,12 @@ export function Footer() {
               </li>
               <li>
                 <Link href="/shop" className="text-sm text-muted-foreground hover:text-foreground transition-colors">
-                  Shop
+                  Our Shop
+                </Link>
+              </li>
+              <li>
+                <Link href="/wall-of-cups" className="text-sm text-muted-foreground hover:text-foreground transition-colors">
+                  Wall of Cups
                 </Link>
               </li>
               <li>

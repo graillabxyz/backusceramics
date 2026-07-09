@@ -1,11 +1,15 @@
 import { NextRequest, NextResponse } from "next/server"
+import { timingSafeEqual } from "crypto"
 import { prisma } from "@/lib/prisma"
 import { getXenditCallbackToken } from "@/lib/xendit"
 import { sendPosReceiptEmail } from "@/lib/pos-receipts"
 import { recordAnalyticsEvent } from "@/lib/analytics-server"
 import { notifyClassBookingsConfirmed, notifyCupSalePaid } from "@/lib/admin-notification-events"
+import { isRequestBodyTooLarge } from "@/lib/server-security"
 
 export const runtime = "nodejs"
+
+const MAX_WEBHOOK_BODY_BYTES = 128 * 1024
 
 type XenditInvoiceWebhook = {
   event?: string
@@ -101,6 +105,16 @@ function getWebhookPosReference(payload: XenditInvoiceWebhook) {
   return payload.metadata?.pos_payment_reference || payload.data?.metadata?.pos_payment_reference || getWebhookReference(payload)
 }
 
+function hasValidCallbackToken(incomingToken: string | null, callbackToken: string) {
+  if (!incomingToken) return false
+
+  const incoming = Buffer.from(incomingToken)
+  const expected = Buffer.from(callbackToken)
+  if (incoming.length !== expected.length) return false
+
+  return timingSafeEqual(incoming, expected)
+}
+
 async function findPosSaleForWebhook({
   posSaleId,
   paymentSessionId,
@@ -157,8 +171,12 @@ export async function POST(req: NextRequest) {
   }
 
   const incomingToken = req.headers.get("x-callback-token")
-  if (!incomingToken || incomingToken !== callbackToken) {
+  if (!hasValidCallbackToken(incomingToken, callbackToken)) {
     return NextResponse.json({ error: "Unauthorized webhook" }, { status: 401 })
+  }
+
+  if (isRequestBodyTooLarge(req, MAX_WEBHOOK_BODY_BYTES)) {
+    return NextResponse.json({ error: "Webhook payload is too large" }, { status: 413 })
   }
 
   let payload: XenditInvoiceWebhook

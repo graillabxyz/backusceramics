@@ -1,8 +1,10 @@
 import { NextRequest, NextResponse } from "next/server"
 import { auth } from "@/lib/auth"
 import { recordAnalyticsEvent } from "@/lib/analytics-server"
+import { isRequestBodyTooLarge } from "@/lib/server-security"
 
 export const runtime = "nodejs"
+const MAX_ANALYTICS_BODY_BYTES = 32 * 1024
 
 type ClientAnalyticsPayload = {
   type?: string
@@ -25,6 +27,10 @@ type ClientAnalyticsPayload = {
 }
 
 export async function POST(req: NextRequest) {
+  if (isRequestBodyTooLarge(req, MAX_ANALYTICS_BODY_BYTES)) {
+    return NextResponse.json({ error: "Analytics payload is too large" }, { status: 413 })
+  }
+
   let data: ClientAnalyticsPayload = {}
   try {
     data = await req.json()

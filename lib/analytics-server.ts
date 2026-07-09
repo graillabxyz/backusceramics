@@ -1,5 +1,6 @@
 import type { NextRequest } from "next/server"
 import { prisma } from "@/lib/prisma"
+import { hashIpAddress } from "@/lib/server-security"
 
 export interface AnalyticsEventInput {
   type: string
@@ -123,7 +124,7 @@ export async function recordAnalyticsEvent(input: AnalyticsEventInput, req?: Nex
         city: truncate(geo.city, 120),
         region: truncate(geo.region, 120),
         country: truncate(geo.country, 2),
-        ip: truncate(getIp(req), 120),
+        ip: hashIpAddress(getIp(req)),
         userAgent: truncate(header(req, "user-agent"), 500),
       },
     })

@@ -10,6 +10,10 @@
     "lint": "eslint .",
     "start": "next start"
   },
+  "overrides": {
+    "postcss": "^8.5.15",
+    "ws": "^8.21.0"
+  },
   "dependencies": {
     "@auth/prisma-adapter": "^2.11.2",
     "@hookform/resolvers": "^3.10.0",

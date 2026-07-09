@@ -37,7 +37,7 @@ export function HeroSection() {
             </Button>
             <Button asChild variant="outline" size="lg" className="px-8 bg-transparent">
               <Link href="/shop">
-                Shop the Wall of Cups
+                Our Shop
               </Link>
             </Button>
           </div>

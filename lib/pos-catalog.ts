@@ -33,7 +33,7 @@ export type PosProductStatus = (typeof POS_PRODUCT_STATUSES)[number]
 export const POS_PAYMENT_METHODS = ["CARD_MACHINE", "CASH", "QRIS", "TRANSFER", "ONLINE", "OTHER"] as const
 export type PosPaymentMethod = (typeof POS_PAYMENT_METHODS)[number]
 
-export const POS_SALE_STATUSES = ["PAID", "PENDING_PAYMENT", "CANCELLED"] as const
+export const POS_SALE_STATUSES = ["PAID", "PENDING_PAYMENT", "CANCELLED", "VOIDED"] as const
 export type PosSaleStatus = (typeof POS_SALE_STATUSES)[number]
 
 export const PUBLIC_WARES_CATEGORIES = POS_PRODUCT_CATEGORIES.filter((category) => category.publicListing)

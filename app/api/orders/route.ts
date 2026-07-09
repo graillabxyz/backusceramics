@@ -3,8 +3,10 @@ import { auth } from "@/lib/auth"
 import { prisma } from "@/lib/prisma"
 import { isFullAdminRole } from "@/lib/permissions"
 import { Resend } from "resend"
+import { cleanString, escapeHtml, isRequestBodyTooLarge, safeHeaderValue } from "@/lib/server-security"
 
 const resend = new Resend(process.env.RESEND_API_KEY || "re_placeholder")
+const MAX_ORDER_BODY_BYTES = 128 * 1024
 
 export async function GET() {
   const session = await auth()
@@ -30,24 +32,35 @@ export async function GET() {
 }
 
 export async function POST(req: NextRequest) {
+  if (isRequestBodyTooLarge(req, MAX_ORDER_BODY_BYTES)) {
+    return NextResponse.json({ error: "Order request is too large" }, { status: 413 })
+  }
+
   const data = await req.json()
   const session = await auth()
 
   const { contact, pieces, preferences } = data
+  const contactName = cleanString(contact?.name, 160)
+  const contactEmail = safeHeaderValue(contact?.email, 254)
+  const contactPhone = cleanString(contact?.phone, 80)
+  const contactLocation = cleanString(contact?.location, 180)
+  const orderPieces = Array.isArray(pieces) ? pieces.slice(0, 50) : []
+  const orderPreferences = preferences && typeof preferences === "object" ? preferences : {}
+  const minimumOrderIdr = Number(preferences?.minimumOrderIdr || 3500000)
 
-  if (!contact?.name || !contact?.email) {
+  if (!contactName || !contactEmail) {
     return NextResponse.json({ error: "Missing required contact fields" }, { status: 400 })
   }
 
   // Create order in database
   const order = await prisma.order.create({
     data: {
-      contactName: contact.name,
-      contactEmail: contact.email,
-      contactPhone: contact.phone || null,
-      contactLocation: contact.location || "",
-      pieces: JSON.stringify(pieces),
-      preferences: JSON.stringify(preferences),
+      contactName,
+      contactEmail,
+      contactPhone: contactPhone || null,
+      contactLocation,
+      pieces: JSON.stringify(orderPieces),
+      preferences: JSON.stringify(orderPreferences),
       userId: session?.user?.id || null,
     },
   })
@@ -58,15 +71,16 @@ export async function POST(req: NextRequest) {
     await resend.emails.send({
       from: fromEmail,
       to: "backusceramics@gmail.com",
-      replyTo: contact.email,
-      subject: `NEW ORDER INQUIRY: ${contact.name}`,
+      replyTo: contactEmail,
+      subject: `NEW ORDER INQUIRY: ${safeHeaderValue(contactName, 100)}`,
       html: `
         <div style="font-family: sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
           <h2>New Order Inquiry</h2>
-          <p><strong>Name:</strong> ${contact.name}</p>
-          <p><strong>Email:</strong> ${contact.email}</p>
-          <p><strong>Location:</strong> ${contact.location}</p>
-          <p><strong>Pieces:</strong> ${pieces.length} items</p>
+          <p><strong>Name:</strong> ${escapeHtml(contactName)}</p>
+          <p><strong>Email:</strong> ${escapeHtml(contactEmail)}</p>
+          <p><strong>Location:</strong> ${escapeHtml(contactLocation || "Not provided")}</p>
+          <p><strong>Pieces:</strong> ${orderPieces.length} items</p>
+          <p><strong>Minimum custom order:</strong> Rp ${minimumOrderIdr.toLocaleString("id-ID")}</p>
           <p>View full details in the <a href="${process.env.NEXT_PUBLIC_SITE_URL || 'http://localhost:3000'}/admin/orders/${order.id}">admin dashboard</a>.</p>
         </div>
       `,

@@ -70,6 +70,8 @@ const colorOptions = [
   { value: "open", label: "Open to Suggestions" },
 ]
 
+const CUSTOM_ORDER_MINIMUM_IDR = 3500000
+
 
 
 export default function CustomOrdersPage() {
@@ -176,7 +178,10 @@ export default function CustomOrdersPage() {
         finishing: piece.finishing,
         imageCount: piece.images.length,
       })),
-      preferences,
+      preferences: {
+        ...preferences,
+        minimumOrderIdr: CUSTOM_ORDER_MINIMUM_IDR,
+      },
     }
 
     try {
@@ -625,6 +630,10 @@ export default function CustomOrdersPage() {
 
                 <div className="space-y-2">
                   <Label htmlFor="budget">Approximate Budget (IDR)</Label>
+                  <div className="rounded-lg border border-primary/20 bg-primary/5 p-3 text-sm leading-relaxed text-muted-foreground">
+                    <strong className="text-foreground">Minimum custom order: Rp 3.500.000.</strong> This helps cover design time,
+                    setup, making, glazing, firing, and packing for custom work.
+                  </div>
                   <Select
                     value={preferences.budget}
                     onValueChange={(value) => setPreferences({ ...preferences, budget: value })}
@@ -633,8 +642,7 @@ export default function CustomOrdersPage() {
                       <SelectValue placeholder="Select budget range" />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="under-2m">Under 2,000,000</SelectItem>
-                      <SelectItem value="2m-5m">2,000,000 - 5,000,000</SelectItem>
+                      <SelectItem value="3_5m-5m">3,500,000 - 5,000,000</SelectItem>
                       <SelectItem value="5m-10m">5,000,000 - 10,000,000</SelectItem>
                       <SelectItem value="10m-20m">10,000,000 - 20,000,000</SelectItem>
                       <SelectItem value="20m-50m">20,000,000 - 50,000,000</SelectItem>
@@ -740,6 +748,9 @@ export default function CustomOrdersPage() {
                       <span className="font-bold">
                         {pieces.reduce((sum, p) => sum + p.images.length, 0)}
                       </span>
+                    </div>
+                    <div className="mt-3 rounded-lg bg-background/70 p-3 text-xs leading-relaxed text-muted-foreground">
+                      Custom orders begin at <strong className="text-foreground">Rp 3.500.000</strong>. We will confirm the final quote before any payment is requested.
                     </div>
                   </div>
                 </div>

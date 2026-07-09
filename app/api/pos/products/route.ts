@@ -8,6 +8,9 @@ import {
   POS_PRODUCT_STATUSES,
   serializeProductImageUrls,
 } from "@/lib/pos-catalog"
+import { cleanString, isRequestBodyTooLarge } from "@/lib/server-security"
+
+const MAX_PRODUCT_BODY_BYTES = 64 * 1024
 
 function slugify(value: string) {
   return value
@@ -64,8 +67,12 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
   }
 
+  if (isRequestBodyTooLarge(req, MAX_PRODUCT_BODY_BYTES)) {
+    return NextResponse.json({ error: "Product payload is too large" }, { status: 413 })
+  }
+
   const data = await req.json()
-  const name = String(data.name || "").trim()
+  const name = cleanString(data.name, 160)
   const category = normalizeProductCategory(data.category)
   const rawStatus = data.status || "DRAFT"
   if (!POS_PRODUCT_STATUSES.includes(rawStatus)) {
@@ -76,7 +83,7 @@ export async function POST(req: NextRequest) {
   const price = data.price === "" || data.price === null || data.price === undefined ? null : Number(data.price)
   const quantity = data.quantity === "" || data.quantity === null || data.quantity === undefined ? null : Number(data.quantity)
   const cafeOnly = Boolean(data.cafeOnly)
-  const showInShop = cafeOnly || isDraft ? false : Boolean(data.showInShop)
+  const showInShop = cafeOnly || isDraft || !isCupCategory(category) ? false : Boolean(data.showInShop)
   const volumeMl = parseVolumeMl(data.volumeMl, category)
 
   if (!name) {
@@ -108,8 +115,8 @@ export async function POST(req: NextRequest) {
       createdBy: session.user.id,
       name,
       slug: await uniqueSlug(name),
-      sku: data.sku ? String(data.sku).trim() : null,
-      description: data.description ? String(data.description).trim() : null,
+      sku: data.sku ? cleanString(data.sku, 120) : null,
+      description: data.description ? cleanString(data.description, 4000) : null,
       volumeMl: volumeMl.value,
       imageUrls: serializeProductImageUrls(data.imageUrls),
       price: price ?? 0,

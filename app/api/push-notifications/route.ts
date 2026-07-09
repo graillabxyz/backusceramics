@@ -2,8 +2,10 @@ import { NextRequest, NextResponse } from "next/server"
 import { auth } from "@/lib/auth"
 import { prisma } from "@/lib/prisma"
 import { getWebPushPublicKey, isWebPushConfigured } from "@/lib/push-notifications"
+import { cleanString, isRequestBodyTooLarge } from "@/lib/server-security"
 
 export const runtime = "nodejs"
+const MAX_PUSH_BODY_BYTES = 16 * 1024
 
 type PreferencePatch = {
   browserPushEnabled?: unknown
@@ -38,6 +40,14 @@ async function getOrCreatePreference(userId: string) {
   })
 }
 
+function isHttpsUrl(value: string) {
+  try {
+    return new URL(value).protocol === "https:"
+  } catch {
+    return false
+  }
+}
+
 export async function GET() {
   const user = await requireUser()
   if (!user) {
@@ -65,6 +75,10 @@ export async function PATCH(req: NextRequest) {
   const user = await requireUser()
   if (!user) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
+  }
+
+  if (isRequestBodyTooLarge(req, MAX_PUSH_BODY_BYTES)) {
+    return NextResponse.json({ error: "Notification settings payload is too large" }, { status: 413 })
   }
 
   const data = await req.json().catch(() => ({}))
@@ -96,15 +110,21 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Push notifications are not configured" }, { status: 503 })
   }
 
+  if (isRequestBodyTooLarge(req, MAX_PUSH_BODY_BYTES)) {
+    return NextResponse.json({ error: "Push subscription is too large" }, { status: 413 })
+  }
+
   const data = await req.json().catch(() => ({}))
   const subscription = data.subscription
-  const endpoint = typeof subscription?.endpoint === "string" ? subscription.endpoint : ""
-  const p256dh = typeof subscription?.keys?.p256dh === "string" ? subscription.keys.p256dh : ""
-  const authKey = typeof subscription?.keys?.auth === "string" ? subscription.keys.auth : ""
+  const endpoint = typeof subscription?.endpoint === "string" ? cleanString(subscription.endpoint, 2000) : ""
+  const p256dh = typeof subscription?.keys?.p256dh === "string" ? cleanString(subscription.keys.p256dh, 512) : ""
+  const authKey = typeof subscription?.keys?.auth === "string" ? cleanString(subscription.keys.auth, 512) : ""
 
-  if (!endpoint || !p256dh || !authKey) {
+  if (!endpoint || !isHttpsUrl(endpoint) || !p256dh || !authKey) {
     return NextResponse.json({ error: "Invalid push subscription" }, { status: 400 })
   }
+
+  const userAgent = cleanString(req.headers.get("user-agent"), 500) || null
 
   const [savedSubscription, preference] = await prisma.$transaction([
     prisma.pushSubscription.upsert({
@@ -113,7 +133,7 @@ export async function POST(req: NextRequest) {
         userId: user.id,
         p256dh,
         auth: authKey,
-        userAgent: req.headers.get("user-agent"),
+        userAgent,
         enabled: true,
       },
       create: {
@@ -121,7 +141,7 @@ export async function POST(req: NextRequest) {
         endpoint,
         p256dh,
         auth: authKey,
-        userAgent: req.headers.get("user-agent"),
+        userAgent,
       },
     }),
     prisma.userNotificationPreference.upsert({
@@ -140,8 +160,12 @@ export async function DELETE(req: NextRequest) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
   }
 
+  if (isRequestBodyTooLarge(req, MAX_PUSH_BODY_BYTES)) {
+    return NextResponse.json({ error: "Push request is too large" }, { status: 413 })
+  }
+
   const data = await req.json().catch(() => ({}))
-  const endpoint = typeof data.endpoint === "string" ? data.endpoint : ""
+  const endpoint = typeof data.endpoint === "string" ? cleanString(data.endpoint, 2000) : ""
 
   if (endpoint) {
     await prisma.pushSubscription.updateMany({

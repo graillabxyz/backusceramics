@@ -5,8 +5,42 @@ import { createClient } from "@supabase/supabase-js"
 import { writeFile, mkdir } from "fs/promises"
 import path from "path"
 
+const MAX_UPLOAD_SIZE = 8 * 1024 * 1024
+const ALLOWED_IMAGE_MIME_TYPES = [
+  "image/jpeg",
+  "image/png",
+  "image/webp",
+  "image/gif",
+  "image/heic",
+  "image/heif",
+  "image/avif",
+]
+const ALLOWED_IMAGE_EXTENSIONS = new Set([".jpg", ".jpeg", ".png", ".webp", ".gif", ".heic", ".heif", ".avif"])
+
 function getExtension(filename: string) {
   return path.extname(filename).toLowerCase() || ".jpg"
+}
+
+function getContentType(file: File) {
+  const normalizedType = file.type.toLowerCase()
+  if (ALLOWED_IMAGE_MIME_TYPES.includes(normalizedType)) return normalizedType
+
+  const ext = getExtension(file.name)
+  if (ext === ".png") return "image/png"
+  if (ext === ".webp") return "image/webp"
+  if (ext === ".gif") return "image/gif"
+  if (ext === ".heic") return "image/heic"
+  if (ext === ".heif") return "image/heif"
+  if (ext === ".avif") return "image/avif"
+  return "image/jpeg"
+}
+
+function isAllowedImage(file: File) {
+  const normalizedType = file.type.toLowerCase()
+  const ext = getExtension(file.name)
+  const hasAllowedType = normalizedType ? ALLOWED_IMAGE_MIME_TYPES.includes(normalizedType) : true
+
+  return ALLOWED_IMAGE_EXTENSIONS.has(ext) && hasAllowedType
 }
 
 function getUploadFilename(file: File) {
@@ -33,18 +67,28 @@ async function uploadToSupabaseStorage(file: File, buffer: Buffer) {
   if (!buckets?.some((item) => item.name === bucket)) {
     const { error: createBucketError } = await supabase.storage.createBucket(bucket, {
       public: true,
-      fileSizeLimit: 8 * 1024 * 1024,
-      allowedMimeTypes: ["image/jpeg", "image/png", "image/webp", "image/gif"],
+      fileSizeLimit: MAX_UPLOAD_SIZE,
+      allowedMimeTypes: ALLOWED_IMAGE_MIME_TYPES,
     })
 
     if (createBucketError && !createBucketError.message.toLowerCase().includes("already exists")) {
       throw new Error(`Could not create storage bucket "${bucket}": ${createBucketError.message}`)
     }
+  } else {
+    const { error: updateBucketError } = await supabase.storage.updateBucket(bucket, {
+      public: true,
+      fileSizeLimit: MAX_UPLOAD_SIZE,
+      allowedMimeTypes: ALLOWED_IMAGE_MIME_TYPES,
+    })
+
+    if (updateBucketError) {
+      console.warn(`Could not update storage bucket "${bucket}" image settings: ${updateBucketError.message}`)
+    }
   }
 
   const filename = `products/${getUploadFilename(file)}`
   const { error } = await supabase.storage.from(bucket).upload(filename, buffer, {
-    contentType: file.type || "image/jpeg",
+    contentType: getContentType(file),
     upsert: false,
   })
 
@@ -69,11 +113,11 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "No file provided" }, { status: 400 })
   }
 
-  if (!file.type.startsWith("image/")) {
+  if (!isAllowedImage(file)) {
     return NextResponse.json({ error: "Only image uploads are allowed" }, { status: 400 })
   }
 
-  if (file.size > 8 * 1024 * 1024) {
+  if (file.size > MAX_UPLOAD_SIZE) {
     return NextResponse.json({ error: "Image must be smaller than 8MB" }, { status: 400 })
   }
 
@@ -94,6 +138,16 @@ export async function POST(req: NextRequest) {
         detail: error instanceof Error ? error.message : "Unknown storage error",
       },
       { status: 500 }
+    )
+  }
+
+  if (process.env.NODE_ENV === "production") {
+    return NextResponse.json(
+      {
+        error: "Image storage is not configured",
+        code: "SUPABASE_STORAGE_NOT_CONFIGURED",
+      },
+      { status: 503 }
     )
   }
 

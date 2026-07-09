@@ -7,6 +7,9 @@ import { calculatePosLineTotals, normalizePosDiscountType, normalizePosTaxRate }
 import { sendPosReceiptEmail } from "@/lib/pos-receipts"
 import { recordAnalyticsEvent } from "@/lib/analytics-server"
 import { notifyCupSalePaid } from "@/lib/admin-notification-events"
+import { cleanString, isRequestBodyTooLarge, safeHeaderValue } from "@/lib/server-security"
+
+const MAX_POS_SALE_BODY_BYTES = 64 * 1024
 
 interface SaleItemRequest {
   productId: string
@@ -24,16 +27,58 @@ interface RawSaleItemRequest {
   discountValue?: unknown
 }
 
+export async function GET(req: NextRequest) {
+  const session = await auth()
+  if (!session || !canUsePos(session.user.role)) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
+  }
+
+  const limitParam = Number(req.nextUrl.searchParams.get("limit") || 100)
+  const limit = Number.isInteger(limitParam) ? Math.min(Math.max(limitParam, 1), 200) : 100
+  const status = req.nextUrl.searchParams.get("status")
+  const where = status && status !== "ALL" ? { status } : undefined
+
+  const sales = await prisma.posSale.findMany({
+    where,
+    orderBy: { createdAt: "desc" },
+    take: limit,
+    include: {
+      items: true,
+      operator: {
+        select: {
+          id: true,
+          name: true,
+          email: true,
+          image: true,
+        },
+      },
+      voidedBy: {
+        select: {
+          id: true,
+          name: true,
+          email: true,
+        },
+      },
+    },
+  })
+
+  return NextResponse.json(sales)
+}
+
 export async function POST(req: NextRequest) {
   const session = await auth()
   if (!session || !canUsePos(session.user.role)) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
   }
 
+  if (isRequestBodyTooLarge(req, MAX_POS_SALE_BODY_BYTES)) {
+    return NextResponse.json({ error: "Sale payload is too large" }, { status: 413 })
+  }
+
   const data = await req.json()
   const items = Array.isArray(data.items) ? data.items : []
   const paymentMethod = data.paymentMethod || "CARD_MACHINE"
-  const receiptEmail = typeof data.receiptEmail === "string" ? data.receiptEmail.trim() : ""
+  const receiptEmail = typeof data.receiptEmail === "string" ? safeHeaderValue(data.receiptEmail, 254) : ""
 
   if (!POS_PAYMENT_METHODS.includes(paymentMethod)) {
     return NextResponse.json({ error: "Invalid payment method" }, { status: 400 })
@@ -130,7 +175,7 @@ export async function POST(req: NextRequest) {
           status: "PAID",
           paymentMethod,
           receiptEmail: receiptEmail || null,
-          notes: data.notes ? String(data.notes).trim() : null,
+          notes: data.notes ? cleanString(data.notes, 1000) : null,
           items: {
             create: snapshots,
           },

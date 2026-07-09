@@ -3,7 +3,7 @@ import { auth } from "@/lib/auth"
 import { prisma } from "@/lib/prisma"
 import { isFullAdminRole } from "@/lib/permissions"
 
-const bookingStatuses = ["PENDING", "CONFIRMED", "COMPLETED", "CANCELLED"] as const
+const bookingStatuses = ["PENDING", "CONFIRMED", "COMPLETED", "CANCELLED", "ARCHIVED"] as const
 
 export async function PATCH(
   req: NextRequest,
@@ -20,12 +20,15 @@ export async function PATCH(
     return NextResponse.json({ error: "Invalid booking status" }, { status: 400 })
   }
 
+  const now = new Date()
   const statusDates =
     status === "CONFIRMED"
-      ? { confirmedAt: new Date(), holdExpiresAt: null }
+      ? { confirmedAt: now, cancelledAt: null, archivedAt: null, holdExpiresAt: null }
       : status === "CANCELLED"
-        ? { cancelledAt: new Date(), holdExpiresAt: null }
-        : {}
+        ? { cancelledAt: now, archivedAt: null, holdExpiresAt: null }
+        : status === "ARCHIVED"
+          ? { archivedAt: now, holdExpiresAt: null }
+          : { cancelledAt: null, archivedAt: null }
 
   const booking = await prisma.classBooking.update({
     where: { id },

@@ -38,8 +38,8 @@ export function ShopPreview() {
               </h2>
               <p className="mt-6 text-lg text-muted-foreground leading-relaxed">
                 Our inventory changes daily as pieces are finished and find new homes. 
-                Instead of a static shop, we offer personalized video tours of our 
-                current collection.
+                Browse available cups online, or ask us for a quick video tour of the
+                current wall.
               </p>
             </div>
 
@@ -61,8 +61,8 @@ export function ShopPreview() {
                   </a>
                 </Button>
                 <Button asChild variant="outline" className="gap-2 bg-transparent">
-                  <Link href="/shop">
-                    Learn More
+                  <Link href="/wall-of-cups">
+                    View Cups
                     <ArrowRight className="h-4 w-4" />
                   </Link>
                 </Button>

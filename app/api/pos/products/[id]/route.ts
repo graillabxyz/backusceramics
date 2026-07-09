@@ -8,10 +8,13 @@ import {
   POS_PRODUCT_STATUSES,
   serializeProductImageUrls,
 } from "@/lib/pos-catalog"
+import { cleanString, isRequestBodyTooLarge } from "@/lib/server-security"
 
 interface ProductRouteContext {
   params: Promise<{ id: string }>
 }
+
+const MAX_PRODUCT_UPDATE_BODY_BYTES = 64 * 1024
 
 function parseVolumeMl(value: unknown, category: string) {
   if (!isCupCategory(category)) return { value: null }
@@ -31,6 +34,10 @@ export async function PATCH(req: NextRequest, { params }: ProductRouteContext) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
   }
 
+  if (isRequestBodyTooLarge(req, MAX_PRODUCT_UPDATE_BODY_BYTES)) {
+    return NextResponse.json({ error: "Product payload is too large" }, { status: 413 })
+  }
+
   const { id } = await params
   const data = await req.json()
   const updateData: Record<string, unknown> = {}
@@ -39,6 +46,7 @@ export async function PATCH(req: NextRequest, { params }: ProductRouteContext) {
     where: { id },
     select: {
       category: true,
+      cafeOnly: true,
       price: true,
       quantity: true,
       status: true,
@@ -50,18 +58,18 @@ export async function PATCH(req: NextRequest, { params }: ProductRouteContext) {
   }
 
   if ("name" in data) {
-    const name = String(data.name || "").trim()
+    const name = cleanString(data.name, 160)
     if (!name) return NextResponse.json({ error: "Product name is required" }, { status: 400 })
     updateData.name = name
   }
 
   if ("sku" in data) {
-    const sku = String(data.sku || "").trim()
+    const sku = cleanString(data.sku, 120)
     updateData.sku = sku || null
   }
 
   if ("description" in data) {
-    const description = String(data.description || "").trim()
+    const description = cleanString(data.description, 4000)
     updateData.description = description || null
   }
 
@@ -71,6 +79,7 @@ export async function PATCH(req: NextRequest, { params }: ProductRouteContext) {
 
   if ("category" in data) {
     updateData.category = nextCategory
+    if (nextCategory && !isCupCategory(nextCategory)) updateData.showInShop = false
   }
 
   if ("volumeMl" in data || (nextCategory && !isCupCategory(nextCategory))) {
@@ -116,8 +125,9 @@ export async function PATCH(req: NextRequest, { params }: ProductRouteContext) {
   }
 
   if ("showInShop" in data) {
-    const cafeOnly = "cafeOnly" in data ? Boolean(data.cafeOnly) : undefined
-    if (!cafeOnly) updateData.showInShop = Boolean(data.showInShop)
+    const cafeOnly = "cafeOnly" in data ? Boolean(data.cafeOnly) : currentProduct.cafeOnly
+    const category = nextCategory || currentProduct.category
+    updateData.showInShop = !cafeOnly && isCupCategory(category) ? Boolean(data.showInShop) : false
   }
 
   if ("featured" in data) {

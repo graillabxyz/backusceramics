@@ -1,7 +1,10 @@
 import { Resend } from 'resend'
 import { NextRequest, NextResponse } from 'next/server'
+import { cleanString, escapeHtml, isRequestBodyTooLarge, safeHeaderValue } from "@/lib/server-security"
 
 const resend = new Resend(process.env.RESEND_API_KEY || "re_placeholder")
+const MAX_SUBMIT_ORDER_BODY_BYTES = 128 * 1024
+const MAX_ORDER_PIECES = 50
 
 const PIECE_TYPE_LABELS: Record<string, string> = {
   'dinner-plate': 'Dinner Plate',
@@ -60,6 +63,7 @@ const TIMELINE_LABELS: Record<string, string> = {
 }
 
 const BUDGET_LABELS: Record<string, string> = {
+  '3_5m-5m': '3,500,000 – 5,000,000 IDR',
   'under-2m': 'Under 2,000,000 IDR',
   '2m-5m': '2,000,000 – 5,000,000 IDR',
   '5m-10m': '5,000,000 – 10,000,000 IDR',
@@ -103,6 +107,36 @@ interface OrderPayload {
   preferences: Preferences
 }
 
+function normalizeOrderPayload(input: Partial<OrderPayload>): OrderPayload {
+  const contact = input.contact || ({} as Contact)
+  const preferences = input.preferences || ({} as Preferences)
+  const pieces = Array.isArray(input.pieces) ? input.pieces.slice(0, MAX_ORDER_PIECES) : []
+
+  return {
+    contact: {
+      name: cleanString(contact.name, 160),
+      email: safeHeaderValue(contact.email, 254),
+      phone: cleanString(contact.phone, 80),
+      location: cleanString(contact.location, 180),
+    },
+    pieces: pieces.map((piece) => ({
+      pieceType: cleanString(piece.pieceType, 80),
+      dimensions: cleanString(piece.dimensions, 240),
+      quantity: cleanString(piece.quantity, 20),
+      finishing: cleanString(piece.finishing, 80),
+      imageCount: Number.isInteger(Number(piece.imageCount)) ? Math.max(Number(piece.imageCount), 0) : 0,
+    })),
+    preferences: {
+      colorPreference: cleanString(preferences.colorPreference, 80),
+      timeline: cleanString(preferences.timeline, 80),
+      budget: cleanString(preferences.budget, 80),
+      inspiration: cleanString(preferences.inspiration, 4000),
+      additionalNotes: cleanString(preferences.additionalNotes, 4000),
+      howDidYouHear: cleanString(preferences.howDidYouHear, 240),
+    },
+  }
+}
+
 function buildCSV(data: OrderPayload): string {
   const rows: string[][] = []
 
@@ -142,10 +176,10 @@ function buildEmailHTML(data: OrderPayload): string {
   const pieceRows = data.pieces.map((piece, i) => `
     <tr style="background:${i % 2 === 0 ? '#fafaf9' : '#ffffff'}">
       <td style="padding:10px 14px;border-bottom:1px solid #e7e5e4;font-weight:600;color:#44403c">Piece ${i + 1}</td>
-      <td style="padding:10px 14px;border-bottom:1px solid #e7e5e4;color:#57534e">${PIECE_TYPE_LABELS[piece.pieceType] || piece.pieceType || '—'}</td>
-      <td style="padding:10px 14px;border-bottom:1px solid #e7e5e4;color:#57534e">${piece.dimensions || '—'}</td>
-      <td style="padding:10px 14px;border-bottom:1px solid #e7e5e4;color:#57534e;text-align:center">${piece.quantity}</td>
-      <td style="padding:10px 14px;border-bottom:1px solid #e7e5e4;color:#57534e">${GLAZE_LABELS[piece.finishing] || piece.finishing || '—'}</td>
+      <td style="padding:10px 14px;border-bottom:1px solid #e7e5e4;color:#57534e">${escapeHtml(PIECE_TYPE_LABELS[piece.pieceType] || piece.pieceType || '—')}</td>
+      <td style="padding:10px 14px;border-bottom:1px solid #e7e5e4;color:#57534e">${escapeHtml(piece.dimensions || '—', 240)}</td>
+      <td style="padding:10px 14px;border-bottom:1px solid #e7e5e4;color:#57534e;text-align:center">${escapeHtml(piece.quantity, 20)}</td>
+      <td style="padding:10px 14px;border-bottom:1px solid #e7e5e4;color:#57534e">${escapeHtml(GLAZE_LABELS[piece.finishing] || piece.finishing || '—')}</td>
       <td style="padding:10px 14px;border-bottom:1px solid #e7e5e4;color:#57534e;text-align:center">${piece.imageCount}</td>
     </tr>
   `).join('')
@@ -170,10 +204,10 @@ function buildEmailHTML(data: OrderPayload): string {
     <div style="padding:32px 40px;border-bottom:1px solid #e7e5e4">
       <h2 style="margin:0 0 16px;font-size:14px;letter-spacing:1.5px;text-transform:uppercase;color:#78716c;font-family:Arial,sans-serif;font-weight:600">Contact Information</h2>
       <table style="width:100%;border-collapse:collapse">
-        <tr><td style="padding:6px 0;color:#78716c;font-family:Arial,sans-serif;font-size:13px;width:140px">Name</td><td style="padding:6px 0;color:#1c1917;font-family:Arial,sans-serif;font-size:13px;font-weight:600">${data.contact.name}</td></tr>
-        <tr><td style="padding:6px 0;color:#78716c;font-family:Arial,sans-serif;font-size:13px">Email</td><td style="padding:6px 0;font-family:Arial,sans-serif;font-size:13px"><a href="mailto:${data.contact.email}" style="color:#1c1917;font-weight:600">${data.contact.email}</a></td></tr>
-        <tr><td style="padding:6px 0;color:#78716c;font-family:Arial,sans-serif;font-size:13px">Phone</td><td style="padding:6px 0;color:#1c1917;font-family:Arial,sans-serif;font-size:13px;font-weight:600">${data.contact.phone || 'Not provided'}</td></tr>
-        <tr><td style="padding:6px 0;color:#78716c;font-family:Arial,sans-serif;font-size:13px">Location</td><td style="padding:6px 0;color:#1c1917;font-family:Arial,sans-serif;font-size:13px;font-weight:600">${data.contact.location}</td></tr>
+        <tr><td style="padding:6px 0;color:#78716c;font-family:Arial,sans-serif;font-size:13px;width:140px">Name</td><td style="padding:6px 0;color:#1c1917;font-family:Arial,sans-serif;font-size:13px;font-weight:600">${escapeHtml(data.contact.name, 160)}</td></tr>
+        <tr><td style="padding:6px 0;color:#78716c;font-family:Arial,sans-serif;font-size:13px">Email</td><td style="padding:6px 0;font-family:Arial,sans-serif;font-size:13px"><a href="mailto:${escapeHtml(data.contact.email, 254)}" style="color:#1c1917;font-weight:600">${escapeHtml(data.contact.email, 254)}</a></td></tr>
+        <tr><td style="padding:6px 0;color:#78716c;font-family:Arial,sans-serif;font-size:13px">Phone</td><td style="padding:6px 0;color:#1c1917;font-family:Arial,sans-serif;font-size:13px;font-weight:600">${escapeHtml(data.contact.phone || 'Not provided', 80)}</td></tr>
+        <tr><td style="padding:6px 0;color:#78716c;font-family:Arial,sans-serif;font-size:13px">Location</td><td style="padding:6px 0;color:#1c1917;font-family:Arial,sans-serif;font-size:13px;font-weight:600">${escapeHtml(data.contact.location, 180)}</td></tr>
       </table>
     </div>
 
@@ -199,20 +233,20 @@ function buildEmailHTML(data: OrderPayload): string {
     <div style="padding:32px 40px;border-bottom:1px solid #e7e5e4">
       <h2 style="margin:0 0 16px;font-size:14px;letter-spacing:1.5px;text-transform:uppercase;color:#78716c;font-family:Arial,sans-serif;font-weight:600">Preferences</h2>
       <table style="width:100%;border-collapse:collapse">
-        <tr><td style="padding:6px 0;color:#78716c;font-family:Arial,sans-serif;font-size:13px;width:160px">Color Palette</td><td style="padding:6px 0;color:#1c1917;font-family:Arial,sans-serif;font-size:13px">${COLOR_LABELS[data.preferences.colorPreference] || data.preferences.colorPreference || '—'}</td></tr>
-        <tr><td style="padding:6px 0;color:#78716c;font-family:Arial,sans-serif;font-size:13px">Timeline</td><td style="padding:6px 0;color:#1c1917;font-family:Arial,sans-serif;font-size:13px">${TIMELINE_LABELS[data.preferences.timeline] || data.preferences.timeline || '—'}</td></tr>
-        <tr><td style="padding:6px 0;color:#78716c;font-family:Arial,sans-serif;font-size:13px">Budget</td><td style="padding:6px 0;color:#1c1917;font-family:Arial,sans-serif;font-size:13px">${BUDGET_LABELS[data.preferences.budget] || data.preferences.budget || '—'}</td></tr>
+        <tr><td style="padding:6px 0;color:#78716c;font-family:Arial,sans-serif;font-size:13px;width:160px">Color Palette</td><td style="padding:6px 0;color:#1c1917;font-family:Arial,sans-serif;font-size:13px">${escapeHtml(COLOR_LABELS[data.preferences.colorPreference] || data.preferences.colorPreference || '—')}</td></tr>
+        <tr><td style="padding:6px 0;color:#78716c;font-family:Arial,sans-serif;font-size:13px">Timeline</td><td style="padding:6px 0;color:#1c1917;font-family:Arial,sans-serif;font-size:13px">${escapeHtml(TIMELINE_LABELS[data.preferences.timeline] || data.preferences.timeline || '—')}</td></tr>
+        <tr><td style="padding:6px 0;color:#78716c;font-family:Arial,sans-serif;font-size:13px">Budget</td><td style="padding:6px 0;color:#1c1917;font-family:Arial,sans-serif;font-size:13px">${escapeHtml(BUDGET_LABELS[data.preferences.budget] || data.preferences.budget || '—')}</td></tr>
       </table>
       ${data.preferences.inspiration ? `
         <div style="margin-top:16px">
           <p style="margin:0 0 6px;color:#78716c;font-family:Arial,sans-serif;font-size:13px">Inspiration & References</p>
-          <p style="margin:0;color:#1c1917;font-family:Arial,sans-serif;font-size:13px;line-height:1.6;background:#fafaf9;padding:12px;border-radius:6px;border:1px solid #e7e5e4">${data.preferences.inspiration}</p>
+          <p style="margin:0;color:#1c1917;font-family:Arial,sans-serif;font-size:13px;line-height:1.6;background:#fafaf9;padding:12px;border-radius:6px;border:1px solid #e7e5e4">${escapeHtml(data.preferences.inspiration, 4000)}</p>
         </div>
       ` : ''}
       ${data.preferences.additionalNotes ? `
         <div style="margin-top:16px">
           <p style="margin:0 0 6px;color:#78716c;font-family:Arial,sans-serif;font-size:13px">Additional Notes</p>
-          <p style="margin:0;color:#1c1917;font-family:Arial,sans-serif;font-size:13px;line-height:1.6;background:#fafaf9;padding:12px;border-radius:6px;border:1px solid #e7e5e4">${data.preferences.additionalNotes}</p>
+          <p style="margin:0;color:#1c1917;font-family:Arial,sans-serif;font-size:13px;line-height:1.6;background:#fafaf9;padding:12px;border-radius:6px;border:1px solid #e7e5e4">${escapeHtml(data.preferences.additionalNotes, 4000)}</p>
         </div>
       ` : ''}
     </div>
@@ -230,7 +264,12 @@ function buildEmailHTML(data: OrderPayload): string {
 
 export async function POST(req: NextRequest) {
   try {
-    const data: OrderPayload = await req.json()
+    if (isRequestBodyTooLarge(req, MAX_SUBMIT_ORDER_BODY_BYTES)) {
+      return NextResponse.json({ error: 'Order request is too large' }, { status: 413 })
+    }
+
+    const rawData = await req.json()
+    const data = normalizeOrderPayload(rawData)
     console.log('Received order inquiry', {
       pieceCount: Array.isArray(data.pieces) ? data.pieces.length : 0,
       hasEmail: Boolean(data.contact?.email),
@@ -266,8 +305,8 @@ export async function POST(req: NextRequest) {
     const { error } = await resend.emails.send({
       from: fromEmail,
       to: 'backusceramics@gmail.com',
-      replyTo: data.contact.email,
-      subject: `NEW ORDER INQUIRY: ${data.contact.name}`,
+      replyTo: safeHeaderValue(data.contact.email),
+      subject: `NEW ORDER INQUIRY: ${safeHeaderValue(data.contact.name, 100)}`,
       html: buildEmailHTML(data),
       attachments: [
         {

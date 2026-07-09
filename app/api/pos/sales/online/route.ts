@@ -10,6 +10,9 @@ import {
   XenditConfigurationError,
 } from "@/lib/xendit"
 import { recordAnalyticsEvent } from "@/lib/analytics-server"
+import { cleanString, isRequestBodyTooLarge, safeHeaderValue } from "@/lib/server-security"
+
+const MAX_POS_ONLINE_SALE_BODY_BYTES = 64 * 1024
 
 interface SaleItemRequest {
   productId: string
@@ -74,10 +77,14 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
   }
 
+  if (isRequestBodyTooLarge(req, MAX_POS_ONLINE_SALE_BODY_BYTES)) {
+    return NextResponse.json({ error: "Sale payload is too large" }, { status: 413 })
+  }
+
   const data = await req.json()
   const items = Array.isArray(data.items) ? data.items : []
-  const receiptEmail = typeof data.receiptEmail === "string" ? data.receiptEmail.trim() : ""
-  const customerName = typeof data.customerName === "string" ? data.customerName.trim() : ""
+  const receiptEmail = typeof data.receiptEmail === "string" ? safeHeaderValue(data.receiptEmail, 254) : ""
+  const customerName = typeof data.customerName === "string" ? cleanString(data.customerName, 160) : ""
   const saleItems: SaleItemRequest[] = items.map((item: RawSaleItemRequest) => ({
     productId: String(item.productId || ""),
     quantity: Number(item.quantity || 0),
@@ -171,7 +178,7 @@ export async function POST(req: NextRequest) {
           paymentMethod: "ONLINE",
           paymentReference,
           receiptEmail: receiptEmail || null,
-          notes: data.notes ? String(data.notes).trim() : null,
+          notes: data.notes ? cleanString(data.notes, 1000) : null,
           items: { create: snapshots },
         },
         include: { items: true },

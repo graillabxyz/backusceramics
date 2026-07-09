@@ -1,12 +1,14 @@
+import Link from "next/link"
+import { notFound } from "next/navigation"
+import { ArrowLeft, ArrowRight, MessageCircle } from "lucide-react"
 import { Navigation } from "@/components/navigation"
 import { Footer } from "@/components/footer"
-import { getProduct, getAllProducts, formatPrice } from "@/lib/shop-data"
-import { notFound } from "next/navigation"
-import Link from "next/link"
-import { ArrowLeft, Check, X } from "lucide-react"
 import { Button } from "@/components/ui/button"
-import { Badge } from "@/components/ui/badge"
 import { ProductViewTracker } from "@/components/product-view-tracker"
+import { prisma } from "@/lib/prisma"
+import { formatPrice, parseProductImageUrls } from "@/lib/pos-catalog"
+
+export const dynamic = "force-dynamic"
 
 interface ProductPageProps {
   params: Promise<{
@@ -14,27 +16,54 @@ interface ProductPageProps {
   }>
 }
 
-export async function generateStaticParams() {
-  const products = getAllProducts()
-  return products.map((product) => ({
-    slug: product.slug,
-  }))
-}
-
 export default async function ProductPage({ params }: ProductPageProps) {
   const { slug } = await params
-  const product = getProduct(slug)
+  const product = await prisma.posProduct
+    .findFirst({
+      where: {
+        slug,
+        category: "CUPS",
+        status: "AVAILABLE",
+        showInShop: true,
+        cafeOnly: false,
+        quantity: { gt: 0 },
+      },
+    })
+    .catch((error) => {
+      console.error("Could not load Wall of Cups product", { slug, error })
+      return null
+    })
 
   if (!product) {
     notFound()
   }
 
-  const relatedProducts = getAllProducts()
-    .filter((p) => p.category === product.category && p.slug !== product.slug)
-    .slice(0, 4)
+  const images = parseProductImageUrls(product.imageUrls)
+  const mainImage = images[0] || ""
+  const relatedProducts = await prisma.posProduct
+    .findMany({
+      where: {
+        id: { not: product.id },
+        category: "CUPS",
+        status: "AVAILABLE",
+        showInShop: true,
+        cafeOnly: false,
+        quantity: { gt: 0 },
+      },
+      orderBy: [
+        { featured: "desc" },
+        { createdAt: "desc" },
+      ],
+      take: 4,
+    })
+    .catch((error) => {
+      console.error("Could not load related Wall of Cups products", { productId: product.id, error })
+      return []
+    })
+  const inquiryText = encodeURIComponent(`I'm interested in ${product.name} from the Wall of Cups.`)
 
   return (
-    <main className="min-h-screen">
+    <main className="min-h-screen bg-background">
       <ProductViewTracker
         productId={product.id}
         productSlug={product.slug}
@@ -43,96 +72,80 @@ export default async function ProductPage({ params }: ProductPageProps) {
         value={product.price}
       />
       <Navigation />
-      
-      {/* Breadcrumb */}
-      <section className="pt-28 pb-4 bg-background">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <Button variant="ghost" size="sm" asChild className="-ml-2">
-            <Link href="/shop">
-              <ArrowLeft className="h-4 w-4 mr-2" />
-              Back to Shop
+
+      <section className="px-4 pb-16 pt-28 sm:px-6 lg:px-8">
+        <div className="mx-auto max-w-7xl">
+          <Button variant="ghost" size="sm" asChild className="-ml-2 mb-6">
+            <Link href="/wall-of-cups">
+              <ArrowLeft className="mr-2 h-4 w-4" />
+              Back to Wall of Cups
             </Link>
           </Button>
-        </div>
-      </section>
 
-      {/* Product Detail */}
-      <section className="py-8 bg-background">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="grid lg:grid-cols-2 gap-12">
-            {/* Product Images */}
-            <div className="space-y-4">
-              <div className="aspect-square bg-muted rounded-lg flex items-center justify-center">
-                <span className="text-muted-foreground">Main Product Image</span>
-              </div>
-              <div className="grid grid-cols-4 gap-4">
-                {[1, 2, 3, 4].map((i) => (
-                  <div key={i} className="aspect-square bg-muted rounded-lg flex items-center justify-center">
-                    <span className="text-xs text-muted-foreground">Img {i}</span>
-                  </div>
-                ))}
-              </div>
+          <div className="grid gap-10 lg:grid-cols-[minmax(0,1.1fr)_minmax(340px,0.9fr)] lg:items-start">
+            <div className="space-y-3">
+              <a
+                href={mainImage || undefined}
+                target={mainImage ? "_blank" : undefined}
+                rel={mainImage ? "noopener noreferrer" : undefined}
+                className="block overflow-hidden rounded-sm bg-muted"
+                aria-label={mainImage ? `Open larger image of ${product.name}` : undefined}
+              >
+                <div className="aspect-[4/5]">
+                  {mainImage ? (
+                    <img src={mainImage} alt={product.name} className="h-full w-full object-cover" />
+                  ) : (
+                    <div className="flex h-full w-full items-center justify-center text-sm text-muted-foreground">
+                      Image coming soon
+                    </div>
+                  )}
+                </div>
+              </a>
+
+              {images.length > 1 && (
+                <div className="grid grid-cols-4 gap-3">
+                  {images.slice(1, 5).map((image) => (
+                    <a key={image} href={image} target="_blank" rel="noopener noreferrer" className="overflow-hidden rounded-sm bg-muted">
+                      <img src={image} alt="" className="aspect-square w-full object-cover" />
+                    </a>
+                  ))}
+                </div>
+              )}
             </div>
 
-            {/* Product Info */}
-            <div>
-              <div className="mb-4">
-                <Badge variant="secondary">{product.category}</Badge>
-              </div>
-              <h1 className="font-heading font-bold text-3xl sm:text-4xl font-medium text-foreground mb-4">
+            <div className="lg:sticky lg:top-28">
+              <p className="text-xs font-semibold uppercase tracking-[0.28em] text-muted-foreground">Wall of Cups</p>
+              <h1 className="mt-3 font-heading text-4xl font-bold tracking-tight text-foreground sm:text-5xl">
                 {product.name}
               </h1>
-              <p className="text-3xl font-semibold text-foreground mb-6">
-                {formatPrice(product.price)}
-              </p>
-              
-              <div className="flex items-center gap-2 mb-6">
-                {product.inStock ? (
-                  <>
-                    <Check className="h-5 w-5 text-green-600" />
-                    <span className="text-green-600 font-medium">In Stock</span>
-                  </>
-                ) : (
-                  <>
-                    <X className="h-5 w-5 text-muted-foreground" />
-                    <span className="text-muted-foreground font-medium">Sold Out</span>
-                  </>
-                )}
+              <div className="mt-5 flex flex-wrap items-center gap-3 text-sm text-muted-foreground">
+                {product.volumeMl && <span>{product.volumeMl} ml</span>}
+                {product.sku && <span>{product.sku}</span>}
+                <span>{product.quantity} available</span>
+              </div>
+              <p className="mt-8 text-3xl font-semibold text-foreground">{formatPrice(product.price)}</p>
+
+              {product.description && (
+                <p className="mt-8 whitespace-pre-line text-base leading-relaxed text-muted-foreground">
+                  {product.description}
+                </p>
+              )}
+
+              <div className="mt-10 border-y border-border py-5 text-sm leading-relaxed text-muted-foreground">
+                Handcrafted in the Backus Ceramics studio. Each cup is unique, functional, and intended for regular use.
               </div>
 
-              <p className="text-muted-foreground leading-relaxed mb-8">
-                {product.description}
-              </p>
-
-              <div className="space-y-4 mb-8 p-6 bg-secondary/50 rounded-lg">
-                <h3 className="font-medium text-foreground">Details</h3>
-                <ul className="space-y-2 text-sm text-muted-foreground">
-                  <li className="flex items-start gap-2">
-                    <span className="w-1.5 h-1.5 rounded-full bg-primary mt-2 flex-shrink-0" />
-                    Handcrafted in our Bali studio
-                  </li>
-                  <li className="flex items-start gap-2">
-                    <span className="w-1.5 h-1.5 rounded-full bg-primary mt-2 flex-shrink-0" />
-                    High-fired stoneware clay
-                  </li>
-                  <li className="flex items-start gap-2">
-                    <span className="w-1.5 h-1.5 rounded-full bg-primary mt-2 flex-shrink-0" />
-                    Food safe and dishwasher safe
-                  </li>
-                  <li className="flex items-start gap-2">
-                    <span className="w-1.5 h-1.5 rounded-full bg-primary mt-2 flex-shrink-0" />
-                    Each piece is unique with subtle variations
-                  </li>
-                </ul>
-              </div>
-
-              <div className="flex flex-col sm:flex-row gap-4">
-                <Button size="lg" className="flex-1" disabled={!product.inStock}>
-                  {product.inStock ? "Inquire About This Piece" : "Sold Out"}
+              <div className="mt-8 flex flex-col gap-3 sm:flex-row lg:flex-col">
+                <Button asChild size="lg">
+                  <a href={`https://wa.me/6282145890402?text=${inquiryText}`} target="_blank" rel="noopener noreferrer">
+                    <MessageCircle className="mr-2 h-5 w-5" />
+                    Ask about this cup
+                  </a>
                 </Button>
-                <Button size="lg" variant="outline" asChild>
-                  <Link href="/contact">
-                    Contact Us
+                <Button asChild variant="outline" size="lg">
+                  <Link href="/wall-of-cups">
+                    Keep browsing
+                    <ArrowRight className="ml-2 h-4 w-4" />
                   </Link>
                 </Button>
               </div>
@@ -141,34 +154,40 @@ export default async function ProductPage({ params }: ProductPageProps) {
         </div>
       </section>
 
-      {/* Related Products */}
       {relatedProducts.length > 0 && (
-        <section className="py-16 bg-secondary/30">
-          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-            <h2 className="font-heading font-bold text-2xl font-medium text-foreground mb-8">
-              More {product.category}
-            </h2>
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-6">
-              {relatedProducts.map((relatedProduct) => (
-                <Link
-                  key={relatedProduct.id}
-                  href={`/shop/${relatedProduct.slug}`}
-                  className="group"
-                >
-                  <div className="aspect-square bg-muted rounded-lg overflow-hidden mb-4 relative">
-                    <div className="absolute inset-0 flex items-center justify-center text-muted-foreground/50">
-                      <span className="text-xs">Product Image</span>
+        <section className="border-t border-border px-4 py-14 sm:px-6 lg:px-8">
+          <div className="mx-auto max-w-7xl">
+            <h2 className="font-heading text-3xl font-bold text-foreground">More cups</h2>
+            <div className="mt-6 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+              {relatedProducts.map((relatedProduct) => {
+                const relatedImage = parseProductImageUrls(relatedProduct.imageUrls)[0] || ""
+
+                return (
+                  <Link
+                    key={relatedProduct.id}
+                    href={`/shop/${relatedProduct.slug}`}
+                    className="group relative block overflow-hidden rounded-sm bg-muted"
+                  >
+                    <div className="aspect-[3/4]">
+                      {relatedImage ? (
+                        <img
+                          src={relatedImage}
+                          alt={relatedProduct.name}
+                          className="h-full w-full object-cover transition duration-500 group-hover:scale-[1.03]"
+                        />
+                      ) : (
+                        <div className="flex h-full w-full items-center justify-center text-sm text-muted-foreground">
+                          Image coming soon
+                        </div>
+                      )}
                     </div>
-                    <div className="absolute inset-0 bg-foreground/0 group-hover:bg-foreground/5 transition-colors" />
-                  </div>
-                  <h3 className="font-medium text-foreground group-hover:text-primary transition-colors text-sm">
-                    {relatedProduct.name}
-                  </h3>
-                  <p className="text-sm text-muted-foreground mt-1">
-                    {formatPrice(relatedProduct.price)}
-                  </p>
-                </Link>
-              ))}
+                    <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/85 via-black/35 to-transparent p-3 pt-14 text-white">
+                      <h3 className="truncate font-heading text-lg font-bold">{relatedProduct.name}</h3>
+                      <p className="mt-1 text-sm text-white/75">{formatPrice(relatedProduct.price)}</p>
+                    </div>
+                  </Link>
+                )
+              })}
             </div>
           </div>
         </section>
