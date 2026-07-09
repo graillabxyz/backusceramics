@@ -1,5 +1,5 @@
 import Link from "next/link"
-import { ArrowRight, MapPin, MessageCircle } from "lucide-react"
+import { ArrowRight, MapPin, ShoppingCart } from "lucide-react"
 import { Navigation } from "@/components/navigation"
 import { Footer } from "@/components/footer"
 import { Button } from "@/components/ui/button"
@@ -101,7 +101,7 @@ export default async function WallOfCupsPage() {
             <div className="border-y border-border py-16">
               <h2 className="font-heading text-3xl font-bold text-foreground">The wall is being refreshed.</h2>
               <p className="mt-3 max-w-xl text-muted-foreground">
-                New cups are being photographed and added. Message us for the current studio selection.
+                New cups are being photographed and added. Check back soon or visit the shop to see the current studio selection.
               </p>
             </div>
           )}
@@ -111,17 +111,17 @@ export default async function WallOfCupsPage() {
       <section className="border-t border-border px-4 py-12 sm:px-6 lg:px-8">
         <div className="mx-auto grid max-w-7xl gap-6 md:grid-cols-[minmax(0,1fr)_auto] md:items-center">
           <div>
-            <h2 className="font-heading text-3xl font-bold text-foreground">Visit the wall in Bali</h2>
+            <h2 className="font-heading text-3xl font-bold text-foreground">Buy online or visit the wall in Bali</h2>
             <p className="mt-2 max-w-2xl text-muted-foreground">
-              The best cup is usually the one your hand chooses. Visit the studio or ask us for a short video tour.
+              Every cup shown here is available for secure online checkout while stock lasts. The best cup is still usually the one your hand chooses, so you can also visit the studio.
             </p>
           </div>
           <div className="flex flex-col gap-3 sm:flex-row">
             <Button asChild size="lg">
-              <a href="https://wa.me/6282145890402?text=I'd like to ask about the Wall of Cups" target="_blank" rel="noopener noreferrer">
-                <MessageCircle className="mr-2 h-5 w-5" />
-                WhatsApp
-              </a>
+              <Link href="/shop/checkout">
+                <ShoppingCart className="mr-2 h-5 w-5" />
+                View cart
+              </Link>
             </Button>
             <Button asChild variant="outline" size="lg">
               <a href="https://maps.app.goo.gl/d5FvjdfKAk6iSwrK8" target="_blank" rel="noopener noreferrer">

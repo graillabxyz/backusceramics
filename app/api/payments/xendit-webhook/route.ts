@@ -141,6 +141,7 @@ async function findPosSaleForWebhook({
 async function cancelPendingPosSale(sale: Awaited<ReturnType<typeof findPosSaleForWebhook>>) {
 
   if (!sale || sale.status !== "PENDING_PAYMENT") return { updated: 0 }
+  const shouldRestoreShopVisibility = Boolean(sale.notes?.includes("[online-shop]"))
 
   await prisma.$transaction([
     ...sale.items
@@ -151,6 +152,7 @@ async function cancelPendingPosSale(sale: Awaited<ReturnType<typeof findPosSaleF
           data: {
             quantity: { increment: item.quantity },
             status: "AVAILABLE",
+            ...(shouldRestoreShopVisibility ? { showInShop: true } : {}),
           },
         })
       ),

@@ -1,10 +1,11 @@
 import Link from "next/link"
 import { notFound } from "next/navigation"
-import { ArrowLeft, ArrowRight, MessageCircle } from "lucide-react"
+import { ArrowLeft, ArrowRight } from "lucide-react"
 import { Navigation } from "@/components/navigation"
 import { Footer } from "@/components/footer"
 import { Button } from "@/components/ui/button"
 import { ProductViewTracker } from "@/components/product-view-tracker"
+import { ProductPurchaseActions } from "@/components/shop/product-purchase-actions"
 import { prisma } from "@/lib/prisma"
 import { formatPrice, parseProductImageUrls } from "@/lib/pos-catalog"
 
@@ -60,8 +61,6 @@ export default async function ProductPage({ params }: ProductPageProps) {
       console.error("Could not load related Wall of Cups products", { productId: product.id, error })
       return []
     })
-  const inquiryText = encodeURIComponent(`I'm interested in ${product.name} from the Wall of Cups.`)
-
   return (
     <main className="min-h-screen bg-background">
       <ProductViewTracker
@@ -135,20 +134,21 @@ export default async function ProductPage({ params }: ProductPageProps) {
                 Handcrafted in the Backus Ceramics studio. Each cup is unique, functional, and intended for regular use.
               </div>
 
-              <div className="mt-8 flex flex-col gap-3 sm:flex-row lg:flex-col">
-                <Button asChild size="lg">
-                  <a href={`https://wa.me/6282145890402?text=${inquiryText}`} target="_blank" rel="noopener noreferrer">
-                    <MessageCircle className="mr-2 h-5 w-5" />
-                    Ask about this cup
-                  </a>
-                </Button>
-                <Button asChild variant="outline" size="lg">
-                  <Link href="/wall-of-cups">
-                    Keep browsing
-                    <ArrowRight className="ml-2 h-4 w-4" />
-                  </Link>
-                </Button>
-              </div>
+              <ProductPurchaseActions
+                productId={product.id}
+                productSlug={product.slug}
+                productName={product.name}
+                productCategory={product.category}
+                price={product.price}
+                availableQuantity={product.quantity}
+              />
+
+              <Button asChild variant="outline" size="lg" className="mt-3 w-full">
+                <Link href="/wall-of-cups">
+                  Keep browsing
+                  <ArrowRight className="ml-2 h-4 w-4" />
+                </Link>
+              </Button>
             </div>
           </div>
         </div>

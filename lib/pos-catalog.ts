@@ -18,6 +18,7 @@ const categoryAliases: Record<string, PosProductCategory> = {
   "PLATTERS": "TABLEWARE",
   "TEA WARE": "CUPS",
   "FOOD AND BEVERAGE": "F_AND_B",
+  "F AND B": "F_AND_B",
   "F&B": "F_AND_B",
   "CAFE": "F_AND_B",
   "CLASS": "CLASSES",
@@ -39,12 +40,16 @@ export type PosSaleStatus = (typeof POS_SALE_STATUSES)[number]
 export const PUBLIC_WARES_CATEGORIES = POS_PRODUCT_CATEGORIES.filter((category) => category.publicListing)
 
 export function normalizeProductCategory(value: unknown): PosProductCategory {
+  const rawValue = String(value || "").trim().toUpperCase()
   const normalized = String(value || "")
     .trim()
     .replace(/[-_]+/g, " ")
     .toUpperCase()
 
-  const direct = POS_PRODUCT_CATEGORIES.find((category) => category.id === normalized || category.label.toUpperCase() === normalized)
+  const direct = POS_PRODUCT_CATEGORIES.find((category) => {
+    const normalizedId = category.id.replace(/[-_]+/g, " ").toUpperCase()
+    return category.id === rawValue || normalizedId === normalized || category.label.toUpperCase() === normalized
+  })
   if (direct) return direct.id
 
   return categoryAliases[normalized] || "OTHER"
