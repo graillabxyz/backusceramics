@@ -129,9 +129,14 @@ function ShopCheckoutContent() {
     }
   }, [])
 
+  const cartSignature = useMemo(
+    () => cart.map((item) => `${item.productId}:${item.quantity}`).join("|"),
+    [cart]
+  )
+
   useEffect(() => {
     void loadCartPreview(cart)
-  }, [cart.length, loadCartPreview]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [cartSignature, loadCartPreview])
 
   const subtotal = useMemo(() => items.reduce((sum, item) => sum + item.price * item.quantity, 0), [items])
   const itemCount = useMemo(() => items.reduce((sum, item) => sum + item.quantity, 0), [items])

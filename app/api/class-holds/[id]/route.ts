@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server"
 import { auth } from "@/lib/auth"
 import { prisma } from "@/lib/prisma"
 import { classHoldStatuses, validateClassHoldPayload } from "@/lib/class-hold-validation"
+import { validateClassHoldCapacity } from "@/lib/class-hold-capacity"
 import { isFullAdminRole } from "@/lib/permissions"
 import { isRequestBodyTooLarge } from "@/lib/server-security"
 
@@ -42,6 +43,8 @@ export async function PATCH(
   const validation = validateClassHoldPayload(data)
   if ("error" in validation) return NextResponse.json({ error: validation.error }, { status: validation.status })
   const holdData = validation.data
+  const capacityError = await validateClassHoldCapacity(holdData, { excludeHoldId: id })
+  if (capacityError) return NextResponse.json({ error: capacityError.error }, { status: capacityError.status })
 
   const hold = await prisma.classHold.update({
     where: { id },

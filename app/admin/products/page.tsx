@@ -316,16 +316,23 @@ export default function AdminProductsPage() {
     setError("")
     setSuccess("")
 
+    const category = normalizeProductCategory(formData.category)
+    const isDraft = formData.status === "DRAFT"
+    const isCup = isCupCategory(category)
+    const cafeOnly = category === "F_AND_B" || formData.cafeOnly
+
     const payload = {
       ...formData,
+      category,
+      cafeOnly,
       price: formData.price.trim() ? Number(formData.price) : null,
       quantity: formData.quantity.trim() ? Number(formData.quantity) : null,
-      volumeMl: isCupCategory(formData.category) && formData.volumeMl.trim()
+      volumeMl: isCup && formData.volumeMl.trim()
         ? Number(formData.volumeMl)
         : null,
       imageUrls: parseProductImageUrls(formData.imageUrls),
-      showInShop: formData.cafeOnly || formIsDraft || !formIsCup ? false : formData.showInShop,
-      featured: formIsDraft ? false : formData.featured,
+      showInShop: cafeOnly || isDraft || !isCup ? false : formData.showInShop,
+      featured: isDraft ? false : formData.featured,
     }
 
     try {

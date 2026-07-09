@@ -3,6 +3,7 @@ import { auth } from "@/lib/auth"
 import { prisma } from "@/lib/prisma"
 import { isFullAdminRole } from "@/lib/permissions"
 import { validateClassHoldPayload } from "@/lib/class-hold-validation"
+import { validateClassHoldCapacity } from "@/lib/class-hold-capacity"
 import { isRequestBodyTooLarge } from "@/lib/server-security"
 
 const MAX_CLASS_HOLD_BODY_BYTES = 32 * 1024
@@ -34,6 +35,8 @@ export async function POST(req: NextRequest) {
   const validation = validateClassHoldPayload(data)
   if ("error" in validation) return NextResponse.json({ error: validation.error }, { status: validation.status })
   const holdData = validation.data
+  const capacityError = await validateClassHoldCapacity(holdData)
+  if (capacityError) return NextResponse.json({ error: capacityError.error }, { status: capacityError.status })
 
   const hold = await prisma.classHold.create({
     data: {

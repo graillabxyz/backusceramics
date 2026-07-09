@@ -329,9 +329,9 @@ export default function AdminPosPage() {
           return { ...current, category, cafeOnly: true, showInShop: false, volumeMl: "" }
         }
         if (!isCupCategory(category)) {
-          return { ...current, category, showInShop: false, volumeMl: "" }
+          return { ...current, category, cafeOnly: false, showInShop: false, volumeMl: "" }
         }
-        return { ...current, category }
+        return { ...current, category, cafeOnly: false }
       }
 
       if (key === "status" && value === "DRAFT") {
@@ -347,17 +347,24 @@ export default function AdminPosPage() {
     setError("")
     setSuccess("")
 
+    const category = normalizeProductCategory(quickProduct.category)
+    const isDraft = quickProduct.status === "DRAFT"
+    const isCup = isCupCategory(category)
+    const cafeOnly = category === "F_AND_B" || quickProduct.cafeOnly
+
     const payload = {
       ...quickProduct,
+      category,
+      cafeOnly,
       price: quickProduct.price.trim() ? Number(quickProduct.price) : null,
       quantity: quickProduct.quantity.trim() ? Number(quickProduct.quantity) : null,
-      volumeMl: isCupCategory(quickProduct.category) && quickProduct.volumeMl.trim()
+      volumeMl: isCup && quickProduct.volumeMl.trim()
         ? Number(quickProduct.volumeMl)
         : null,
       imageUrls: quickProductImages,
       status: quickProduct.status,
-      showInShop: quickProduct.cafeOnly || quickProductIsDraft || !quickProductIsCup ? false : quickProduct.showInShop,
-      featured: quickProductIsDraft ? false : quickProduct.featured,
+      showInShop: cafeOnly || isDraft || !isCup ? false : quickProduct.showInShop,
+      featured: isDraft ? false : quickProduct.featured,
     }
 
     try {
@@ -395,16 +402,23 @@ export default function AdminPosPage() {
     setError("")
     setSuccess("")
 
+    const category = normalizeProductCategory(quickProduct.category)
+    const isDraft = quickProduct.status === "DRAFT"
+    const isCup = isCupCategory(category)
+    const cafeOnly = category === "F_AND_B" || quickProduct.cafeOnly
+
     const payload = {
       ...quickProduct,
+      category,
+      cafeOnly,
       price: quickProduct.price.trim() ? Number(quickProduct.price) : 0,
       quantity: quickProduct.quantity.trim() ? Number(quickProduct.quantity) : 0,
-      volumeMl: isCupCategory(quickProduct.category) && quickProduct.volumeMl.trim()
+      volumeMl: isCup && quickProduct.volumeMl.trim()
         ? Number(quickProduct.volumeMl)
         : null,
       imageUrls: quickProductImages,
-      showInShop: quickProduct.cafeOnly || quickProductIsDraft || !quickProductIsCup ? false : quickProduct.showInShop,
-      featured: quickProductIsDraft ? false : quickProduct.featured,
+      showInShop: cafeOnly || isDraft || !isCup ? false : quickProduct.showInShop,
+      featured: isDraft ? false : quickProduct.featured,
     }
 
     try {

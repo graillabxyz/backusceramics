@@ -777,6 +777,7 @@ export default function AdminBookingsPage() {
                                   <span>{row.bookedSeats} booked</span>
                                   <span>{row.heldSeats} held</span>
                                   <span>{row.category}</span>
+                                  <span>shared time pool</span>
                                 </div>
                                 {row.holds.length > 0 && (
                                   <div className="mt-2 flex flex-wrap gap-2">
