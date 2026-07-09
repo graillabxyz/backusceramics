@@ -30,6 +30,7 @@ model User {
   posProducts    PosProduct[] @relation("PosProductCreator")
   posSales       PosSale[] @relation("PosSaleOperator")
   voidedPosSales PosSale[] @relation("PosSaleVoider")
+  posCloseouts   PosCloseout[] @relation("PosCloseoutCloser")
   analyticsEvents AnalyticsEvent[]
   residencyApps ResidencyApplication[]
   notificationPreference UserNotificationPreference?
@@ -291,6 +292,37 @@ model PosSaleItem {
 
   @@index([saleId])
   @@index([productId])
+}
+
+model PosCloseout {
+  id           String @id @default(cuid())
+  businessDate String @unique
+  closedAt     DateTime @default(now())
+  closedById   String?
+  closedBy     User? @relation("PosCloseoutCloser", fields: [closedById], references: [id])
+
+  saleCount       Int @default(0)
+  itemCount       Int @default(0)
+  grossSubtotal   Int @default(0)
+  discountTotal   Int @default(0)
+  taxTotal        Int @default(0)
+  netTotal        Int @default(0)
+  voidedSaleCount Int @default(0)
+  voidedTotal     Int @default(0)
+  pendingSaleCount Int @default(0)
+  pendingTotal     Int @default(0)
+
+  paymentBreakdown  String?
+  categoryBreakdown String?
+  operatorBreakdown String?
+  notes             String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([businessDate])
+  @@index([closedById])
+  @@index([closedAt])
 }
 
 model AdminNotification {

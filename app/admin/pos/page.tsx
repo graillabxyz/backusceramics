@@ -36,6 +36,7 @@ import {
 import { cn } from "@/lib/utils"
 import {
   CheckCircle2,
+  ClipboardCheck,
   CreditCard,
   ImagePlus,
   Loader2,
@@ -914,6 +915,12 @@ export default function AdminPosPage() {
                   <Link href={`/admin/pos/sales${isFullscreen ? "?posFullscreen=1" : ""}`}>
                     <ReceiptText className="mr-2 h-4 w-4" />
                     Sales history
+                  </Link>
+                </DropdownMenuItem>
+                <DropdownMenuItem asChild>
+                  <Link href={`/admin/pos/closeout${isFullscreen ? "?posFullscreen=1" : ""}`}>
+                    <ClipboardCheck className="mr-2 h-4 w-4" />
+                    Close out day
                   </Link>
                 </DropdownMenuItem>
               </DropdownMenuContent>
