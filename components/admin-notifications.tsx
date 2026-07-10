@@ -1,9 +1,9 @@
 "use client"
 
-import { useEffect, useState } from "react"
+import { useEffect, useRef, useState } from "react"
 import { createPortal } from "react-dom"
 import Link from "next/link"
-import { Bell, CalendarCheck, MapPin, ShoppingBag, UserRound } from "lucide-react"
+import { Bell, CalendarCheck, MapPin, ShoppingBag, UserRound, X } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { cn } from "@/lib/utils"
 
@@ -54,6 +54,8 @@ export function AdminNotifications({ enabled }: { enabled: boolean }) {
   const [mounted, setMounted] = useState(false)
   const [notifications, setNotifications] = useState<AdminNotification[]>([])
   const [unreadCount, setUnreadCount] = useState(0)
+  const triggerRef = useRef<HTMLDivElement | null>(null)
+  const panelRef = useRef<HTMLDivElement | null>(null)
 
   async function loadNotifications() {
     if (!enabled) return
@@ -79,6 +81,32 @@ export function AdminNotifications({ enabled }: { enabled: boolean }) {
     return () => window.clearInterval(interval)
   }, [enabled])
 
+  useEffect(() => {
+    if (!open) return
+
+    function handleKeyDown(event: KeyboardEvent) {
+      if (event.key === "Escape") {
+        setOpen(false)
+      }
+    }
+
+    function handlePointerDown(event: PointerEvent) {
+      const target = event.target
+      if (!(target instanceof Node)) return
+      if (panelRef.current?.contains(target)) return
+      if (triggerRef.current?.contains(target)) return
+      setOpen(false)
+    }
+
+    document.addEventListener("keydown", handleKeyDown)
+    document.addEventListener("pointerdown", handlePointerDown)
+
+    return () => {
+      document.removeEventListener("keydown", handleKeyDown)
+      document.removeEventListener("pointerdown", handlePointerDown)
+    }
+  }, [open])
+
   async function markAllRead() {
     setUnreadCount(0)
     setNotifications((items) => items.map((item) => ({ ...item, readAt: item.readAt || new Date().toISOString() })))
@@ -92,15 +120,23 @@ export function AdminNotifications({ enabled }: { enabled: boolean }) {
   if (!enabled) return null
 
   const notificationPanel = (
-    <div className="fixed left-2 right-2 top-20 z-[9999] max-h-[min(72vh,520px)] overflow-hidden rounded-lg border border-border bg-background shadow-2xl sm:left-auto sm:right-6 sm:top-16 sm:w-[420px]">
+    <div
+      ref={panelRef}
+      className="fixed left-2 right-2 top-20 z-[9999] max-h-[min(72vh,520px)] overflow-hidden rounded-lg border border-border bg-background shadow-2xl sm:left-auto sm:right-6 sm:top-16 sm:w-[420px]"
+    >
       <div className="flex items-center justify-between gap-3 border-b border-border px-4 py-3">
         <div>
           <p className="text-sm font-semibold text-foreground">Notifications</p>
           <p className="text-xs text-muted-foreground">Recent admin and POS activity</p>
         </div>
-        <Button variant="ghost" size="sm" onClick={markAllRead} disabled={unreadCount === 0}>
-          Mark read
-        </Button>
+        <div className="flex items-center gap-1">
+          <Button variant="ghost" size="sm" onClick={markAllRead} disabled={unreadCount === 0}>
+            Mark read
+          </Button>
+          <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => setOpen(false)} aria-label="Close notifications">
+            <X className="h-4 w-4" />
+          </Button>
+        </div>
       </div>
 
       <div className="max-h-[calc(min(72vh,520px)-72px)] overflow-y-auto">
@@ -151,8 +187,14 @@ export function AdminNotifications({ enabled }: { enabled: boolean }) {
   )
 
   return (
-    <div className="relative z-[9998]">
-      <Button variant="outline" size="icon" onClick={() => setOpen((value) => !value)} aria-label="Admin notifications">
+    <div ref={triggerRef} className="relative z-[9998]">
+      <Button
+        variant="outline"
+        size="icon"
+        onClick={() => setOpen((value) => !value)}
+        aria-label="Admin notifications"
+        aria-expanded={open}
+      >
         <Bell className="h-4 w-4" />
         {unreadCount > 0 && (
           <span className="absolute -right-1 -top-1 flex min-w-5 items-center justify-center rounded-full bg-primary px-1.5 text-[10px] font-bold text-primary-foreground">

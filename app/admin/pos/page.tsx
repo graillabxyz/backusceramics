@@ -369,15 +369,18 @@ export default function AdminPosPage() {
   }
 
   const openQuickAdd = () => {
+    setIsQuickEditOpen(false)
     setQuickProduct(quickProductDefaults)
     setEditingProduct(null)
     setImageUploadNotice("")
     setImageUploadError("")
     setError("")
+    setSuccess("")
     setIsQuickAddOpen(true)
   }
 
   const openQuickEdit = (product: PosProduct) => {
+    setIsQuickAddOpen(false)
     setEditingProduct(product)
     setQuickProduct({
       name: product.name,
@@ -398,6 +401,38 @@ export default function AdminPosPage() {
     setError("")
     setSuccess("")
     setIsQuickEditOpen(true)
+  }
+
+  const handleQuickAddOpenChange = (open: boolean) => {
+    if (open) {
+      openQuickAdd()
+      return
+    }
+
+    if (savingProduct) return
+
+    setIsQuickAddOpen(false)
+    setQuickProduct(quickProductDefaults)
+    setEditingProduct(null)
+    setImageUploadNotice("")
+    setImageUploadError("")
+    setError("")
+  }
+
+  const handleQuickEditOpenChange = (open: boolean) => {
+    if (open) {
+      setIsQuickEditOpen(true)
+      return
+    }
+
+    if (savingProduct) return
+
+    setIsQuickEditOpen(false)
+    setEditingProduct(null)
+    setQuickProduct(quickProductDefaults)
+    setImageUploadNotice("")
+    setImageUploadError("")
+    setError("")
   }
 
   const updateQuickProduct = <K extends keyof QuickProductForm>(key: K, value: QuickProductForm[K]) => {
@@ -1506,7 +1541,7 @@ export default function AdminPosPage() {
         </DialogContent>
       </Dialog>
 
-      <Dialog open={isQuickAddOpen} onOpenChange={setIsQuickAddOpen}>
+      <Dialog open={isQuickAddOpen} onOpenChange={handleQuickAddOpenChange}>
         <DialogContent className="max-h-[92vh] max-w-[calc(100vw-1rem)] overflow-y-auto md:max-w-3xl xl:max-w-4xl">
           <DialogHeader>
             <DialogTitle className="font-heading text-2xl">Add product to POS</DialogTitle>
@@ -1523,7 +1558,7 @@ export default function AdminPosPage() {
           {renderQuickProductFields("quick")}
 
           <DialogFooter>
-            <Button variant="outline" onClick={() => setIsQuickAddOpen(false)}>
+            <Button variant="outline" onClick={() => handleQuickAddOpenChange(false)} disabled={savingProduct}>
               Cancel
             </Button>
             <Button onClick={handleQuickAddProduct} disabled={savingProduct}>
@@ -1534,7 +1569,7 @@ export default function AdminPosPage() {
         </DialogContent>
       </Dialog>
 
-      <Dialog open={isQuickEditOpen} onOpenChange={setIsQuickEditOpen}>
+      <Dialog open={isQuickEditOpen} onOpenChange={handleQuickEditOpenChange}>
         <DialogContent className="max-h-[92vh] max-w-[calc(100vw-1rem)] overflow-y-auto md:max-w-3xl xl:max-w-4xl">
           <DialogHeader>
             <DialogTitle className="font-heading text-2xl">Quick edit product</DialogTitle>
@@ -1551,7 +1586,7 @@ export default function AdminPosPage() {
           {renderQuickProductFields("quickEdit")}
 
           <DialogFooter>
-            <Button variant="outline" onClick={() => setIsQuickEditOpen(false)}>
+            <Button variant="outline" onClick={() => handleQuickEditOpenChange(false)} disabled={savingProduct}>
               Cancel
             </Button>
             <Button onClick={handleQuickEditProduct} disabled={savingProduct || !editingProduct}>
