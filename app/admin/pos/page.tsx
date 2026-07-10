@@ -160,6 +160,15 @@ function paymentCompletionLabel(method: string) {
   return "Paid with card machine"
 }
 
+function defaultTaxRateForProduct(product: PosProduct): PosTaxRate {
+  const category = normalizeProductCategory(product.category)
+
+  if (category === "CLASSES") return 0
+  if (category === "F_AND_B") return 15
+
+  return 10
+}
+
 export default function AdminPosPage() {
   const posRootRef = useRef<HTMLDivElement | null>(null)
   const lastPosActivityRef = useRef(Date.now())
@@ -574,7 +583,7 @@ export default function AdminPosPage() {
           item.product.id === product.id ? { ...item, quantity: item.quantity + 1 } : item
         )
       }
-      return [...current, { product, quantity: 1, taxRate: 0, discountType: "NONE", discountValue: "" }]
+      return [...current, { product, quantity: 1, taxRate: defaultTaxRateForProduct(product), discountType: "NONE", discountValue: "" }]
     })
     setActiveCategory("ALL")
     setSearchTerm("")
