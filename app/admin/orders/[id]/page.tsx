@@ -163,8 +163,10 @@ export default function OrderDetailPage({ params }: { params: Promise<{ id: stri
   }>
   const preferences = JSON.parse(order.preferences) as Record<string, string>
 
+  const importantPreferenceKeys = new Set(["inspiration", "additionalNotes"])
+
   return (
-    <div className="space-y-6 max-w-4xl">
+    <div className="w-full max-w-none space-y-6">
       {/* Back button */}
       <Link
         href="/admin/orders"
@@ -218,7 +220,7 @@ export default function OrderDetailPage({ params }: { params: Promise<{ id: stri
           <CardTitle className="font-heading font-bold text-lg">Contact Information</CardTitle>
         </CardHeader>
         <CardContent>
-          <div className="grid sm:grid-cols-2 gap-4">
+          <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
             <div className="flex items-center gap-3">
               <User className="h-4 w-4 text-muted-foreground" />
               <div>
@@ -268,7 +270,7 @@ export default function OrderDetailPage({ params }: { params: Promise<{ id: stri
                   <h4 className="font-medium text-foreground">Piece {i + 1}</h4>
                   <Badge variant="secondary">{piece.quantity}x</Badge>
                 </div>
-                <div className="grid sm:grid-cols-2 gap-2 mt-3 text-sm text-muted-foreground">
+                <div className="grid gap-2 text-sm text-muted-foreground sm:grid-cols-2 xl:grid-cols-4">
                   <div><strong>Type:</strong> {piece.pieceType || "—"}</div>
                   <div><strong>Dimensions:</strong> {piece.dimensions || "—"}</div>
                   <div><strong>Finishing:</strong> {piece.finishing || "—"}</div>
@@ -288,12 +290,12 @@ export default function OrderDetailPage({ params }: { params: Promise<{ id: stri
           <CardTitle className="font-heading font-bold text-lg">Preferences</CardTitle>
         </CardHeader>
         <CardContent>
-          <div className="grid sm:grid-cols-2 gap-4 text-sm">
+          <div className="grid gap-4 text-sm md:grid-cols-2 xl:grid-cols-4">
             {Object.entries(preferences).map(([key, value]) => (
               value ? (
-                <div key={key}>
+                <div key={key} className={importantPreferenceKeys.has(key) ? "md:col-span-2" : ""}>
                   <p className="text-muted-foreground capitalize">{key.replace(/([A-Z])/g, " $1").trim()}</p>
-                  <p className="font-medium text-foreground mt-0.5">{value}</p>
+                  <p className="mt-0.5 whitespace-pre-wrap break-words font-medium text-foreground">{value}</p>
                 </div>
               ) : null
             ))}
