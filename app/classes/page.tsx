@@ -106,59 +106,65 @@ export default function ClassesPage() {
             {workshopClasses.map((workshop) => {
               const Icon = categoryIcons[workshop.category]
               return (
-                <Card key={workshop.id} className="flex flex-col hover:shadow-lg transition-all duration-300 overflow-hidden group">
-                  <div className="aspect-[4/3] relative overflow-hidden bg-muted">
-                    {workshop.image ? (
-                      <img 
-                        src={workshop.image} 
-                        alt={workshop.title}
-                        className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-110"
-                      />
-                    ) : (
-                      <div className="w-full h-full flex items-center justify-center">
-                        <Icon className="h-12 w-12 text-muted-foreground/20" />
-                      </div>
-                    )}
-                  </div>
-                  <CardHeader className="pb-3">
-                    <div className="flex items-center gap-2 mb-2">
-                      <div className={`w-8 h-8 rounded-full flex items-center justify-center ${categoryColors[workshop.category]}`}>
-                        <Icon className="h-4 w-4" />
-                      </div>
-                      <Badge variant="outline">{workshop.level}</Badge>
+                <Link
+                  key={workshop.id}
+                  href={`/classes/book/${workshop.slug}`}
+                  className="block h-full rounded-lg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+                >
+                  <Card className="group flex h-full cursor-pointer flex-col overflow-hidden transition-all duration-300 hover:-translate-y-0.5 hover:shadow-lg">
+                    <div className="aspect-[4/3] relative overflow-hidden bg-muted">
+                      {workshop.image ? (
+                        <img
+                          src={workshop.image}
+                          alt={workshop.title}
+                          className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-110"
+                        />
+                      ) : (
+                        <div className="w-full h-full flex items-center justify-center">
+                          <Icon className="h-12 w-12 text-muted-foreground/20" />
+                        </div>
+                      )}
                     </div>
-                    <CardTitle className="font-heading font-bold text-xl">{workshop.title}</CardTitle>
-                    <CardDescription className="text-xs text-primary font-medium uppercase tracking-wide">
-                      {workshop.subtitle}
-                    </CardDescription>
-                  </CardHeader>
-                  <CardContent className="flex-1 flex flex-col">
-                    <p className="text-sm text-muted-foreground mb-4 flex-1">
-                      {workshop.description}
-                    </p>
-                    
-                    {workshop.schedule && (
-                      <div className="mb-4 p-3 bg-muted/50 rounded-lg">
-                        <p className="text-xs font-medium text-foreground mb-1">Schedule</p>
-                        {workshop.schedule.map((time, i) => (
-                          <p key={i} className="text-xs text-muted-foreground">{time}</p>
-                        ))}
+                    <CardHeader className="pb-3">
+                      <div className="flex items-center gap-2 mb-2">
+                        <div className={`w-8 h-8 rounded-full flex items-center justify-center ${categoryColors[workshop.category]}`}>
+                          <Icon className="h-4 w-4" />
+                        </div>
+                        <Badge variant="outline">{workshop.level}</Badge>
                       </div>
-                    )}
+                      <CardTitle className="font-heading font-bold text-xl">{workshop.title}</CardTitle>
+                      <CardDescription className="text-xs text-primary font-medium uppercase tracking-wide">
+                        {workshop.subtitle}
+                      </CardDescription>
+                    </CardHeader>
+                    <CardContent className="flex-1 flex flex-col">
+                      <p className="text-sm text-muted-foreground mb-4 flex-1">
+                        {workshop.description}
+                      </p>
 
-                    <div className="flex items-center justify-between pt-4 border-t border-border">
-                      <div>
-                        <p className="text-xs text-muted-foreground">From</p>
-                        <p className="text-lg font-semibold text-foreground">
-                          {formatPrice(workshop.price)}
-                        </p>
+                      {workshop.schedule && (
+                        <div className="mb-4 p-3 bg-muted/50 rounded-lg">
+                          <p className="text-xs font-medium text-foreground mb-1">Schedule</p>
+                          {workshop.schedule.map((time, i) => (
+                            <p key={i} className="text-xs text-muted-foreground">{time}</p>
+                          ))}
+                        </div>
+                      )}
+
+                      <div className="flex items-center justify-between pt-4 border-t border-border">
+                        <div>
+                          <p className="text-xs text-muted-foreground">From</p>
+                          <p className="text-lg font-semibold text-foreground">
+                            {formatPrice(workshop.price)}
+                          </p>
+                        </div>
+                        <Button asChild>
+                          <span>Book Now</span>
+                        </Button>
                       </div>
-                      <Button asChild>
-                        <Link href={`/classes/book/${workshop.slug}`}>Book Now</Link>
-                      </Button>
-                    </div>
-                  </CardContent>
-                </Card>
+                    </CardContent>
+                  </Card>
+                </Link>
               )
             })}
           </div>
@@ -178,59 +184,65 @@ export default function ClassesPage() {
           </div>
 
           {kidsClasses.map((workshop) => (
-            <Card key={workshop.id} className="overflow-hidden">
-              <div className="grid md:grid-cols-2">
-                <div className="aspect-[4/3] md:aspect-auto relative bg-muted overflow-hidden">
-                  <img 
-                    src="/kidsclass.jpeg" 
-                    alt={workshop.title}
-                    className="w-full h-full object-cover absolute inset-0"
-                  />
-                </div>
-                <div className="p-6 lg:p-8 flex flex-col justify-center">
-                  <Badge variant="secondary" className="w-fit mb-4">{workshop.level}</Badge>
-                  <h3 className="font-heading font-bold text-2xl font-medium text-foreground">
-                    {workshop.title}
-                  </h3>
-                  <p className="text-sm text-primary font-medium uppercase tracking-wide mt-1">
-                    {workshop.subtitle}
-                  </p>
-                  <p className="text-muted-foreground mt-4">
-                    {workshop.description}
-                  </p>
+            <Link
+              key={workshop.id}
+              href={`/classes/book/${workshop.slug}`}
+              className="block rounded-lg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+            >
+              <Card className="group cursor-pointer overflow-hidden transition-all duration-300 hover:-translate-y-0.5 hover:shadow-lg">
+                <div className="grid md:grid-cols-2">
+                  <div className="aspect-[4/3] md:aspect-auto relative bg-muted overflow-hidden">
+                    <img
+                      src="/kidsclass.jpeg"
+                      alt={workshop.title}
+                      className="w-full h-full object-cover absolute inset-0 transition-transform duration-500 group-hover:scale-105"
+                    />
+                  </div>
+                  <div className="p-6 lg:p-8 flex flex-col justify-center">
+                    <Badge variant="secondary" className="w-fit mb-4">{workshop.level}</Badge>
+                    <h3 className="font-heading font-bold text-2xl font-medium text-foreground">
+                      {workshop.title}
+                    </h3>
+                    <p className="text-sm text-primary font-medium uppercase tracking-wide mt-1">
+                      {workshop.subtitle}
+                    </p>
+                    <p className="text-muted-foreground mt-4">
+                      {workshop.description}
+                    </p>
 
-                  <div className="grid sm:grid-cols-2 gap-4 mt-6">
-                    <div className="p-4 bg-muted/50 rounded-lg">
-                      <p className="text-sm font-medium text-foreground">Kids Only</p>
-                      <p className="text-2xl font-semibold text-foreground mt-1">
-                        {formatPrice(workshop.price)}
-                      </p>
-                    </div>
-                    {workshop.priceAlt && (
+                    <div className="grid sm:grid-cols-2 gap-4 mt-6">
                       <div className="p-4 bg-muted/50 rounded-lg">
-                        <p className="text-sm font-medium text-foreground">{workshop.priceAlt.label}</p>
+                        <p className="text-sm font-medium text-foreground">Kids Only</p>
                         <p className="text-2xl font-semibold text-foreground mt-1">
-                          {formatPrice(workshop.priceAlt.price)}
+                          {formatPrice(workshop.price)}
                         </p>
                       </div>
-                    )}
-                  </div>
-
-                  {workshop.schedule && (
-                    <div className="mt-4 flex items-center gap-2 text-sm text-muted-foreground">
-                      <Calendar className="h-4 w-4" />
-                      {workshop.schedule[0]}
+                      {workshop.priceAlt && (
+                        <div className="p-4 bg-muted/50 rounded-lg">
+                          <p className="text-sm font-medium text-foreground">{workshop.priceAlt.label}</p>
+                          <p className="text-2xl font-semibold text-foreground mt-1">
+                            {formatPrice(workshop.priceAlt.price)}
+                          </p>
+                        </div>
+                      )}
                     </div>
-                  )}
 
-                  <div className="mt-6">
-                    <Button size="lg" asChild>
-                      <Link href={`/classes/book/${workshop.slug}`}>Book Now</Link>
-                    </Button>
+                    {workshop.schedule && (
+                      <div className="mt-4 flex items-center gap-2 text-sm text-muted-foreground">
+                        <Calendar className="h-4 w-4" />
+                        {workshop.schedule[0]}
+                      </div>
+                    )}
+
+                    <div className="mt-6">
+                      <Button size="lg" asChild>
+                        <span>Book Now</span>
+                      </Button>
+                    </div>
                   </div>
                 </div>
-              </div>
-            </Card>
+              </Card>
+            </Link>
           ))}
         </div>
       </section>

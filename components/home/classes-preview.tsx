@@ -50,50 +50,56 @@ export function ClassesPreview() {
             if (!workshop) return null
             const Icon = workshop.id === "handbuilding" ? Hand : categoryIcons[workshop.category]
             return (
-              <Card key={workshop.id} className="flex flex-col hover:shadow-lg transition-all duration-300 overflow-hidden group">
-                <div className="aspect-[4/3] relative overflow-hidden bg-muted">
-                  {workshop.image ? (
-                    <img 
-                      src={workshop.image} 
-                      alt={workshop.title}
-                      className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-110"
-                    />
-                  ) : (
-                    <div className="w-full h-full flex items-center justify-center">
-                      <Icon className="h-12 w-12 text-muted-foreground/20" />
-                    </div>
-                  )}
-                </div>
-                <CardHeader className="pb-3">
-                  <div className="flex items-center gap-2 mb-2">
-                    <div className="w-8 h-8 rounded-full bg-primary/10 flex items-center justify-center">
-                      <Icon className="h-4 w-4 text-primary" />
-                    </div>
-                    <Badge variant="outline">{workshop.level}</Badge>
+              <Link
+                key={workshop.id}
+                href={`/classes/book/${workshop.slug}`}
+                className="block h-full rounded-lg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+              >
+                <Card className="group flex h-full cursor-pointer flex-col overflow-hidden transition-all duration-300 hover:-translate-y-0.5 hover:shadow-lg">
+                  <div className="aspect-[4/3] relative overflow-hidden bg-muted">
+                    {workshop.image ? (
+                      <img
+                        src={workshop.image}
+                        alt={workshop.title}
+                        className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-110"
+                      />
+                    ) : (
+                      <div className="w-full h-full flex items-center justify-center">
+                        <Icon className="h-12 w-12 text-muted-foreground/20" />
+                      </div>
+                    )}
                   </div>
-                  <CardTitle className="font-heading font-bold text-xl">{workshop.title}</CardTitle>
-                  <CardDescription className="text-xs text-primary font-medium uppercase tracking-wide">
-                    {workshop.subtitle}
-                  </CardDescription>
-                </CardHeader>
-                <CardContent className="flex-1 flex flex-col">
-                  <p className="text-sm text-muted-foreground mb-4 flex-1 line-clamp-2">
-                    {workshop.description}
-                  </p>
-                  
-                  <div className="flex items-center justify-between pt-4 border-t border-border">
-                    <div>
-                      <p className="text-xs text-muted-foreground">From</p>
-                      <p className="text-lg font-semibold text-foreground">
-                        {formatPrice(workshop.price)}
-                      </p>
+                  <CardHeader className="pb-3">
+                    <div className="flex items-center gap-2 mb-2">
+                      <div className="w-8 h-8 rounded-full bg-primary/10 flex items-center justify-center">
+                        <Icon className="h-4 w-4 text-primary" />
+                      </div>
+                      <Badge variant="outline">{workshop.level}</Badge>
                     </div>
-                    <Button size="sm" asChild>
-                      <Link href={`/classes/book/${workshop.slug}`}>Book Now</Link>
-                    </Button>
-                  </div>
-                </CardContent>
-              </Card>
+                    <CardTitle className="font-heading font-bold text-xl">{workshop.title}</CardTitle>
+                    <CardDescription className="text-xs text-primary font-medium uppercase tracking-wide">
+                      {workshop.subtitle}
+                    </CardDescription>
+                  </CardHeader>
+                  <CardContent className="flex-1 flex flex-col">
+                    <p className="text-sm text-muted-foreground mb-4 flex-1 line-clamp-2">
+                      {workshop.description}
+                    </p>
+
+                    <div className="flex items-center justify-between pt-4 border-t border-border">
+                      <div>
+                        <p className="text-xs text-muted-foreground">From</p>
+                        <p className="text-lg font-semibold text-foreground">
+                          {formatPrice(workshop.price)}
+                        </p>
+                      </div>
+                      <Button size="sm" asChild>
+                        <span>Book Now</span>
+                      </Button>
+                    </div>
+                  </CardContent>
+                </Card>
+              </Link>
             )
           })}
         </div>
