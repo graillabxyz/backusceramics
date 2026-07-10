@@ -9,6 +9,7 @@ import {
   Copy,
   Loader2,
   Mail,
+  MessageCircle,
   Printer,
   RefreshCw,
   Send,
@@ -24,6 +25,7 @@ import { Textarea } from "@/components/ui/textarea"
 import { formatPrice } from "@/lib/pos-catalog"
 
 const BALI_UTC_OFFSET_MS = 8 * 60 * 60 * 1000
+const WHATSAPP_REPORT_NUMBER = "6282145890402"
 
 interface Breakdown {
   key: string
@@ -118,28 +120,45 @@ function saleSummary(sale: CloseoutSale) {
   return `${names.slice(0, 2).join(", ")} and ${names.length - 2} more`
 }
 
+function detailedSaleLines(sales: CloseoutSale[]) {
+  return sales.slice(0, 12).map((sale) => {
+    const summary = saleSummary(sale) || "Sale"
+    return `- ${formatDateTime(sale.createdAt)} / ${paymentLabel(sale.paymentMethod)} / ${formatPrice(sale.total)} / ${summary}`
+  }).join("\n")
+}
+
 function reportText(report: CloseoutReport, notes: string) {
   const paymentLines = report.paymentBreakdown.map((item) => `- ${item.label}: ${formatPrice(item.total)} (${item.count} sales)`).join("\n")
   const categoryLines = report.categoryBreakdown.map((item) => `- ${item.label}: ${formatPrice(item.total)} (${item.quantity} items)`).join("\n")
+  const operatorLines = report.operatorBreakdown.map((item) => `- ${item.label}: ${formatPrice(item.total)} (${item.count} sales)`).join("\n")
+  const saleLines = detailedSaleLines(report.paidSales)
 
   return [
     `Backus Ceramics POS closeout`,
+    `Day code: ${report.businessDate}`,
     `Business date: ${report.businessDate}`,
     ``,
-    `Paid sales: ${report.saleCount}`,
-    `Items sold: ${report.itemCount}`,
-    `Gross subtotal: ${formatPrice(report.grossSubtotal)}`,
-    `Discounts: -${formatPrice(report.discountTotal)}`,
-    `Tax: ${formatPrice(report.taxTotal)}`,
-    `Net collected: ${formatPrice(report.netTotal)}`,
-    `Voided: ${report.voidedSaleCount} / ${formatPrice(report.voidedTotal)}`,
-    `Pending online: ${report.pendingSaleCount} / ${formatPrice(report.pendingTotal)}`,
+    `Summary`,
+    `- Paid sales: ${report.saleCount}`,
+    `- Items sold: ${report.itemCount}`,
+    `- Gross subtotal: ${formatPrice(report.grossSubtotal)}`,
+    `- Discounts: -${formatPrice(report.discountTotal)}`,
+    `- Tax: ${formatPrice(report.taxTotal)}`,
+    `- Net collected: ${formatPrice(report.netTotal)}`,
+    `- Voided: ${report.voidedSaleCount} / ${formatPrice(report.voidedTotal)}`,
+    `- Pending online: ${report.pendingSaleCount} / ${formatPrice(report.pendingTotal)}`,
     ``,
     `Payment methods`,
     paymentLines || "- None",
     ``,
     `Categories`,
     categoryLines || "- None",
+    ``,
+    `Operators`,
+    operatorLines || "- None",
+    ``,
+    `Sales detail${report.paidSales.length > 12 ? ` (first 12 of ${report.paidSales.length})` : ""}`,
+    saleLines || "- None",
     notes.trim() ? `\nNotes\n${notes.trim()}` : "",
   ].filter(Boolean).join("\n")
 }
@@ -192,6 +211,10 @@ export default function PosCloseoutPage() {
 
   const canClose = Boolean(report && !closing)
   const reportCopy = useMemo(() => report ? reportText(report, notes) : "", [report, notes])
+  const whatsappReportUrl = useMemo(() => {
+    if (!reportCopy) return "#"
+    return `https://wa.me/${WHATSAPP_REPORT_NUMBER}?text=${encodeURIComponent(reportCopy)}`
+  }, [reportCopy])
 
   useEffect(() => {
     void fetchCloseout(dateKey)
@@ -324,15 +347,25 @@ export default function PosCloseoutPage() {
 
           <div className="rounded-md border border-border bg-muted/35 p-3">
             {closeout ? (
-              <div className="flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
-                <Badge className="bg-green-100 text-green-800">Closed</Badge>
-                <span>{formatDateTime(closeout.closedAt)}</span>
-                <span>by {closeout.closedBy?.name || closeout.closedBy?.email || "staff"}</span>
+              <div className="space-y-2">
+                <div className="flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
+                  <Badge className="bg-green-100 text-green-800">Closed</Badge>
+                  <span>{formatDateTime(closeout.closedAt)}</span>
+                  <span>by {closeout.closedBy?.name || closeout.closedBy?.email || "staff"}</span>
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  Day code <span className="font-mono font-semibold text-foreground">{closeout.businessDate}</span>
+                </p>
               </div>
             ) : (
-              <div className="flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
-                <Badge variant="outline">Open</Badge>
-                <span>This date has not been closed yet.</span>
+              <div className="space-y-2">
+                <div className="flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
+                  <Badge variant="outline">Open</Badge>
+                  <span>This date has not been closed yet.</span>
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  Day code <span className="font-mono font-semibold text-foreground">{dateKey}</span>
+                </p>
               </div>
             )}
           </div>
@@ -345,6 +378,12 @@ export default function PosCloseoutPage() {
             <Button type="button" variant="outline" onClick={() => window.print()} disabled={!report}>
               <Printer className="mr-2 h-4 w-4" />
               Print
+            </Button>
+            <Button asChild type="button" variant="outline" className={!report ? "pointer-events-none opacity-50" : ""}>
+              <a href={whatsappReportUrl} target="_blank" rel="noopener noreferrer" aria-disabled={!report}>
+                <MessageCircle className="mr-2 h-4 w-4" />
+                WhatsApp
+              </a>
             </Button>
           </div>
         </CardContent>

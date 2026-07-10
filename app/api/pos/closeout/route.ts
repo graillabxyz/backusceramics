@@ -4,6 +4,7 @@ import { prisma } from "@/lib/prisma"
 import { canUsePos } from "@/lib/permissions"
 import { buildPosCloseoutReport, sendPosCloseoutReportEmail } from "@/lib/pos-closeout"
 import { cleanString, isRequestBodyTooLarge, safeHeaderValue } from "@/lib/server-security"
+import { getPosOperatorFromRequest } from "@/lib/pos-operator-session"
 
 const MAX_POS_CLOSEOUT_BODY_BYTES = 32 * 1024
 
@@ -46,12 +47,14 @@ export async function POST(req: NextRequest) {
   const notes = typeof data.notes === "string" ? cleanString(data.notes, 2000) : ""
   const requestedEmail = typeof data.reportEmail === "string" ? safeHeaderValue(data.reportEmail, 254) : ""
   const reportEmail = requestedEmail || session.user.email || ""
+  const posOperator = await getPosOperatorFromRequest(req)
+  const closedById = posOperator?.id || session.user.id
 
   const closeout = await prisma.posCloseout.upsert({
     where: { businessDate: report.businessDate },
     create: {
       businessDate: report.businessDate,
-      closedById: session.user.id,
+      closedById,
       saleCount: report.saleCount,
       itemCount: report.itemCount,
       grossSubtotal: report.grossSubtotal,
@@ -69,7 +72,7 @@ export async function POST(req: NextRequest) {
     },
     update: {
       closedAt: new Date(),
-      closedById: session.user.id,
+      closedById,
       saleCount: report.saleCount,
       itemCount: report.itemCount,
       grossSubtotal: report.grossSubtotal,

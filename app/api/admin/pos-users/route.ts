@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server"
 import { auth } from "@/lib/auth"
 import { canManageAdmins, isOwnerEmail, normalizeRole, type AppRole } from "@/lib/permissions"
-import { hashPosPin, isValidPosPin } from "@/lib/pos-pin"
+import { hashPosPin, isValidPosPin, verifyPosPin } from "@/lib/pos-pin"
 import { prisma } from "@/lib/prisma"
 
 const posCapableRoles: AppRole[] = ["OWNER", "ADMIN", "MANAGER", "POS_OPERATOR"]
@@ -28,6 +28,29 @@ function serializePosUser(user: {
     updatedAt: user.updatedAt,
     posSales: user._count?.posSales || 0,
   }
+}
+
+async function findDuplicatePinOwner(pin: string, excludeUserId?: string) {
+  const candidates = await prisma.user.findMany({
+    where: {
+      posPinHash: { not: null },
+      ...(excludeUserId ? { id: { not: excludeUserId } } : {}),
+    },
+    select: {
+      id: true,
+      name: true,
+      email: true,
+      posPinHash: true,
+    },
+  })
+
+  for (const candidate of candidates) {
+    if (await verifyPosPin(pin, candidate.posPinHash)) {
+      return candidate
+    }
+  }
+
+  return null
 }
 
 export async function GET() {
@@ -71,7 +94,6 @@ export async function POST(req: NextRequest) {
   const role = posCapableRoles.includes(normalizedRole) && normalizedRole !== "OWNER"
     ? normalizedRole
     : "POS_OPERATOR"
-  const pinHash = await hashPosPin(pin)
   const posPinSetAt = new Date()
 
   if (typeof body.userId === "string" && body.userId && !body.userId.startsWith("auth:")) {
@@ -83,6 +105,15 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "User not found" }, { status: 404 })
     }
 
+    const duplicatePinOwner = await findDuplicatePinOwner(pin, targetUser.id)
+    if (duplicatePinOwner) {
+      return NextResponse.json(
+        { error: `That PIN is already assigned to ${duplicatePinOwner.name || duplicatePinOwner.email}. Choose a different 6 digit PIN.` },
+        { status: 409 }
+      )
+    }
+
+    const pinHash = await hashPosPin(pin)
     const nextRole = isOwnerEmail(targetUser.email) ? "OWNER" : role
     const user = await prisma.user.update({
       where: { id: targetUser.id },
@@ -113,6 +144,19 @@ export async function POST(req: NextRequest) {
   }
 
   const name = typeof body.name === "string" && body.name.trim() ? body.name.trim() : null
+  const existingUser = await prisma.user.findUnique({
+    where: { email },
+    select: { id: true },
+  })
+  const duplicatePinOwner = await findDuplicatePinOwner(pin, existingUser?.id)
+  if (duplicatePinOwner) {
+    return NextResponse.json(
+      { error: `That PIN is already assigned to ${duplicatePinOwner.name || duplicatePinOwner.email}. Choose a different 6 digit PIN.` },
+      { status: 409 }
+    )
+  }
+
+  const pinHash = await hashPosPin(pin)
   const user = await prisma.user.upsert({
     where: { email },
     create: {

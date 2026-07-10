@@ -106,6 +106,13 @@ interface QuickProductForm {
   featured: boolean
 }
 
+interface PosOperator {
+  id: string
+  name: string | null
+  email: string
+  role: string
+}
+
 const quickProductDefaults: QuickProductForm = {
   name: "",
   sku: "",
@@ -200,6 +207,7 @@ export default function AdminPosPage() {
   const [posPinError, setPosPinError] = useState("")
   const [verifyingPosPin, setVerifyingPosPin] = useState(false)
   const [lockAfterSeconds, setLockAfterSeconds] = useState(5 * 60)
+  const [posOperator, setPosOperator] = useState<PosOperator | null>(null)
 
   const posProducts = useMemo(
     () => products.filter((product) => product.quantity > 0 && product.status !== "SOLD" && product.status !== "ARCHIVED"),
@@ -270,7 +278,11 @@ export default function AdminPosPage() {
       if (Date.now() - lastPosActivityRef.current >= lockAfterSeconds * 1000) {
         setPosPinUnlocked(false)
         setPosPin("")
+        setPosOperator(null)
         setPosPinError("POS locked after inactivity. Enter your PIN to continue.")
+        void fetch("/api/pos/pin/verify", { method: "DELETE" }).catch((error) => {
+          console.error("Could not clear POS operator session", error)
+        })
       }
     }, 1000)
 
@@ -315,7 +327,11 @@ export default function AdminPosPage() {
   const lockPos = (message = "Enter your POS PIN to reopen the register.") => {
     setPosPinUnlocked(false)
     setPosPin("")
+    setPosOperator(null)
     setPosPinError(message)
+    void fetch("/api/pos/pin/verify", { method: "DELETE" }).catch((error) => {
+      console.error("Could not clear POS operator session", error)
+    })
   }
 
   const handlePosPinSubmit = async (event: FormEvent<HTMLFormElement>) => {
@@ -344,6 +360,7 @@ export default function AdminPosPage() {
 
       setLockAfterSeconds(Number(data.lockAfterSeconds) || 5 * 60)
       lastPosActivityRef.current = Date.now()
+      setPosOperator(data.operator || null)
       setPosPinUnlocked(true)
       setPosPin("")
       setPosPinError("")
@@ -682,6 +699,10 @@ export default function AdminPosPage() {
       })
       const data = await res.json()
       if (!res.ok) {
+        if (data.code === "POS_PIN_LOCKED") {
+          lockPos(data.error || "Unlock the POS with a cashier PIN before recording a sale.")
+          return
+        }
         setError(data.error || "Could not complete sale")
         return
       }
@@ -712,6 +733,10 @@ export default function AdminPosPage() {
       })
       const data = await res.json()
       if (!res.ok) {
+        if (data.code === "POS_PIN_LOCKED") {
+          lockPos(data.error || "Unlock the POS with a cashier PIN before starting online payment.")
+          return
+        }
         setError(data.error || "Could not start online payment")
         return
       }
@@ -991,6 +1016,7 @@ export default function AdminPosPage() {
             <p className="hidden text-xs text-muted-foreground sm:block">
               {availableProducts.length} ready to sell
               {cartCount > 0 && ` · ${cartCount} in checkout`}
+              {posOperator && ` · unlocked as ${posOperator.name || posOperator.email}`}
             </p>
           </div>
           <div className="flex shrink-0 items-center gap-1 sm:gap-2">

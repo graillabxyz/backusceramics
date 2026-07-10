@@ -11,6 +11,7 @@ import {
 } from "@/lib/xendit"
 import { recordAnalyticsEvent } from "@/lib/analytics-server"
 import { cleanString, isRequestBodyTooLarge, safeHeaderValue } from "@/lib/server-security"
+import { getPosOperatorFromRequest } from "@/lib/pos-operator-session"
 
 const MAX_POS_ONLINE_SALE_BODY_BYTES = 64 * 1024
 
@@ -75,6 +76,14 @@ export async function POST(req: NextRequest) {
   const session = await auth()
   if (!session || !canUsePos(session.user.role)) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
+  }
+
+  const posOperator = await getPosOperatorFromRequest(req)
+  if (!posOperator) {
+    return NextResponse.json(
+      { error: "Unlock the POS with a cashier PIN before starting online payment.", code: "POS_PIN_LOCKED" },
+      { status: 423 }
+    )
   }
 
   if (isRequestBodyTooLarge(req, MAX_POS_ONLINE_SALE_BODY_BYTES)) {
@@ -169,7 +178,7 @@ export async function POST(req: NextRequest) {
 
       return tx.posSale.create({
         data: {
-          operatorId: session.user.id,
+          operatorId: posOperator.id,
           subtotal,
           discountTotal,
           taxTotal,
