@@ -14,6 +14,7 @@ import {
   classSeatPoolKey,
   getScheduleOffering,
   hasSessionStartPassed,
+  normalizeTimeLabel,
   parseDateKey,
   parsePreferredDate,
   parseWeekdays,
@@ -207,16 +208,16 @@ async function getAvailableSeats({
     throw error
   }
 
-  let holds: { seats: number; weekdays: string }[] = []
+  let holds: { timeLabel: string; seats: number; weekdays: string }[] = []
   try {
     holds = await prisma.classHold.findMany({
       where: {
-        timeLabel,
         status: "ACTIVE",
         startDate: { lte: sessionDate },
         OR: [{ endDate: null }, { endDate: { gte: sessionDate } }],
       },
       select: {
+        timeLabel: true,
         seats: true,
         weekdays: true,
       },
@@ -240,6 +241,7 @@ async function getAvailableSeats({
   }, 0)
 
   const heldSeats = holds.reduce((sum, hold) => {
+    if (normalizeTimeLabel(hold.timeLabel) !== normalizeTimeLabel(timeLabel)) return sum
     return parseWeekdays(hold.weekdays).includes(sessionDate.getDay()) ? sum + hold.seats : sum
   }, 0)
 

@@ -11,6 +11,7 @@ import {
   type CalendarSession,
   formatDateKey,
   hasSessionStartPassed,
+  normalizeTimeLabel,
   parseDateKey,
   parsePreferredDate,
   parseWeekdays,
@@ -203,9 +204,10 @@ export async function GET(req: NextRequest) {
   for (const hold of holds) {
     const weekdays = parseWeekdays(hold.weekdays)
     const countedKeys = new Set<string>()
+    const holdTime = normalizeTimeLabel(hold.timeLabel)
 
     for (const session of sessions) {
-      if (session.timeLabel !== hold.timeLabel) continue
+      if (normalizeTimeLabel(session.timeLabel) !== holdTime) continue
       if (!weekdays.includes(session.date.getDay())) continue
       if (session.date < hold.startDate) continue
       if (hold.endDate && session.date > hold.endDate) continue

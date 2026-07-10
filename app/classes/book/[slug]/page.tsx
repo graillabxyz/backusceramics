@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useMemo, useState } from "react"
+import { useEffect, useMemo, useRef, useState } from "react"
 import Link from "next/link"
 import { useParams } from "next/navigation"
 import { ArrowLeft, CalendarDays, ChevronLeft, ChevronRight, Clock, Users } from "lucide-react"
@@ -183,6 +183,7 @@ export default function ClassMonthBookingPage() {
   const [selectedSessionId, setSelectedSessionId] = useState("")
   const [seats, setSeats] = useState("1")
   const [loading, setLoading] = useState(true)
+  const bookingSummaryRef = useRef<HTMLElement | null>(null)
 
   const bookingWindowEnd = useMemo(() => {
     const date = addMonths(today, 2)
@@ -420,14 +421,30 @@ export default function ClassMonthBookingPage() {
     setMonthStart(nextMonth)
   }
 
+  const scrollToBookingSummary = () => {
+    if (typeof window === "undefined") return
+    if (!window.matchMedia("(max-width: 1023px)").matches) return
+
+    window.requestAnimationFrame(() => {
+      window.requestAnimationFrame(() => {
+        bookingSummaryRef.current?.scrollIntoView({ behavior: "smooth", block: "start" })
+      })
+    })
+  }
+
+  const selectSession = (sessionId: string) => {
+    setSelectedSessionId(sessionId)
+    setSeats("1")
+    scrollToBookingSummary()
+  }
+
   const selectFirstSessionForDay = (date: Date) => {
     const dayKey = formatDateKey(date)
     const daySessions = sessions.filter((session) => session.dateKey === dayKey)
     const firstAvailable = daySessions.find((session) => (availability[session.id]?.availableSeats ?? 0) > 0)
     const nextSession = firstAvailable || daySessions[0]
     if (nextSession) {
-      setSelectedSessionId(nextSession.id)
-      setSeats("1")
+      selectSession(nextSession.id)
     }
   }
 
@@ -593,15 +610,13 @@ export default function ClassMonthBookingPage() {
                                 tabIndex={0}
                                 onClick={(event) => {
                                   event.stopPropagation()
-                                  setSelectedSessionId(session.id)
-                                  setSeats("1")
+                                  selectSession(session.id)
                                 }}
                                 onKeyDown={(event) => {
                                   if (event.key === "Enter" || event.key === " ") {
                                     event.preventDefault()
                                     event.stopPropagation()
-                                    setSelectedSessionId(session.id)
-                                    setSeats("1")
+                                    selectSession(session.id)
                                   }
                                 }}
                                 className={cn(
@@ -718,15 +733,13 @@ export default function ClassMonthBookingPage() {
                                         tabIndex={0}
                                         onClick={(event) => {
                                           event.stopPropagation()
-                                          setSelectedSessionId(session.id)
-                                          setSeats("1")
+                                          selectSession(session.id)
                                         }}
                                         onKeyDown={(event) => {
                                           if (event.key === "Enter" || event.key === " ") {
                                             event.preventDefault()
                                             event.stopPropagation()
-                                            setSelectedSessionId(session.id)
-                                            setSeats("1")
+                                            selectSession(session.id)
                                           }
                                         }}
                                         className={cn(
@@ -774,7 +787,7 @@ export default function ClassMonthBookingPage() {
           </CardContent>
         </Card>
 
-        <aside className="lg:sticky lg:top-24 lg:self-start">
+        <aside ref={bookingSummaryRef} className="scroll-mt-24 lg:sticky lg:top-24 lg:self-start">
           <Card className="border-border">
             <CardContent className="space-y-5 p-6">
               <div>

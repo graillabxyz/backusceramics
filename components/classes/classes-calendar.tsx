@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useMemo, useState } from "react"
+import { useEffect, useMemo, useRef, useState } from "react"
 import Link from "next/link"
 import {
   ArrowLeft,
@@ -163,6 +163,19 @@ function daysBetween(first: Date, second: Date) {
   return Math.round((end.getTime() - start.getTime()) / dayMs)
 }
 
+function isSameOrAfter(first: Date, second: Date) {
+  const a = new Date(first)
+  const b = new Date(second)
+  a.setHours(0, 0, 0, 0)
+  b.setHours(0, 0, 0, 0)
+  return a >= b
+}
+
+function activeWeekStart(date: Date) {
+  const weekStart = startOfWeek(date)
+  return date.getDay() === 0 ? addDays(weekStart, 7) : weekStart
+}
+
 function formatStartTime(timeLabel: string) {
   const [start = timeLabel] = timeLabel.split("-")
   const match = start.trim().match(/^(\d{1,2})(?::(\d{2}))?/)
@@ -181,7 +194,7 @@ export function ClassesCalendar({ initialClass }: ClassesCalendarProps) {
     date.setHours(0, 0, 0, 0)
     return date
   }, [])
-  const [weekStart, setWeekStart] = useState(() => startOfWeek(today))
+  const [weekStart, setWeekStart] = useState(() => activeWeekStart(today))
   const [sessions, setSessions] = useState<CalendarSession[]>([])
   const [selectedSessionId, setSelectedSessionId] = useState("")
   const [selectedMultiDayWorkshopId, setSelectedMultiDayWorkshopId] = useState("3-day-workshop")
@@ -189,14 +202,17 @@ export function ClassesCalendar({ initialClass }: ClassesCalendarProps) {
   const [availability, setAvailability] = useState<Record<string, CalendarAvailability>>({})
   const [availabilityLoading, setAvailabilityLoading] = useState(true)
   const [success, setSuccess] = useState("")
+  const bookingSummaryRef = useRef<HTMLElement | null>(null)
   const { isAuthenticated, isLoading: authLoading, openAuthModal } = useAuth()
 
+  const currentWeekStart = useMemo(() => activeWeekStart(today), [today])
   const studioDays = useMemo(() => Array.from({ length: 6 }, (_, index) => addDays(weekStart, index)), [weekStart])
+  const visibleStudioDays = useMemo(() => studioDays.filter((date) => isSameOrAfter(date, today)), [studioDays, today])
   const weekLabel = `${weekStart.toLocaleDateString("en-US", { month: "short", day: "numeric" })} - ${addDays(weekStart, 6).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}`
   const weekSessions = useMemo(() => {
-    const weekKeys = new Set(studioDays.map(formatDateKey))
+    const weekKeys = new Set(visibleStudioDays.map(formatDateKey))
     return sessions.filter((session) => weekKeys.has(session.dateKey))
-  }, [sessions, studioDays])
+  }, [sessions, visibleStudioDays])
   const visibleSessions = useMemo(() => {
     return activeFilter === "all"
       ? weekSessions
@@ -393,7 +409,11 @@ export function ClassesCalendar({ initialClass }: ClassesCalendarProps) {
 
         setSessions(nextSessions)
         setAvailability(nextAvailability)
-        const currentWeekKeys = new Set(Array.from({ length: 6 }, (_, index) => formatDateKey(addDays(weekStart, index))))
+        const currentWeekKeys = new Set(
+          Array.from({ length: 6 }, (_, index) => addDays(weekStart, index))
+            .filter((date) => isSameOrAfter(date, today))
+            .map(formatDateKey)
+        )
         const nextWeekSessions = nextSessions.filter((session) => currentWeekKeys.has(session.dateKey))
 
         setSelectedSessionId((current) => {
@@ -414,7 +434,7 @@ export function ClassesCalendar({ initialClass }: ClassesCalendarProps) {
     return () => {
       ignore = true
     }
-  }, [initialClass, weekStart])
+  }, [initialClass, today, weekStart])
 
   useEffect(() => {
     if (visibleSessions.length > 0 && !visibleSessions.some((session) => session.id === selectedSessionId)) {
@@ -424,19 +444,31 @@ export function ClassesCalendar({ initialClass }: ClassesCalendarProps) {
 
   const moveWeek = (weeks: number) => {
     const nextWeek = addDays(weekStart, weeks * 7)
-    setWeekStart(nextWeek)
+    setWeekStart(nextWeek < currentWeekStart ? currentWeekStart : nextWeek)
     setSuccess("")
   }
 
   const goToThisWeek = () => {
-    const nextWeek = startOfWeek(today)
+    const nextWeek = activeWeekStart(today)
     setWeekStart(nextWeek)
     setSuccess("")
+  }
+
+  const scrollToBookingSummary = () => {
+    if (typeof window === "undefined") return
+    if (!window.matchMedia("(max-width: 1279px)").matches) return
+
+    window.requestAnimationFrame(() => {
+      window.requestAnimationFrame(() => {
+        bookingSummaryRef.current?.scrollIntoView({ behavior: "smooth", block: "start" })
+      })
+    })
   }
 
   const handleSelectSession = (session: CalendarSession) => {
     setSelectedSessionId(session.id)
     setSuccess("")
+    scrollToBookingSummary()
   }
 
   const buildCheckoutHref = () => {
@@ -592,7 +624,7 @@ export function ClassesCalendar({ initialClass }: ClassesCalendarProps) {
               </p>
             </div>
             <div className="flex flex-wrap items-center gap-2 rounded-md border border-border bg-background p-1">
-              <Button variant="ghost" size="icon" onClick={() => moveWeek(-1)} aria-label="Previous week">
+              <Button variant="ghost" size="icon" onClick={() => moveWeek(-1)} disabled={weekStart <= currentWeekStart} aria-label="Previous week">
                 <ChevronLeft className="h-4 w-4" />
               </Button>
               <div className="min-w-48 px-3 text-center text-sm font-medium text-foreground">{weekLabel}</div>
@@ -649,11 +681,11 @@ export function ClassesCalendar({ initialClass }: ClassesCalendarProps) {
         </div>
         <div>
           <div className="grid gap-4 lg:grid-cols-3">
-            {studioDays.map(renderDayCard)}
+            {visibleStudioDays.map(renderDayCard)}
           </div>
         </div>
 
-        <aside className="lg:sticky lg:top-24 lg:self-start">
+        <aside ref={bookingSummaryRef} className="scroll-mt-24 lg:sticky lg:top-24 lg:self-start">
           {activeSession ? (
             <Card className="overflow-hidden border-border shadow-sm">
               {activeSession.workshop.image && (

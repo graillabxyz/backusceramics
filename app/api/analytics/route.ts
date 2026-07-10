@@ -2,6 +2,7 @@ import { NextResponse } from "next/server"
 import { auth } from "@/lib/auth"
 import { prisma } from "@/lib/prisma"
 import { canViewAnalytics } from "@/lib/permissions"
+import { getProductCategoryLabel } from "@/lib/pos-catalog"
 
 type EventTypeCount = { type: string; _count: { type: number } }
 type TopPageCount = { path: string | null; _count: { path: number } }
@@ -15,6 +16,29 @@ type EventLocation = {
   city: string | null
   region: string | null
   country: string | null
+}
+type SalesAnalyticsSale = {
+  id: string
+  status: string
+  paymentMethod: string
+  subtotal: number
+  discountTotal: number
+  taxTotal: number
+  total: number
+  currency: string
+  receiptEmail: string | null
+  createdAt: Date
+  voidedAt: Date | null
+  operator: { name: string | null; email: string | null; image: string | null } | null
+  items: Array<{
+    nameSnapshot: string
+    categorySnapshot: string
+    quantity: number
+    subtotal: number
+    discountAmount: number
+    taxAmount: number
+    lineTotal: number
+  }>
 }
 
 const analyticsTimeZone = "Asia/Makassar"
@@ -112,6 +136,10 @@ function locationPayload(event: EventLocation) {
     country: event.country,
     countryLabel: countryLabel(event.country),
   }
+}
+
+function sum(values: number[]) {
+  return values.reduce((total, value) => total + (Number.isFinite(value) ? value : 0), 0)
 }
 
 export async function GET() {
@@ -218,7 +246,9 @@ export async function GET() {
     createdAt: Date
     user: { name: string | null; email: string | null; image: string | null } | null
   }> = []
+  let posSales: SalesAnalyticsSale[] = []
   let analyticsError: string | null = null
+  let salesError: string | null = null
 
   try {
     const analyticsResults = await Promise.all([
@@ -324,6 +354,53 @@ export async function GET() {
     console.error("Could not load site analytics metrics", error)
   }
 
+  try {
+    posSales = await prisma.posSale.findMany({
+      where: {
+        OR: [
+          { createdAt: { gte: analyticsSince } },
+          { voidedAt: { gte: analyticsSince } },
+        ],
+      },
+      orderBy: { createdAt: "desc" },
+      take: 1000,
+      select: {
+        id: true,
+        status: true,
+        paymentMethod: true,
+        subtotal: true,
+        discountTotal: true,
+        taxTotal: true,
+        total: true,
+        currency: true,
+        receiptEmail: true,
+        createdAt: true,
+        voidedAt: true,
+        operator: {
+          select: {
+            name: true,
+            email: true,
+            image: true,
+          },
+        },
+        items: {
+          select: {
+            nameSnapshot: true,
+            categorySnapshot: true,
+            quantity: true,
+            subtotal: true,
+            discountAmount: true,
+            taxAmount: true,
+            lineTotal: true,
+          },
+        },
+      },
+    })
+  } catch (error) {
+    salesError = "Sales analytics are not available yet. Check the POS sales database migration."
+    console.error("Could not load sales analytics metrics", error)
+  }
+
   // Count by status
   const ordersByStatus: Record<string, number> = {}
   orders.forEach((o) => {
@@ -345,6 +422,64 @@ export async function GET() {
   }, {})
   const paymentSessionsCreated = eventCounts.payment_session_created || 0
   const paymentsCompleted = eventCounts.payment_completed || 0
+  const paidSales = posSales.filter((sale) => sale.status === "PAID")
+  const pendingPaymentSales = posSales.filter((sale) => sale.status === "PENDING_PAYMENT")
+  const voidedSales = posSales.filter((sale) => sale.status === "VOIDED")
+  const todayKey = localDayKey(now)
+  const paidSalesToday = paidSales.filter((sale) => localDayKey(sale.createdAt) === todayKey)
+  const salesRevenue30d = sum(paidSales.map((sale) => sale.total))
+  const salesSubtotal30d = sum(paidSales.map((sale) => sale.subtotal))
+  const salesDiscount30d = sum(paidSales.map((sale) => sale.discountTotal))
+  const salesTax30d = sum(paidSales.map((sale) => sale.taxTotal))
+  const salesRevenueToday = sum(paidSalesToday.map((sale) => sale.total))
+  const averageSaleValue30d = paidSales.length > 0 ? Math.round(salesRevenue30d / paidSales.length) : 0
+  const salesCurrency = paidSales[0]?.currency || posSales[0]?.currency || "IDR"
+  const salesByPaymentMethodMap = new Map<string, { method: string; sales: number; revenue: number }>()
+  const salesByCategoryMap = new Map<string, {
+    category: string
+    label: string
+    quantity: number
+    gross: number
+    discount: number
+    tax: number
+    revenue: number
+  }>()
+  const dailySalesMap = new Map<string, { date: string; sales: number; revenue: number; tax: number; discount: number }>()
+
+  paidSales.forEach((sale) => {
+    const method = sale.paymentMethod || "OTHER"
+    const paymentRow = salesByPaymentMethodMap.get(method) || { method, sales: 0, revenue: 0 }
+    paymentRow.sales += 1
+    paymentRow.revenue += sale.total
+    salesByPaymentMethodMap.set(method, paymentRow)
+
+    const day = localDayKey(sale.createdAt)
+    const dailyRow = dailySalesMap.get(day) || { date: day, sales: 0, revenue: 0, tax: 0, discount: 0 }
+    dailyRow.sales += 1
+    dailyRow.revenue += sale.total
+    dailyRow.tax += sale.taxTotal
+    dailyRow.discount += sale.discountTotal
+    dailySalesMap.set(day, dailyRow)
+
+    sale.items.forEach((item) => {
+      const category = item.categorySnapshot || "OTHER"
+      const categoryRow = salesByCategoryMap.get(category) || {
+        category,
+        label: getProductCategoryLabel(category),
+        quantity: 0,
+        gross: 0,
+        discount: 0,
+        tax: 0,
+        revenue: 0,
+      }
+      categoryRow.quantity += item.quantity
+      categoryRow.gross += item.subtotal
+      categoryRow.discount += item.discountAmount
+      categoryRow.tax += item.taxAmount
+      categoryRow.revenue += item.lineTotal
+      salesByCategoryMap.set(category, categoryRow)
+    })
+  })
   const locationMap = new Map<string, {
     key: string
     label: string
@@ -536,7 +671,39 @@ export async function GET() {
     ordersThisMonth,
     ordersLastMonth,
     analyticsError,
+    salesError,
     analyticsWindowDays,
+    salesCurrency,
+    paidSales30d: paidSales.length,
+    pendingSales30d: pendingPaymentSales.length,
+    voidedSales30d: voidedSales.length,
+    salesRevenue30d,
+    salesSubtotal30d,
+    salesDiscount30d,
+    salesTax30d,
+    salesRevenueToday,
+    paidSalesToday: paidSalesToday.length,
+    averageSaleValue30d,
+    pendingSalesTotal30d: sum(pendingPaymentSales.map((sale) => sale.total)),
+    voidedSalesTotal30d: sum(voidedSales.map((sale) => sale.total)),
+    salesByPaymentMethod: Array.from(salesByPaymentMethodMap.values()).sort((a, b) => b.revenue - a.revenue),
+    salesByCategory: Array.from(salesByCategoryMap.values()).sort((a, b) => b.revenue - a.revenue),
+    dailySales: Array.from(dailySalesMap.values()).sort((a, b) => b.date.localeCompare(a.date)),
+    recentSales: posSales.slice(0, 12).map((sale) => ({
+      id: sale.id,
+      status: sale.status,
+      paymentMethod: sale.paymentMethod,
+      total: sale.total,
+      subtotal: sale.subtotal,
+      discountTotal: sale.discountTotal,
+      taxTotal: sale.taxTotal,
+      currency: sale.currency,
+      itemCount: sum(sale.items.map((item) => item.quantity)),
+      createdAt: sale.createdAt,
+      voidedAt: sale.voidedAt,
+      operatorName: sale.operator?.name || sale.operator?.email || "Unknown operator",
+      receiptEmail: sale.receiptEmail,
+    })),
     eventCounts,
     pageViews30d: eventCounts.page_view || 0,
     uniqueVisitors30d: uniqueVisitors.length,

@@ -53,7 +53,47 @@ interface AnalyticsData {
   recentOrders: Array<{ id: string; contactName: string; status: string; createdAt: string }>
   ordersThisMonth: number
   ordersLastMonth: number
+  salesError?: string | null
   analyticsWindowDays: number
+  salesCurrency: string
+  paidSales30d: number
+  pendingSales30d: number
+  voidedSales30d: number
+  salesRevenue30d: number
+  salesSubtotal30d: number
+  salesDiscount30d: number
+  salesTax30d: number
+  salesRevenueToday: number
+  paidSalesToday: number
+  averageSaleValue30d: number
+  pendingSalesTotal30d: number
+  voidedSalesTotal30d: number
+  salesByPaymentMethod: Array<{ method: string; sales: number; revenue: number }>
+  salesByCategory: Array<{
+    category: string
+    label: string
+    quantity: number
+    gross: number
+    discount: number
+    tax: number
+    revenue: number
+  }>
+  dailySales: Array<{ date: string; sales: number; revenue: number; tax: number; discount: number }>
+  recentSales: Array<{
+    id: string
+    status: string
+    paymentMethod: string
+    total: number
+    subtotal: number
+    discountTotal: number
+    taxTotal: number
+    currency: string
+    itemCount: number
+    createdAt: string
+    voidedAt: string | null
+    operatorName: string
+    receiptEmail: string | null
+  }>
   eventCounts: Record<string, number>
   pageViews30d: number
   uniqueVisitors30d: number
@@ -155,6 +195,18 @@ function formatDateKey(dateKey: string) {
     month: "short",
     day: "numeric",
   })
+}
+
+function formatCurrency(value: number, currency = "IDR") {
+  return new Intl.NumberFormat("id-ID", {
+    style: "currency",
+    currency,
+    maximumFractionDigits: 0,
+  }).format(value || 0)
+}
+
+function formatPaymentMethod(method: string) {
+  return method.replace(/_/g, " ").replace(/\b\w/g, (letter) => letter.toUpperCase())
 }
 
 function SectionIntro({ title, children }: { title: string; children: ReactNode }) {
@@ -324,6 +376,7 @@ export default function AdminAnalyticsPage() {
   const sortedEventCounts = Object.entries(data.eventCounts)
     .sort(([, a], [, b]) => b - a)
     .slice(0, 18)
+  const salesVoidRate = rate(data.voidedSales30d, data.paidSales30d + data.voidedSales30d)
 
   return (
     <div className="space-y-8">
@@ -344,11 +397,12 @@ export default function AdminAnalyticsPage() {
       </div>
 
       <Tabs defaultValue="overview" className="space-y-6">
-        <TabsList className="grid h-auto w-full grid-cols-2 gap-1 bg-muted p-1 md:grid-cols-3 xl:grid-cols-6">
+        <TabsList className="grid h-auto w-full grid-cols-2 gap-1 bg-muted p-1 md:grid-cols-4 xl:grid-cols-7">
           <TabsTrigger value="overview">Overview</TabsTrigger>
           <TabsTrigger value="locations">Locations</TabsTrigger>
           <TabsTrigger value="visitors">Visitors</TabsTrigger>
           <TabsTrigger value="pages">Pages</TabsTrigger>
+          <TabsTrigger value="sales">Sales</TabsTrigger>
           <TabsTrigger value="conversion">Conversion</TabsTrigger>
           <TabsTrigger value="events">Events</TabsTrigger>
         </TabsList>
@@ -361,7 +415,7 @@ export default function AdminAnalyticsPage() {
           <div className="grid gap-6 sm:grid-cols-2 xl:grid-cols-4">
             <MetricCard title="Page Views" value={data.pageViews30d} description={`${data.uniqueVisitors30d} unique visitors`} icon={Eye} />
             <MetricCard title="Product Views" value={data.productViews30d} description="Shop detail page interest" icon={ShoppingBag} />
-            <MetricCard title="Checkout Intent" value={data.checkoutViews30d} description={`${checkoutClickRate} clicked pay`} icon={MousePointerClick} />
+            <MetricCard title="Sales Revenue" value={formatCurrency(data.salesRevenue30d, data.salesCurrency)} description={`${data.paidSales30d} paid sales`} icon={CreditCard} />
             <MetricCard title="Payment Starts" value={data.paymentSessionsCreated30d} description={`${paymentCompletionRate} completed by webhook`} icon={CreditCard} />
           </div>
 
@@ -383,6 +437,7 @@ export default function AdminAnalyticsPage() {
                 <div className="grid gap-6 sm:grid-cols-2 xl:grid-cols-4">
                   <MetricCard title="Total Orders" value={data.totalOrders} description={`${data.ordersThisMonth} this month`} icon={ClipboardList} />
                   <MetricCard title="Class Bookings" value={data.totalBookings} description={`${data.bookingsByStatus["PENDING"] || 0} pending`} icon={GraduationCap} />
+                  <MetricCard title="POS / Shop Sales" value={formatCurrency(data.salesRevenueToday, data.salesCurrency)} description={`${data.paidSalesToday} paid today`} icon={ShoppingBag} />
                   <MetricCard title="Residency Apps" value={data.totalApplications} description={`${data.applicationsByStatus["SUBMITTED"] || 0} new`} icon={Calendar} />
                   <MetricCard
                     title="Registered Users"
@@ -683,6 +738,179 @@ export default function AdminAnalyticsPage() {
                           ))}
                         </div>
                       </section>
+                    ))}
+                  </div>
+                )}
+              </AccordionContent>
+            </AccordionItem>
+          </Accordion>
+        </TabsContent>
+
+        <TabsContent value="sales" className="space-y-6">
+          <SectionIntro title="Sales Metrics">
+            POS and online shop sales from the recorded sale ledger, including payment mix, category mix, tax, discounts, voids, and daily revenue.
+          </SectionIntro>
+
+          {data.salesError && (
+            <div className="rounded-md border border-destructive/30 bg-destructive/10 p-3 text-sm text-destructive">
+              {data.salesError}
+            </div>
+          )}
+
+          <div className="grid gap-6 sm:grid-cols-2 xl:grid-cols-4">
+            <MetricCard
+              title="Paid Sales"
+              value={formatCurrency(data.salesRevenue30d, data.salesCurrency)}
+              description={`${data.paidSales30d} paid sales in ${data.analyticsWindowDays} days`}
+              icon={CreditCard}
+            />
+            <MetricCard
+              title="Today"
+              value={formatCurrency(data.salesRevenueToday, data.salesCurrency)}
+              description={`${data.paidSalesToday} paid sales today`}
+              icon={ShoppingBag}
+            />
+            <MetricCard
+              title="Average Sale"
+              value={formatCurrency(data.averageSaleValue30d, data.salesCurrency)}
+              description={`${formatCurrency(data.salesTax30d, data.salesCurrency)} tax collected`}
+              icon={TrendingUp}
+            />
+            <MetricCard
+              title="Voids"
+              value={data.voidedSales30d}
+              description={`${salesVoidRate} of finalized/voided sales · ${formatCurrency(data.voidedSalesTotal30d, data.salesCurrency)}`}
+              icon={AlertTriangle}
+            />
+          </div>
+
+          <Accordion type="multiple" defaultValue={["payment", "category", "daily"]} className="rounded-md border border-border bg-background px-4">
+            <AccordionItem value="totals">
+              <AccordionTrigger>Sales Totals</AccordionTrigger>
+              <AccordionContent>
+                <div className="grid gap-6 sm:grid-cols-2 xl:grid-cols-4">
+                  <MetricCard title="Gross Subtotal" value={formatCurrency(data.salesSubtotal30d, data.salesCurrency)} description="Before discounts and tax" />
+                  <MetricCard title="Discounts" value={formatCurrency(data.salesDiscount30d, data.salesCurrency)} description="Total discount given" />
+                  <MetricCard title="Tax" value={formatCurrency(data.salesTax30d, data.salesCurrency)} description="Tax collected on paid sales" />
+                  <MetricCard title="Pending Online" value={formatCurrency(data.pendingSalesTotal30d, data.salesCurrency)} description={`${data.pendingSales30d} pending payment sessions`} />
+                </div>
+              </AccordionContent>
+            </AccordionItem>
+
+            <AccordionItem value="payment">
+              <AccordionTrigger>Payment Method Mix</AccordionTrigger>
+              <AccordionContent>
+                {data.salesByPaymentMethod.length === 0 ? (
+                  <EmptyState>No paid sales recorded in this window</EmptyState>
+                ) : (
+                  <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+                    {data.salesByPaymentMethod.map((method) => (
+                      <div key={method.method} className="rounded-md border border-border p-3">
+                        <div className="flex items-center justify-between gap-3">
+                          <p className="text-sm font-medium text-foreground">{formatPaymentMethod(method.method)}</p>
+                          <Badge variant="secondary">{method.sales} sales</Badge>
+                        </div>
+                        <p className="mt-2 text-xl font-semibold text-foreground">
+                          {formatCurrency(method.revenue, data.salesCurrency)}
+                        </p>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </AccordionContent>
+            </AccordionItem>
+
+            <AccordionItem value="category">
+              <AccordionTrigger>Sales by Category</AccordionTrigger>
+              <AccordionContent>
+                {data.salesByCategory.length === 0 ? (
+                  <EmptyState>No category sales recorded in this window</EmptyState>
+                ) : (
+                  <div className="overflow-x-auto">
+                    <table className="w-full min-w-[760px] text-sm">
+                      <thead>
+                        <tr className="border-b border-border">
+                          <th className="px-3 py-2 text-left font-medium text-muted-foreground">Category</th>
+                          <th className="px-3 py-2 text-right font-medium text-muted-foreground">Items</th>
+                          <th className="px-3 py-2 text-right font-medium text-muted-foreground">Gross</th>
+                          <th className="px-3 py-2 text-right font-medium text-muted-foreground">Discount</th>
+                          <th className="px-3 py-2 text-right font-medium text-muted-foreground">Tax</th>
+                          <th className="px-3 py-2 text-right font-medium text-muted-foreground">Revenue</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {data.salesByCategory.map((category) => (
+                          <tr key={category.category} className="border-b border-border last:border-0">
+                            <td className="px-3 py-3 font-medium text-foreground">{category.label}</td>
+                            <td className="px-3 py-3 text-right text-muted-foreground">{category.quantity}</td>
+                            <td className="px-3 py-3 text-right text-muted-foreground">{formatCurrency(category.gross, data.salesCurrency)}</td>
+                            <td className="px-3 py-3 text-right text-muted-foreground">{formatCurrency(category.discount, data.salesCurrency)}</td>
+                            <td className="px-3 py-3 text-right text-muted-foreground">{formatCurrency(category.tax, data.salesCurrency)}</td>
+                            <td className="px-3 py-3 text-right font-semibold text-foreground">{formatCurrency(category.revenue, data.salesCurrency)}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </AccordionContent>
+            </AccordionItem>
+
+            <AccordionItem value="daily">
+              <AccordionTrigger>Daily Sales</AccordionTrigger>
+              <AccordionContent>
+                {data.dailySales.length === 0 ? (
+                  <EmptyState>No daily sales recorded in this window</EmptyState>
+                ) : (
+                  <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+                    {data.dailySales.map((day) => (
+                      <div key={day.date} className="rounded-md bg-muted/40 p-3">
+                        <div className="flex items-center justify-between gap-3">
+                          <p className="text-sm font-medium text-foreground">{formatDateKey(day.date)}</p>
+                          <span className="text-xs text-muted-foreground">{day.sales} sales</span>
+                        </div>
+                        <p className="mt-2 text-xl font-semibold text-foreground">
+                          {formatCurrency(day.revenue, data.salesCurrency)}
+                        </p>
+                        <p className="mt-1 text-xs text-muted-foreground">
+                          Tax {formatCurrency(day.tax, data.salesCurrency)} · Discount {formatCurrency(day.discount, data.salesCurrency)}
+                        </p>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </AccordionContent>
+            </AccordionItem>
+
+            <AccordionItem value="recent">
+              <AccordionTrigger>Recent Sales</AccordionTrigger>
+              <AccordionContent>
+                {data.recentSales.length === 0 ? (
+                  <EmptyState>No recent sales recorded</EmptyState>
+                ) : (
+                  <div className="space-y-2">
+                    {data.recentSales.map((sale) => (
+                      <div key={sale.id} className="flex flex-col gap-3 rounded-md border border-border p-3 md:flex-row md:items-center md:justify-between">
+                        <div className="min-w-0">
+                          <div className="flex flex-wrap items-center gap-2">
+                            <p className="truncate text-sm font-medium text-foreground">{sale.id}</p>
+                            <Badge variant={sale.status === "PAID" ? "default" : sale.status === "VOIDED" ? "destructive" : "secondary"}>
+                              {sale.status.replace(/_/g, " ").toLowerCase()}
+                            </Badge>
+                            <Badge variant="outline">{formatPaymentMethod(sale.paymentMethod)}</Badge>
+                          </div>
+                          <p className="mt-1 text-xs text-muted-foreground">
+                            {sale.itemCount} items · {sale.operatorName} · {new Date(sale.createdAt).toLocaleString()}
+                          </p>
+                          {sale.receiptEmail && <p className="text-xs text-muted-foreground">Receipt: {sale.receiptEmail}</p>}
+                        </div>
+                        <div className="text-left md:text-right">
+                          <p className="text-base font-semibold text-foreground">{formatCurrency(sale.total, sale.currency)}</p>
+                          <p className="text-xs text-muted-foreground">
+                            Tax {formatCurrency(sale.taxTotal, sale.currency)} · Discount {formatCurrency(sale.discountTotal, sale.currency)}
+                          </p>
+                        </div>
+                      </div>
                     ))}
                   </div>
                 )}
