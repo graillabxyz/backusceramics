@@ -1,6 +1,6 @@
 "use client"
 
-import { ChangeEvent, useEffect, useMemo, useRef, useState } from "react"
+import { ChangeEvent, FormEvent, useEffect, useMemo, useRef, useState } from "react"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
@@ -40,6 +40,7 @@ import {
   CreditCard,
   ImagePlus,
   Loader2,
+  LockKeyhole,
   Mail,
   Maximize2,
   MoreHorizontal,
@@ -161,6 +162,7 @@ function paymentCompletionLabel(method: string) {
 
 export default function AdminPosPage() {
   const posRootRef = useRef<HTMLDivElement | null>(null)
+  const lastPosActivityRef = useRef(Date.now())
   const [products, setProducts] = useState<PosProduct[]>([])
   const [loading, setLoading] = useState(true)
   const [checkingOut, setCheckingOut] = useState(false)
@@ -184,6 +186,11 @@ export default function AdminPosPage() {
   const [isFullscreen, setIsFullscreen] = useState(false)
   const [posStep, setPosStep] = useState<"CATEGORIES" | "ITEMS" | "CHECKOUT">("CATEGORIES")
   const [expandedCartItemId, setExpandedCartItemId] = useState<string | null>(null)
+  const [posPinUnlocked, setPosPinUnlocked] = useState(false)
+  const [posPin, setPosPin] = useState("")
+  const [posPinError, setPosPinError] = useState("")
+  const [verifyingPosPin, setVerifyingPosPin] = useState(false)
+  const [lockAfterSeconds, setLockAfterSeconds] = useState(5 * 60)
 
   const posProducts = useMemo(
     () => products.filter((product) => product.quantity > 0 && product.status !== "SOLD" && product.status !== "ARCHIVED"),
@@ -234,8 +241,35 @@ export default function AdminPosPage() {
   const quickProductImages = useMemo(() => parseProductImageUrls(quickProduct.imageUrls), [quickProduct.imageUrls])
 
   useEffect(() => {
-    fetchProducts()
-  }, [])
+    if (!posPinUnlocked) return
+
+    setLoading(true)
+    void fetchProducts()
+  }, [posPinUnlocked])
+
+  useEffect(() => {
+    if (!posPinUnlocked || typeof window === "undefined") return
+
+    lastPosActivityRef.current = Date.now()
+    const markActivity = () => {
+      lastPosActivityRef.current = Date.now()
+    }
+    const activityEvents: Array<keyof WindowEventMap> = ["pointerdown", "keydown", "touchstart"]
+    activityEvents.forEach((eventName) => window.addEventListener(eventName, markActivity, { passive: true }))
+
+    const interval = window.setInterval(() => {
+      if (Date.now() - lastPosActivityRef.current >= lockAfterSeconds * 1000) {
+        setPosPinUnlocked(false)
+        setPosPin("")
+        setPosPinError("POS locked after inactivity. Enter your PIN to continue.")
+      }
+    }, 1000)
+
+    return () => {
+      window.clearInterval(interval)
+      activityEvents.forEach((eventName) => window.removeEventListener(eventName, markActivity))
+    }
+  }, [lockAfterSeconds, posPinUnlocked])
 
   useEffect(() => {
     if (typeof window === "undefined") return
@@ -268,6 +302,49 @@ export default function AdminPosPage() {
       document.removeEventListener("keydown", handleKeyDown)
     }
   }, [isFullscreen])
+
+  const lockPos = (message = "Enter your POS PIN to reopen the register.") => {
+    setPosPinUnlocked(false)
+    setPosPin("")
+    setPosPinError(message)
+  }
+
+  const handlePosPinSubmit = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault()
+    setPosPinError("")
+
+    if (!/^\d{6}$/.test(posPin)) {
+      setPosPinError("Enter your 6 digit POS PIN.")
+      return
+    }
+
+    try {
+      setVerifyingPosPin(true)
+      const res = await fetch("/api/pos/pin/verify", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ pin: posPin }),
+      })
+      const data = await res.json().catch(() => ({}))
+
+      if (!res.ok) {
+        setPosPinError(data.error || "Could not unlock the POS.")
+        setPosPin("")
+        return
+      }
+
+      setLockAfterSeconds(Number(data.lockAfterSeconds) || 5 * 60)
+      lastPosActivityRef.current = Date.now()
+      setPosPinUnlocked(true)
+      setPosPin("")
+      setPosPinError("")
+    } catch (pinError) {
+      console.error("POS PIN verification failed", pinError)
+      setPosPinError("Could not verify the POS PIN. Please try again.")
+    } finally {
+      setVerifyingPosPin(false)
+    }
+  }
 
   const fetchProducts = async () => {
     try {
@@ -898,6 +975,15 @@ export default function AdminPosPage() {
               {isFullscreen ? <Minimize2 className="h-4 w-4 md:mr-2" /> : <Maximize2 className="h-4 w-4 md:mr-2" />}
               <span className="hidden md:inline">{isFullscreen ? "Exit fullscreen" : "Fullscreen"}</span>
             </Button>
+            <Button
+              type="button"
+              variant="outline"
+              className="h-10 px-3"
+              onClick={() => lockPos()}
+            >
+              <LockKeyhole className="h-4 w-4 md:mr-2" />
+              <span className="hidden md:inline">Lock</span>
+            </Button>
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
                 <Button type="button" variant="outline" className="h-10 px-3" aria-label="POS actions">
@@ -1362,6 +1448,54 @@ export default function AdminPosPage() {
           </CardContent>
         </Card>
       </div>
+
+      <Dialog open={!posPinUnlocked}>
+        <DialogContent
+          showCloseButton={false}
+          className="max-w-[calc(100vw-1rem)] sm:max-w-md"
+          onEscapeKeyDown={(event) => event.preventDefault()}
+          onInteractOutside={(event) => event.preventDefault()}
+          onPointerDownOutside={(event) => event.preventDefault()}
+        >
+          <form onSubmit={handlePosPinSubmit} className="space-y-5">
+            <DialogHeader>
+              <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-primary/10 text-primary sm:mx-0">
+                <LockKeyhole className="h-6 w-6" />
+              </div>
+              <DialogTitle className="font-heading text-2xl">Unlock POS</DialogTitle>
+              <DialogDescription>
+                Enter your private 6 digit cashier PIN to use the register. The POS locks again after a short period of inactivity.
+              </DialogDescription>
+            </DialogHeader>
+
+            <div className="space-y-2">
+              <Label htmlFor="posPinEntry">Cashier PIN</Label>
+              <Input
+                id="posPinEntry"
+                type="password"
+                inputMode="numeric"
+                pattern="[0-9]*"
+                maxLength={6}
+                autoFocus
+                value={posPin}
+                onChange={(event) => setPosPin(event.target.value.replace(/\D/g, "").slice(0, 6))}
+                className="h-14 text-center text-2xl font-semibold tracking-[0.4em]"
+                placeholder="000000"
+              />
+              {posPinError && (
+                <p className="rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive">
+                  {posPinError}
+                </p>
+              )}
+            </div>
+
+            <Button type="submit" className="h-12 w-full text-base" disabled={verifyingPosPin || posPin.length !== 6}>
+              {verifyingPosPin ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <LockKeyhole className="mr-2 h-4 w-4" />}
+              Unlock register
+            </Button>
+          </form>
+        </DialogContent>
+      </Dialog>
 
       <Dialog open={isQuickAddOpen} onOpenChange={setIsQuickAddOpen}>
         <DialogContent className="max-h-[92vh] max-w-[calc(100vw-1rem)] overflow-y-auto md:max-w-3xl xl:max-w-4xl">

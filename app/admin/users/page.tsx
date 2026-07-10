@@ -4,9 +4,11 @@ import { useState, useEffect, useMemo } from "react"
 import { Card, CardContent, CardDescription, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
+import { Input } from "@/components/ui/input"
+import { Label } from "@/components/ui/label"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
-import { AlertCircle, ArrowDown, ArrowUp, ArrowUpDown, HelpCircle, Loader2, Shield, Users as UsersIcon } from "lucide-react"
+import { AlertCircle, ArrowDown, ArrowUp, ArrowUpDown, CheckCircle2, HelpCircle, KeyRound, Loader2, Shield, Users as UsersIcon } from "lucide-react"
 import { useAuth } from "@/lib/auth-context"
 import { appRoles, canManageAdmins, roleAccessDescriptions, roleLabels, type AppRole } from "@/lib/permissions"
 
@@ -62,6 +64,18 @@ interface UsersApiResponse {
   }
 }
 
+interface PosAccessUser {
+  id: string
+  name: string | null
+  email: string
+  image: string | null
+  role: string
+  hasPosPin: boolean
+  posPinSetAt: string | null
+  updatedAt: string
+  posSales: number
+}
+
 type SortDirection = "asc" | "desc"
 type SortKey =
   | "name"
@@ -84,6 +98,8 @@ const rupiahFormatter = new Intl.NumberFormat("en-US", {
   currency: "IDR",
   maximumFractionDigits: 0,
 })
+
+const posAssignableRoles: AppRole[] = ["POS_OPERATOR", "MANAGER", "ADMIN"]
 
 function emptyMetrics(): UserMetrics {
   return {
@@ -213,6 +229,18 @@ export default function AdminUsersPage() {
   const [authSync, setAuthSync] = useState<UsersApiResponse["authSync"]>(undefined)
   const [sortKey, setSortKey] = useState<SortKey>("lastSignInAt")
   const [sortDirection, setSortDirection] = useState<SortDirection>("desc")
+  const [posUsers, setPosUsers] = useState<PosAccessUser[]>([])
+  const [posUsersLoading, setPosUsersLoading] = useState(false)
+  const [posAccessSaving, setPosAccessSaving] = useState(false)
+  const [posAccessError, setPosAccessError] = useState<string | null>(null)
+  const [posAccessSuccess, setPosAccessSuccess] = useState<string | null>(null)
+  const [posAccessForm, setPosAccessForm] = useState({
+    userId: "new",
+    name: "",
+    email: "",
+    role: "POS_OPERATOR" as AppRole,
+    pin: "",
+  })
   const canEditRoles = canManageAdmins(currentUser?.role)
 
   useEffect(() => {
@@ -220,6 +248,12 @@ export default function AdminUsersPage() {
       fetchUsers()
     }
   }, [authLoading]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => {
+    if (!authLoading && canEditRoles) {
+      fetchPosUsers()
+    }
+  }, [authLoading, canEditRoles]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const currentUserFallback = (): UserData | null => {
     if (!currentUser?.email) return null
@@ -297,9 +331,84 @@ export default function AdminUsersPage() {
         setUsers((prev) =>
           prev.map((u) => (u.id === id ? { ...u, role } : u))
         )
+        void fetchPosUsers()
       }
     } catch (err) {
       console.error("Failed to update role:", err)
+    }
+  }
+
+  const fetchPosUsers = async () => {
+    if (!canEditRoles) return
+
+    try {
+      setPosUsersLoading(true)
+      const res = await fetch("/api/admin/pos-users")
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok) throw new Error(data.error || "Could not load POS users")
+      setPosUsers(Array.isArray(data.users) ? data.users : [])
+    } catch (err) {
+      console.error("Failed to fetch POS users:", err)
+      setPosAccessError(err instanceof Error ? err.message : "Could not load POS users.")
+    } finally {
+      setPosUsersLoading(false)
+    }
+  }
+
+  const savePosUserPin = async () => {
+    if (!canEditRoles) return
+
+    setPosAccessError(null)
+    setPosAccessSuccess(null)
+
+    if (!/^\d{6}$/.test(posAccessForm.pin)) {
+      setPosAccessError("PIN must be exactly 6 numbers.")
+      return
+    }
+
+    if (posAccessForm.userId === "new" && !posAccessForm.email.trim()) {
+      setPosAccessError("Enter an email or choose an existing user.")
+      return
+    }
+
+    const payload = posAccessForm.userId === "new"
+      ? {
+        email: posAccessForm.email.trim(),
+        name: posAccessForm.name.trim(),
+        role: posAccessForm.role,
+        pin: posAccessForm.pin,
+      }
+      : {
+        userId: posAccessForm.userId,
+        role: posAccessForm.role,
+        pin: posAccessForm.pin,
+      }
+
+    try {
+      setPosAccessSaving(true)
+      const res = await fetch("/api/admin/pos-users", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      })
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok) throw new Error(data.error || "Could not save POS PIN")
+
+      const updatedUser = data.user as PosAccessUser
+      setPosUsers((current) => {
+        const exists = current.some((user) => user.id === updatedUser.id)
+        return exists
+          ? current.map((user) => (user.id === updatedUser.id ? updatedUser : user))
+          : [updatedUser, ...current]
+      })
+      setUsers((current) => current.map((user) => (user.id === updatedUser.id ? { ...user, role: updatedUser.role } : user)))
+      setPosAccessForm({ userId: "new", name: "", email: "", role: "POS_OPERATOR", pin: "" })
+      setPosAccessSuccess(`${updatedUser.name || updatedUser.email} can now unlock the POS with their private PIN.`)
+    } catch (err) {
+      console.error("Failed to save POS PIN:", err)
+      setPosAccessError(err instanceof Error ? err.message : "Could not save POS PIN.")
+    } finally {
+      setPosAccessSaving(false)
     }
   }
 
@@ -329,6 +438,12 @@ export default function AdminUsersPage() {
       },
       { pageViews: 0, checkoutViews: 0, paymentIntentClicks: 0, purchases: 0 }
     )
+  }, [users])
+
+  const localUsers = useMemo(() => {
+    return [...users]
+      .filter((user) => user.hasLocalUser !== false && !user.id.startsWith("auth:"))
+      .sort((a, b) => (a.name || a.email).localeCompare(b.name || b.email))
   }, [users])
 
   const setSort = (key: SortKey) => {
@@ -425,6 +540,155 @@ export default function AdminUsersPage() {
           <p className="mt-1 text-2xl font-semibold text-foreground">{formatNumber(totals.purchases)}</p>
         </div>
       </div>
+
+      {canEditRoles && (
+        <Card>
+          <CardContent className="space-y-5 p-5">
+            <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+              <div>
+                <div className="flex items-center gap-2">
+                  <KeyRound className="h-5 w-5 text-primary" />
+                  <CardTitle className="font-heading text-xl">POS PIN access</CardTitle>
+                </div>
+                <CardDescription className="mt-1 max-w-2xl">
+                  Create or reset 6 digit cashier PINs. The PIN is hashed immediately and is never shown again, so enter it with the staff member present.
+                </CardDescription>
+              </div>
+              {posUsersLoading && <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />}
+            </div>
+
+            <div className="grid gap-3 rounded-md border border-border bg-muted/30 p-4 md:grid-cols-2 xl:grid-cols-5">
+              <div className="space-y-2 xl:col-span-2">
+                <Label>POS user</Label>
+                <Select
+                  value={posAccessForm.userId}
+                  onValueChange={(userId) => {
+                    const selected = localUsers.find((user) => user.id === userId)
+                    setPosAccessForm((current) => ({
+                      ...current,
+                      userId,
+                      name: userId === "new" ? "" : selected?.name || "",
+                      email: userId === "new" ? "" : selected?.email || "",
+                      role: selected && posAssignableRoles.includes(selected.role as AppRole) ? selected.role as AppRole : current.role,
+                    }))
+                  }}
+                >
+                  <SelectTrigger className="bg-background">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="new">Add by email</SelectItem>
+                    {localUsers.map((user) => (
+                      <SelectItem key={user.id} value={user.id}>
+                        {user.name || user.email} · {roleLabels[(appRoles.includes(user.role as AppRole) ? user.role : "USER") as AppRole]}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+
+              {posAccessForm.userId === "new" && (
+                <>
+                  <div className="space-y-2">
+                    <Label htmlFor="posUserName">Name</Label>
+                    <Input
+                      id="posUserName"
+                      value={posAccessForm.name}
+                      onChange={(event) => setPosAccessForm((current) => ({ ...current, name: event.target.value }))}
+                      placeholder="Optional"
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="posUserEmail">Email</Label>
+                    <Input
+                      id="posUserEmail"
+                      type="email"
+                      value={posAccessForm.email}
+                      onChange={(event) => setPosAccessForm((current) => ({ ...current, email: event.target.value }))}
+                      placeholder="staff@example.com"
+                    />
+                  </div>
+                </>
+              )}
+
+              <div className="space-y-2">
+                <Label>Role</Label>
+                <Select
+                  value={posAccessForm.role}
+                  onValueChange={(role) => setPosAccessForm((current) => ({ ...current, role: role as AppRole }))}
+                >
+                  <SelectTrigger className="bg-background">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {posAssignableRoles.map((role) => (
+                      <SelectItem key={role} value={role}>{roleLabels[role]}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="posPin">6 digit PIN</Label>
+                <Input
+                  id="posPin"
+                  type="password"
+                  inputMode="numeric"
+                  pattern="[0-9]*"
+                  maxLength={6}
+                  value={posAccessForm.pin}
+                  onChange={(event) => setPosAccessForm((current) => ({
+                    ...current,
+                    pin: event.target.value.replace(/\D/g, "").slice(0, 6),
+                  }))}
+                  placeholder="••••••"
+                />
+              </div>
+
+              <div className="flex items-end">
+                <Button type="button" className="w-full" onClick={savePosUserPin} disabled={posAccessSaving}>
+                  {posAccessSaving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <KeyRound className="mr-2 h-4 w-4" />}
+                  Save POS PIN
+                </Button>
+              </div>
+            </div>
+
+            {posAccessError && (
+              <div className="rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive">
+                {posAccessError}
+              </div>
+            )}
+            {posAccessSuccess && (
+              <div className="flex items-center gap-2 rounded-md border border-primary/30 bg-primary/10 px-3 py-2 text-sm text-primary">
+                <CheckCircle2 className="h-4 w-4" />
+                {posAccessSuccess}
+              </div>
+            )}
+
+            <div className="grid gap-2 md:grid-cols-2 xl:grid-cols-3">
+              {posUsers.length === 0 && !posUsersLoading ? (
+                <div className="rounded-md border border-dashed border-border px-4 py-6 text-sm text-muted-foreground">
+                  No POS PINs have been set yet. Add the first cashier above.
+                </div>
+              ) : posUsers.map((posUser) => (
+                <div key={posUser.id} className="flex items-center justify-between gap-3 rounded-md border border-border bg-background p-3">
+                  <div className="min-w-0">
+                    <p className="truncate font-medium text-foreground">{posUser.name || posUser.email}</p>
+                    <p className="truncate text-xs text-muted-foreground">{posUser.email}</p>
+                    <p className="mt-1 text-xs text-muted-foreground">{roleLabels[(appRoles.includes(posUser.role as AppRole) ? posUser.role : "USER") as AppRole]} · {formatNumber(posUser.posSales)} POS sales</p>
+                  </div>
+                  <div className="shrink-0 text-right">
+                    <Badge variant={posUser.hasPosPin ? "default" : "secondary"}>
+                      {posUser.hasPosPin ? "PIN set" : "No PIN"}
+                    </Badge>
+                    <p className="mt-1 text-xs text-muted-foreground">{formatDate(posUser.posPinSetAt)}</p>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </CardContent>
+        </Card>
+      )}
 
       {users.length === 0 ? (
         <Card>

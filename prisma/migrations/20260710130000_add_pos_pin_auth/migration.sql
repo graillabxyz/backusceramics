@@ -1,0 +1,3 @@
+ALTER TABLE "User"
+ADD COLUMN "posPinHash" TEXT,
+ADD COLUMN "posPinSetAt" TIMESTAMP(3);
