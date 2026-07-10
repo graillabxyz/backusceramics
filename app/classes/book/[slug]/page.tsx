@@ -10,6 +10,7 @@ import { BrandClosingSection } from "@/components/brand-closing-section"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
+import { MobileStickyCta } from "@/components/mobile-sticky-cta"
 import { Label } from "@/components/ui/label"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { formatPrice } from "@/lib/classes-data"
@@ -482,10 +483,29 @@ export default function ClassMonthBookingPage() {
     }
 
     return `/classes/checkout?${params.toString()}`
-  }, [isMultiDaySelection, prepaid, purchasableSeats, seats, selectedSequence, selectedSession, workshop])
+  }, [isMultiDaySelection, prepaid, purchasableSeats, requiredProgramDays, seats, selectedSequence, selectedSession, slug, workshop])
+
+  const trackCheckoutIntent = () => {
+    if (!workshop || !selectedSession) return
+    void trackAnalyticsEvent({
+      type: "checkout_intent_click",
+      path: checkoutHref,
+      source: "class-month",
+      workshopId: workshop.id,
+      workshopTitle: selectedSession.scheduleTitle || workshop.title,
+      scheduleId: selectedSession.scheduleId || undefined,
+      value: total,
+      metadata: {
+        seats: Number(seats),
+        prepaid,
+        selectedDateKey: selectedSession.dateKey,
+        selectedTime: selectedSession.timeLabel,
+      },
+    })
+  }
 
   return (
-    <main className="min-h-screen bg-background">
+    <main className="min-h-screen bg-background pb-28 lg:pb-0">
       <Navigation />
       <section className="border-b border-border bg-secondary/25 pt-24 pb-6">
         <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
@@ -912,30 +932,13 @@ export default function ClassMonthBookingPage() {
                     </div>
                   </div>
 
-	                  <Button asChild className="h-12 w-full text-base">
-	                    <Link
-	                      href={checkoutHref}
-	                      aria-disabled={!canContinue}
-	                      className={cn(!canContinue && "pointer-events-none opacity-50")}
-	                      onClick={() => {
-	                        if (!workshop || !selectedSession) return
-	                        void trackAnalyticsEvent({
-	                          type: "checkout_intent_click",
-	                          path: checkoutHref,
-	                          source: "class-month",
-	                          workshopId: workshop.id,
-	                          workshopTitle: selectedSession.scheduleTitle || workshop.title,
-	                          scheduleId: selectedSession.scheduleId || undefined,
-	                          value: total,
-	                          metadata: {
-	                            seats: Number(seats),
-	                            prepaid,
-	                            selectedDateKey: selectedSession.dateKey,
-	                            selectedTime: selectedSession.timeLabel,
-	                          },
-	                        })
-	                      }}
-	                    >
+                  <Button asChild className="hidden h-12 w-full text-base lg:inline-flex">
+                    <Link
+                      href={checkoutHref}
+                      aria-disabled={!canContinue}
+                      className={cn(!canContinue && "pointer-events-none opacity-50")}
+                      onClick={trackCheckoutIntent}
+                    >
                       <CalendarDays className="h-4 w-4" />
                       {isMultiDaySelection && !canContinue
                         ? "Choose another start time"
@@ -946,12 +949,39 @@ export default function ClassMonthBookingPage() {
               )}
 
               {displaySession && purchasableSeats <= 0 && (
-                <Button disabled className="h-12 w-full text-base">Session Full</Button>
+                <Button disabled className="hidden h-12 w-full text-base lg:inline-flex">Session Full</Button>
               )}
             </CardContent>
           </Card>
         </aside>
       </section>
+      {displaySession && (
+        <MobileStickyCta
+          title={workshop?.title || displaySession.scheduleTitle || displaySession.workshop.title}
+          detail={
+            purchasableSeats <= 0
+              ? "This time is full"
+              : isMultiDaySelection
+                ? `${selectedSequence?.days.filter((day) => day.available).length || 0} of ${requiredProgramDays} days available · ${formatPrice(total)}`
+                : `${formatLongDate(displaySession.date)} · ${displaySession.timeLabel} · ${formatPrice(total)}`
+          }
+        >
+          {purchasableSeats <= 0 ? (
+            <Button disabled className="h-11 px-4 text-sm">Full</Button>
+          ) : (
+            <Button asChild className="h-11 px-4 text-sm">
+              <Link
+                href={checkoutHref}
+                aria-disabled={!canContinue}
+                className={cn(!canContinue && "pointer-events-none opacity-50")}
+                onClick={trackCheckoutIntent}
+              >
+                {isMultiDaySelection && !canContinue ? "Change time" : "Review"}
+              </Link>
+            </Button>
+          )}
+        </MobileStickyCta>
+      )}
       <BrandClosingSection
         eyebrow="After your booking"
         title="We will have the clay, tools, and wheel ready for you."

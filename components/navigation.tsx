@@ -45,7 +45,7 @@ export function Navigation() {
   }
 
   return (
-    <header className="fixed top-0 left-0 right-0 z-50 bg-background/95 backdrop-blur-sm border-b border-border">
+    <header className="fixed top-0 left-0 right-0 z-50 border-b border-border bg-background/95 pt-[env(safe-area-inset-top)] backdrop-blur-sm">
       <nav className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <div className="flex items-center justify-between h-20">
           <Link href="/" className="flex flex-col items-start">
@@ -292,26 +292,32 @@ export function Navigation() {
 
         {/* Mobile Navigation */}
         {isOpen && (
-          <div className="md:hidden py-4 border-t border-border">
-            <div className="flex flex-col gap-4">
+          <div className="fixed inset-x-0 bottom-0 top-[calc(5rem+env(safe-area-inset-top))] z-40 overflow-y-auto border-t border-border bg-background px-4 py-5 pb-[calc(env(safe-area-inset-bottom)+1.25rem)] shadow-2xl md:hidden">
+            <div className="mx-auto flex max-w-md flex-col gap-3">
+              <div className="mb-2">
+                <p className="text-xs font-semibold uppercase tracking-[0.24em] text-muted-foreground">Menu</p>
+                <p className="mt-1 text-sm text-muted-foreground">Book classes, browse the shop, and manage your account.</p>
+              </div>
               {navLinks.map((link) => (
                 <Link
                   key={link.href}
                   href={link.href}
-                  className="text-sm font-medium text-muted-foreground hover:text-foreground transition-colors py-2"
+                  className="flex min-h-14 items-center justify-between rounded-lg border border-border bg-card px-4 py-3 text-base font-semibold text-foreground shadow-sm transition-colors hover:bg-muted"
                   onClick={() => setIsOpen(false)}
                 >
-                  {link.label}
+                  <span>{link.label}</span>
+                  <span className="text-sm text-muted-foreground">Open</span>
                 </Link>
               ))}
 
               {/* Mobile auth links */}
               {isLoggedIn && (
                 <>
-                  <div className="border-t border-border pt-4 mt-2">
+                  <div className="mt-2 border-t border-border pt-4">
+                    <p className="mb-2 text-xs font-semibold uppercase tracking-[0.24em] text-muted-foreground">Account</p>
                     <Link
                       href="/account"
-                      className="flex items-center gap-3 text-sm font-medium text-muted-foreground hover:text-foreground transition-colors py-2"
+                      className="flex min-h-12 items-center gap-3 rounded-md px-2 text-sm font-medium text-foreground transition-colors hover:bg-muted"
                       onClick={() => setIsOpen(false)}
                     >
                       <ShoppingBag className="w-4 h-4" />
@@ -319,7 +325,7 @@ export function Navigation() {
                     </Link>
                     <Link
                       href="/account/profile"
-                      className="flex items-center gap-3 text-sm font-medium text-muted-foreground hover:text-foreground transition-colors py-2"
+                      className="flex min-h-12 items-center gap-3 rounded-md px-2 text-sm font-medium text-foreground transition-colors hover:bg-muted"
                       onClick={() => setIsOpen(false)}
                     >
                       <User className="w-4 h-4" />
@@ -328,7 +334,7 @@ export function Navigation() {
                     {canOpenPos && (
                       <Link
                         href="/admin/pos"
-                        className="flex items-center gap-3 text-sm font-medium text-muted-foreground hover:text-foreground transition-colors py-2"
+                        className="flex min-h-12 items-center gap-3 rounded-md px-2 text-sm font-medium text-foreground transition-colors hover:bg-muted"
                         onClick={closeUserMenus}
                       >
                         <Store className="w-4 h-4" />
@@ -338,7 +344,7 @@ export function Navigation() {
                     {isAdmin && (
                       <Link
                         href="/admin"
-                        className="flex items-center gap-3 text-sm font-medium text-muted-foreground hover:text-foreground transition-colors py-2"
+                        className="flex min-h-12 items-center gap-3 rounded-md px-2 text-sm font-medium text-foreground transition-colors hover:bg-muted"
                         onClick={closeUserMenus}
                       >
                         <LayoutDashboard className="w-4 h-4" />
@@ -347,7 +353,7 @@ export function Navigation() {
                     )}
                     <button
                       onClick={() => { logout(); setIsOpen(false) }}
-                      className="flex items-center gap-3 text-sm font-medium text-destructive hover:text-destructive/80 transition-colors py-2 w-full text-left"
+                      className="flex min-h-12 w-full items-center gap-3 rounded-md px-2 text-left text-sm font-medium text-destructive transition-colors hover:bg-muted"
                     >
                       <LogOut className="w-4 h-4" />
                       Sign Out

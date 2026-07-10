@@ -233,7 +233,7 @@ export default function CustomOrdersPage() {
   }
 
   return (
-    <main className="min-h-screen">
+    <main className="min-h-screen pb-28 lg:pb-0">
       <Navigation />
       
       {/* Hero Section */}
@@ -332,7 +332,7 @@ export default function CustomOrdersPage() {
       {/* Order Form */}
       <section className="py-16 bg-background">
         <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8">
-          <form onSubmit={handleSubmit} className="space-y-12">
+          <form id="custom-order-form" onSubmit={handleSubmit} className="space-y-12">
             
             {/* Contact Information */}
             <Card>
@@ -775,11 +775,22 @@ export default function CustomOrdersPage() {
         </div>
       </section>
 
-      <BrandClosingSection
+	      <BrandClosingSection
         eyebrow="Made with intention"
         title="Custom pieces begin with a good conversation."
         body="Share the measurements, references, and feeling you want. We will review what is possible in clay, then come back with a clear quote, timeline, and next steps."
       />
+      <div className="fixed inset-x-0 bottom-0 z-40 border-t border-border bg-background/95 px-4 pb-[calc(env(safe-area-inset-bottom)+0.75rem)] pt-3 shadow-[0_-12px_32px_rgba(0,0,0,0.12)] backdrop-blur lg:hidden">
+        <div className="mx-auto flex max-w-xl items-center gap-3">
+          <div className="min-w-0 flex-1">
+            <p className="truncate text-sm font-semibold text-foreground">Custom order request</p>
+            <p className="mt-0.5 truncate text-xs text-muted-foreground">Rp 3.500.000 minimum</p>
+          </div>
+          <Button type="submit" form="custom-order-form" className="h-11 px-4 text-sm" disabled={isSubmitting}>
+            {isSubmitting ? "Submitting" : "Submit"}
+          </Button>
+        </div>
+      </div>
       <Footer />
     </main>
   )

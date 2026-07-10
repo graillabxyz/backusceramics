@@ -12,6 +12,7 @@ import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
+import { MobileStickyCta } from "@/components/mobile-sticky-cta"
 import { CalendarExportButtons } from "@/components/calendar-export-buttons"
 import { canExportCalendarEvent } from "@/lib/calendar-export"
 import {
@@ -344,7 +345,7 @@ function ClassCheckoutContent() {
   }
 
   return (
-    <main className="min-h-screen bg-background">
+    <main className="min-h-screen bg-background pb-28 lg:pb-0">
       <Navigation />
       <section className="border-b border-border bg-secondary/25 pt-24 pb-6">
         <div className="mx-auto max-w-5xl px-4 sm:px-6 lg:px-8">
@@ -533,7 +534,7 @@ function ClassCheckoutContent() {
 
               <Button
                 onClick={handleSubmit}
-                className="h-12 w-full gap-2 text-base"
+                className="hidden h-12 w-full gap-2 text-base lg:inline-flex"
                 disabled={isSubmitting || isCheckingSignIn || maxSeats <= 0}
               >
                 {isSubmitting || isCheckingSignIn ? <Loader2 className="h-4 w-4 animate-spin" /> : <CalendarDays className="h-4 w-4" />}
@@ -543,6 +544,19 @@ function ClassCheckoutContent() {
           </Card>
         </aside>
       </section>
+      <MobileStickyCta
+        title={formatPrice(total)}
+        detail={error ? <span className="text-destructive">{error}</span> : `${title} · ${selectedSeatCount} ${selectedSeatCount === 1 ? "seat" : "seats"}`}
+      >
+        <Button
+          onClick={handleSubmit}
+          className="h-11 px-4 text-sm"
+          disabled={isSubmitting || isCheckingSignIn || maxSeats <= 0}
+        >
+          {isSubmitting || isCheckingSignIn ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
+          {isSubmitting ? "Starting" : isCheckingSignIn ? "Checking" : !isAuthenticated ? "Sign in" : "Pay"}
+        </Button>
+      </MobileStickyCta>
       <BrandClosingSection
         eyebrow="Studio note"
         title="Your seat matters in a small studio."

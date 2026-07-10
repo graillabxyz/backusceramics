@@ -127,8 +127,25 @@
   * {
     @apply border-border outline-ring/50;
   }
+  html {
+    scroll-padding-top: calc(5rem + env(safe-area-inset-top));
+    -webkit-text-size-adjust: 100%;
+  }
   body {
     @apply bg-background text-foreground;
+    min-height: 100dvh;
+  }
+  a,
+  button,
+  input,
+  select,
+  textarea {
+    -webkit-tap-highlight-color: transparent;
+  }
+  input,
+  select,
+  textarea {
+    font-size: 16px;
   }
   h1 {
     font-family: var(--font-montserrat), 'Montserrat', sans-serif;

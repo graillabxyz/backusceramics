@@ -14,6 +14,7 @@ import {
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
+import { MobileStickyCta } from "@/components/mobile-sticky-cta"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { useAuth } from "@/lib/auth-context"
 import { formatPrice, workshops } from "@/lib/classes-data"
@@ -580,7 +581,7 @@ export function ClassesCalendar({ initialClass }: ClassesCalendarProps) {
     )
 
     return (
-      <div key={date.toISOString()} className="min-h-[320px] rounded-lg border border-border bg-background p-4 shadow-sm">
+      <div key={date.toISOString()} className="rounded-lg border border-border bg-background p-3 shadow-sm sm:p-4 lg:min-h-[320px]">
         <div className="flex items-center justify-between border-b border-border pb-3">
           <div>
             <p className="text-xs font-medium uppercase text-muted-foreground">{shortDayNames[date.getDay()]}</p>
@@ -604,7 +605,7 @@ export function ClassesCalendar({ initialClass }: ClassesCalendarProps) {
   }
 
   return (
-    <main className="min-h-screen bg-background">
+    <main className="min-h-screen bg-background pb-28 lg:pb-0">
       <section className="border-b border-border bg-secondary/25 pt-24 pb-6">
         <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
           <Button variant="ghost" asChild className="mb-4 px-0">
@@ -804,7 +805,7 @@ export function ClassesCalendar({ initialClass }: ClassesCalendarProps) {
                 {isAuthenticated ? (
                   <Button
                     asChild
-                    className="h-12 w-full gap-2 text-base"
+                    className="hidden h-12 w-full gap-2 text-base lg:inline-flex"
                     disabled={!canContinue || availabilityLoading}
                   >
                     <Link
@@ -819,7 +820,7 @@ export function ClassesCalendar({ initialClass }: ClassesCalendarProps) {
                 ) : (
                   <Button
                     onClick={handleUnauthenticatedCheckout}
-                    className="h-12 w-full gap-2 text-base"
+                    className="hidden h-12 w-full gap-2 text-base lg:inline-flex"
                     disabled={!canContinue || availabilityLoading || isCheckingSignIn}
                   >
                     {isCheckingSignIn ? <Loader2 className="h-4 w-4 animate-spin" /> : <CalendarDays className="h-4 w-4" />}
@@ -843,6 +844,42 @@ export function ClassesCalendar({ initialClass }: ClassesCalendarProps) {
           )}
         </aside>
       </section>
+
+      {activeSession && (
+        <MobileStickyCta
+          title={isMultiDaySelection ? selectedMultiDayWorkshop?.title || "Workshop sequence" : activeSession.scheduleTitle || activeSession.workshop.title}
+          detail={
+            isMultiDaySelection
+              ? `${selectedSequence?.days.filter((day) => day.available).length || 0} of ${requiredProgramDays} days available`
+              : `${formatLongDate(activeSession.date)} · ${activeSession.timeLabel}`
+          }
+        >
+          {isAuthenticated ? (
+            <Button
+              asChild
+              className="h-11 px-4 text-sm"
+              disabled={!canContinue || availabilityLoading}
+            >
+              <Link
+                href={buildCheckoutHref()}
+                className={cn((!canContinue || availabilityLoading) && "pointer-events-none opacity-50")}
+                onClick={trackCheckoutIntent}
+              >
+                {!canContinue ? "Change time" : "Pay"}
+              </Link>
+            </Button>
+          ) : (
+            <Button
+              onClick={handleUnauthenticatedCheckout}
+              className="h-11 px-4 text-sm"
+              disabled={!canContinue || availabilityLoading || isCheckingSignIn}
+            >
+              {isCheckingSignIn ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
+              {!canContinue ? "Change time" : isCheckingSignIn ? "Checking" : "Sign in"}
+            </Button>
+          )}
+        </MobileStickyCta>
+      )}
 
     </main>
   )

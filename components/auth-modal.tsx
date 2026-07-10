@@ -79,8 +79,8 @@ export function AuthModal() {
 
   return (
     <Dialog open={isAuthModalOpen} onOpenChange={(open) => !open && closeAuthModal()}>
-      <DialogContent className="sm:max-w-[420px] border border-border/40 shadow-2xl rounded-3xl overflow-hidden p-8 gap-0 bg-background/95 backdrop-blur-xl">
-        <DialogHeader className="text-center pb-8">
+      <DialogContent className="bottom-0 left-0 right-0 top-auto max-w-none translate-x-0 translate-y-0 gap-0 overflow-hidden rounded-b-none rounded-t-3xl border border-border/40 bg-background/95 p-6 pb-[calc(env(safe-area-inset-bottom)+1.5rem)] shadow-2xl backdrop-blur-xl sm:left-[50%] sm:right-auto sm:top-[50%] sm:bottom-auto sm:max-w-[420px] sm:translate-x-[-50%] sm:translate-y-[-50%] sm:rounded-3xl sm:p-8">
+        <DialogHeader className="pb-6 text-center sm:pb-8">
           <div className="mx-auto w-14 h-14 bg-foreground rounded-2xl flex items-center justify-center shadow-md mb-6">
             <span className="text-background font-heading font-black text-2xl tracking-tighter">B</span>
           </div>

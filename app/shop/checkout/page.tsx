@@ -11,6 +11,7 @@ import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
+import { MobileStickyCta } from "@/components/mobile-sticky-cta"
 import { useAuth } from "@/lib/auth-context"
 import { formatPrice } from "@/lib/pos-catalog"
 import { clearShopCart, readShopCart, writeShopCart, type ShopCartItem } from "@/lib/shop-cart"
@@ -252,7 +253,7 @@ function ShopCheckoutContent() {
   }
 
   return (
-    <main className="min-h-screen bg-background">
+    <main className="min-h-screen bg-background pb-28 lg:pb-0">
       <Navigation />
 
       <section className="border-b border-border bg-secondary/25 pt-24 pb-6">
@@ -316,8 +317,8 @@ function ShopCheckoutContent() {
               ) : items.length > 0 ? (
                 <div className="divide-y divide-border">
                   {items.map((item) => (
-                    <div key={item.productId} className="grid gap-4 px-5 py-5 sm:grid-cols-[96px_minmax(0,1fr)_auto] sm:items-center">
-                      <Link href={`/shop/${item.slug}`} className="block overflow-hidden rounded-sm bg-muted">
+                    <div key={item.productId} className="grid grid-cols-[76px_minmax(0,1fr)] gap-3 px-4 py-4 sm:grid-cols-[96px_minmax(0,1fr)_auto] sm:items-center sm:gap-4 sm:px-5 sm:py-5">
+                      <Link href={`/shop/${item.slug}`} className="block h-[76px] w-[76px] overflow-hidden rounded-sm bg-muted sm:h-auto sm:w-auto">
                         <div className="aspect-square">
                           {item.image ? (
                             <img src={item.image} alt={item.name} className="h-full w-full object-cover" />
@@ -337,7 +338,7 @@ function ShopCheckoutContent() {
                         <p className="mt-2 text-sm font-medium text-foreground">{formatPrice(item.price)} each</p>
                       </div>
 
-                      <div className="flex items-center justify-between gap-3 sm:flex-col sm:items-end">
+                      <div className="col-span-2 flex items-center justify-between gap-3 sm:col-span-1 sm:flex-col sm:items-end">
                         <div className="flex items-center rounded-md border border-border">
                           <Button
                             variant="ghost"
@@ -423,7 +424,7 @@ function ShopCheckoutContent() {
                 />
               </div>
 
-              <Button size="lg" className="w-full" onClick={handlePayment} disabled={isSubmitting || isLoadingCart || items.length === 0}>
+              <Button size="lg" className="hidden w-full lg:inline-flex" onClick={handlePayment} disabled={isSubmitting || isLoadingCart || items.length === 0}>
                 {isSubmitting ? (
                   <>
                     <Loader2 className="mr-2 h-4 w-4 animate-spin" />
@@ -444,6 +445,26 @@ function ShopCheckoutContent() {
           </Card>
         </aside>
       </section>
+
+      <MobileStickyCta
+        title={formatPrice(subtotal)}
+        detail={
+          error
+            ? <span className="text-destructive">{error}</span>
+            : itemCount === 0
+              ? "Your cart is empty"
+              : `${itemCount} ${itemCount === 1 ? "item" : "items"} ready for secure payment`
+        }
+      >
+        <Button
+          className="h-11 px-4 text-sm"
+          onClick={handlePayment}
+          disabled={isSubmitting || isLoadingCart || items.length === 0}
+        >
+          {isSubmitting ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
+          {isSubmitting ? "Starting" : !isAuthenticated ? "Sign in" : "Pay"}
+        </Button>
+      </MobileStickyCta>
 
       <Footer />
     </main>
