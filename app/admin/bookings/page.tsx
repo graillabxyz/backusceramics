@@ -193,7 +193,7 @@ export default function AdminBookingsPage() {
   const [scheduleForm, setScheduleForm] = useState(initialScheduleForm)
   const [editingHoldId, setEditingHoldId] = useState<string | null>(null)
   const [activeTab, setActiveTab] = useState("requests")
-  const [holdAccordionValue, setHoldAccordionValue] = useState("")
+  const [holdAccordionValue, setHoldAccordionValue] = useState("add-hold")
   const [loading, setLoading] = useState(true)
   const [availabilityLoading, setAvailabilityLoading] = useState(true)
   const [savingHold, setSavingHold] = useState(false)
@@ -219,6 +219,15 @@ export default function AdminBookingsPage() {
     return Array.from(labels).sort((a, b) => parseTimeHour(a) - parseTimeHour(b) || a.localeCompare(b))
   }, [schedules, holdForm.timeLabel])
   const maxSeats = selectedWorkshop.maxParticipants ?? 8
+  const holdPreviewWeekdays = holdForm.weekdays
+    .map(Number)
+    .filter((day) => allWeekdayChoices.includes(day))
+  const holdPreviewSeats = Math.max(Number(holdForm.seats) || 1, 1)
+  const holdPreviewDateRange = holdForm.startDate
+    ? formatDateRange(holdForm.startDate, holdForm.endDate || null)
+    : "Choose a start date"
+  const holdPreviewDays = holdPreviewWeekdays.length > 0 ? weekdayLabel(holdPreviewWeekdays) : "Choose class days"
+  const holdPreviewMode = holdForm.allowCustomTime ? "Approved custom time" : "Regular class slot"
   const selectedScheduleOffering = classOptions.find((offering) => offering.id === scheduleForm.offeringId) || classOptions[0]
   const isRecurringSchedule = scheduleForm.category === "weekly-class"
   const pendingBookings = bookings.filter((booking) => booking.status === "PENDING")
@@ -1023,12 +1032,50 @@ export default function AdminBookingsPage() {
         </TabsContent>
 
         <TabsContent value="holds" className="space-y-4">
+          <Card className="border-primary/20 bg-primary/5">
+            <CardContent className="grid gap-3 p-4 lg:grid-cols-3">
+              <div className="flex gap-3">
+                <div className="mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-background text-primary">
+                  <Users className="h-4 w-4" />
+                </div>
+                <div>
+                  <p className="font-semibold text-foreground">What a hold does</p>
+                  <p className="mt-1 text-sm leading-relaxed text-muted-foreground">
+                    A hold blocks seats before someone pays online, usually for residents or a manual WhatsApp/Instagram booking.
+                  </p>
+                </div>
+              </div>
+              <div className="flex gap-3">
+                <div className="mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-background text-primary">
+                  <Clock className="h-4 w-4" />
+                </div>
+                <div>
+                  <p className="font-semibold text-foreground">Times matter</p>
+                  <p className="mt-1 text-sm leading-relaxed text-muted-foreground">
+                    Regular mode uses the class schedule. Custom mode is only for approved changes and blocks that exact time pool.
+                  </p>
+                </div>
+              </div>
+              <div className="flex gap-3">
+                <div className="mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-background text-primary">
+                  <CalendarPlus className="h-4 w-4" />
+                </div>
+                <div>
+                  <p className="font-semibold text-foreground">Calendar shortcut</p>
+                  <p className="mt-1 text-sm leading-relaxed text-muted-foreground">
+                    On the Calendar tab, use Hold seat on a specific slot to prefill this form with the exact date and time.
+                  </p>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+
           <Card>
             <CardHeader className="border-b pb-5">
               <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                 <div>
-                  <CardTitle className="font-heading text-xl font-bold">Resident Schedule Holds</CardTitle>
-                  <CardDescription>Reserved resident seats reduce public class availability automatically.</CardDescription>
+                  <CardTitle className="font-heading text-xl font-bold">Active Seat Holds</CardTitle>
+                  <CardDescription>Each row below removes seats from public availability for matching class dates and times.</CardDescription>
                 </div>
                 <Badge variant="secondary">{heldSeats} seats held</Badge>
               </div>
@@ -1037,272 +1084,356 @@ export default function AdminBookingsPage() {
               {holds.length === 0 ? (
                 <div className="py-12 text-center">
                   <Clock className="mx-auto mb-3 h-8 w-8 text-muted-foreground" />
-                  <p className="font-medium text-foreground">No resident holds yet</p>
-                  <p className="text-sm text-muted-foreground">Add recurring resident seat reservations below.</p>
+                  <p className="font-medium text-foreground">No active holds yet</p>
+                  <p className="text-sm text-muted-foreground">Use the form below or the Calendar tab to block seats.</p>
                 </div>
               ) : (
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead className="pl-5">Student</TableHead>
-                      <TableHead>Class</TableHead>
-                      <TableHead>Dates</TableHead>
-                      <TableHead>Seats</TableHead>
-                      <TableHead>Status</TableHead>
-                      <TableHead className="w-12 pr-5" />
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {holds.map((hold) => {
-                      const workshop = classOptions.find((item) => item.id === hold.workshopId)
-                      const weekdays = parseWeekdayList(hold.weekdays)
-                      return (
-                        <TableRow key={hold.id}>
-                          <TableCell className="pl-5">
-                            <div className="font-medium text-foreground">{hold.studentName}</div>
-                            <div className="text-xs text-muted-foreground">{hold.studentEmail || "No email"}</div>
-                          </TableCell>
-                          <TableCell>
-                            <div>{workshop?.title || hold.workshopId}</div>
-                            <div className="text-xs text-muted-foreground">{hold.timeLabel} · {weekdayLabel(weekdays)}</div>
-                          </TableCell>
-                          <TableCell>{formatDateRange(hold.startDate, hold.endDate)}</TableCell>
-                          <TableCell>{hold.seats}</TableCell>
-                          <TableCell>
+                <div className="divide-y">
+                  {holds.map((hold) => {
+                    const workshop = classOptions.find((item) => item.id === hold.workshopId)
+                    const weekdays = parseWeekdayList(hold.weekdays)
+                    const isCustom = isCustomHoldSlot(hold.workshopId, hold.timeLabel, weekdays)
+
+                    return (
+                      <div
+                        key={hold.id}
+                        className="grid gap-4 p-4 md:grid-cols-[minmax(0,1fr)_minmax(0,1.15fr)] xl:grid-cols-[minmax(0,1fr)_minmax(0,1.15fr)_minmax(0,1fr)_auto] xl:items-center"
+                      >
+                        <div className="flex min-w-0 gap-3">
+                          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-muted text-sm font-semibold text-muted-foreground">
+                            {hold.studentName.charAt(0).toUpperCase()}
+                          </div>
+                          <div className="min-w-0">
+                            <p className="truncate font-medium text-foreground">{hold.studentName}</p>
+                            <p className="truncate text-sm text-muted-foreground">{hold.studentEmail || "No email saved"}</p>
+                          </div>
+                        </div>
+
+                        <div className="space-y-1">
+                          <div className="flex flex-wrap items-center gap-2">
+                            <p className="font-medium text-foreground">{workshop?.title || hold.workshopId}</p>
+                            {isCustom && <Badge variant="outline">Custom time</Badge>}
+                          </div>
+                          <p className="text-sm text-muted-foreground">{hold.timeLabel} · {weekdayLabel(weekdays)}</p>
+                        </div>
+
+                        <div className="grid grid-cols-2 gap-2 text-sm sm:grid-cols-3 xl:grid-cols-2">
+                          <div className="rounded-md border border-border bg-muted/30 px-3 py-2">
+                            <p className="text-xs text-muted-foreground">Seats</p>
+                            <p className="font-semibold text-foreground">{hold.seats}</p>
+                          </div>
+                          <div className="rounded-md border border-border bg-muted/30 px-3 py-2">
+                            <p className="text-xs text-muted-foreground">Status</p>
                             <Badge variant={hold.status === "ACTIVE" ? "secondary" : "outline"}>{hold.status}</Badge>
-                          </TableCell>
-                          <TableCell className="pr-5">
-                            <div className="flex justify-end gap-1">
-                              <Button variant="ghost" size="icon" onClick={() => openEditHold(hold)} aria-label={`Edit hold for ${hold.studentName}`}>
-                                <Pencil className="h-4 w-4" />
-                              </Button>
-                              <Button variant="ghost" size="icon" onClick={() => deleteHold(hold.id)} aria-label={`Delete hold for ${hold.studentName}`}>
-                                <Trash2 className="h-4 w-4" />
-                              </Button>
-                            </div>
-                          </TableCell>
-                        </TableRow>
-                      )
-                    })}
-                  </TableBody>
-                </Table>
+                          </div>
+                          <div className="col-span-2 rounded-md border border-border bg-muted/30 px-3 py-2 sm:col-span-1 xl:col-span-2">
+                            <p className="text-xs text-muted-foreground">Dates</p>
+                            <p className="font-medium text-foreground">{formatDateRange(hold.startDate, hold.endDate)}</p>
+                          </div>
+                        </div>
+
+                        <div className="flex flex-wrap gap-2 xl:justify-end">
+                          <Button variant="outline" size="sm" onClick={() => openEditHold(hold)} aria-label={`Edit hold for ${hold.studentName}`}>
+                            <Pencil className="mr-2 h-4 w-4" />
+                            Edit
+                          </Button>
+                          <Button variant="ghost" size="sm" onClick={() => deleteHold(hold.id)} aria-label={`Delete hold for ${hold.studentName}`}>
+                            <Trash2 className="mr-2 h-4 w-4" />
+                            Delete
+                          </Button>
+                        </div>
+                      </div>
+                    )
+                  })}
+                </div>
               )}
             </CardContent>
           </Card>
 
           <Card>
-            <CardContent className="px-5">
+            <CardContent className="px-4 py-4 sm:px-5">
               <Accordion type="single" collapsible value={holdAccordionValue} onValueChange={setHoldAccordionValue}>
                 <AccordionItem value="add-hold">
-                  <AccordionTrigger className="py-0 hover:no-underline">
+                  <AccordionTrigger className="py-1 text-left hover:no-underline">
                     <div className="flex items-center gap-3">
-                      <div className="flex h-9 w-9 items-center justify-center rounded-full bg-primary/10 text-primary">
+                      <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-primary/10 text-primary">
                         <Users className="h-4 w-4" />
                       </div>
                       <div>
                         <p className="font-heading text-base font-bold text-foreground">
-                          {editingHoldId ? "Edit resident hold" : "Add resident hold"}
+                          {editingHoldId ? "Edit seat hold" : "Create a seat hold"}
                         </p>
                         <p className="text-sm font-normal text-muted-foreground">
-                          Reserve or adjust resident seats. Custom times are for approved schedule changes.
+                          Choose the student, seat pool, dates, and days. The preview confirms what will be blocked.
                         </p>
                       </div>
                     </div>
                   </AccordionTrigger>
                   <AccordionContent className="pt-5">
-                    <div className="grid gap-4 lg:grid-cols-4">
-                      <div className="space-y-2">
-                        <Label htmlFor="student-name">Student name</Label>
-                        <Input
-                          id="student-name"
-                          value={holdForm.studentName}
-                          onChange={(event) => setHoldForm((prev) => ({ ...prev, studentName: event.target.value }))}
-                          placeholder="Resident student"
-                        />
+                    <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_340px]">
+                      <div className="space-y-4">
+                        <section className="rounded-md border border-border bg-background p-4">
+                          <div className="flex items-start gap-3">
+                            <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-primary text-sm font-semibold text-primary-foreground">1</span>
+                            <div>
+                              <h3 className="font-heading text-base font-bold text-foreground">Student or booking source</h3>
+                              <p className="text-sm text-muted-foreground">Use the student name for residents, or the customer/source for a manual booking.</p>
+                            </div>
+                          </div>
+                          <div className="mt-4 grid gap-4 md:grid-cols-2">
+                            <div className="space-y-2">
+                              <Label htmlFor="student-name">Name shown on calendar</Label>
+                              <Input
+                                id="student-name"
+                                value={holdForm.studentName}
+                                onChange={(event) => setHoldForm((prev) => ({ ...prev, studentName: event.target.value }))}
+                                placeholder="Resident name or WhatsApp customer"
+                              />
+                            </div>
+                            <div className="space-y-2">
+                              <Label htmlFor="student-email">Email, optional</Label>
+                              <Input
+                                id="student-email"
+                                value={holdForm.studentEmail}
+                                onChange={(event) => setHoldForm((prev) => ({ ...prev, studentEmail: event.target.value }))}
+                                placeholder="student@example.com"
+                              />
+                            </div>
+                          </div>
+                        </section>
+
+                        <section className="rounded-md border border-border bg-background p-4">
+                          <div className="flex items-start gap-3">
+                            <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-primary text-sm font-semibold text-primary-foreground">2</span>
+                            <div>
+                              <h3 className="font-heading text-base font-bold text-foreground">Seat pool to block</h3>
+                              <p className="text-sm text-muted-foreground">Pick the class and time that should lose public seats.</p>
+                            </div>
+                          </div>
+                          <div className="mt-4 grid gap-4 lg:grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)_160px]">
+                            <div className="space-y-2">
+                              <Label>Class</Label>
+                              <Select
+                                value={holdForm.workshopId}
+                                onValueChange={(value) => {
+                                  const nextWorkshop = classOptions.find((workshop) => workshop.id === value) || classOptions[0]
+                                  const nextWeekdays = (nextWorkshop.schedule?.flatMap(parseScheduleDays) || []).slice(0, 1).map(String)
+                                  setHoldForm((prev) => ({
+                                    ...prev,
+                                    workshopId: value,
+                                    timeLabel: prev.allowCustomTime
+                                      ? prev.timeLabel
+                                      : nextWorkshop.schedule?.[0] ? parseTimeLabel(nextWorkshop.schedule[0]) : "",
+                                    seats: "1",
+                                    weekdays: prev.allowCustomTime ? prev.weekdays : nextWeekdays,
+                                  }))
+                                }}
+                              >
+                                <SelectTrigger>
+                                  <SelectValue />
+                                </SelectTrigger>
+                                <SelectContent>
+                                  {classOptions.map((workshop) => (
+                                    <SelectItem key={workshop.id} value={workshop.id}>{workshop.title}</SelectItem>
+                                  ))}
+                                </SelectContent>
+                              </Select>
+                            </div>
+
+                            <div className="space-y-2">
+                              <div className="flex flex-wrap items-center justify-between gap-2">
+                                <Label>Time</Label>
+                                <label className="flex items-center gap-2 text-xs font-medium text-muted-foreground">
+                                  <input
+                                    type="checkbox"
+                                    checked={holdForm.allowCustomTime}
+                                    onChange={(event) => {
+                                      const enabled = event.target.checked
+                                      setHoldForm((prev) => ({
+                                        ...prev,
+                                        allowCustomTime: enabled,
+                                        weekdays: enabled
+                                          ? prev.weekdays
+                                          : selectedWeekdays.slice(0, 1).map(String),
+                                        timeLabel: enabled
+                                          ? prev.timeLabel
+                                          : selectedTimes[0] || prev.timeLabel,
+                                      }))
+                                    }}
+                                    className="h-4 w-4 rounded border-border"
+                                  />
+                                  Approved custom time
+                                </label>
+                              </div>
+                              {holdForm.allowCustomTime ? (
+                                <Select value={holdForm.timeLabel} onValueChange={(value) => setHoldForm((prev) => ({ ...prev, timeLabel: value }))}>
+                                  <SelectTrigger>
+                                    <SelectValue />
+                                  </SelectTrigger>
+                                  <SelectContent>
+                                    {allKnownTimeLabels.map((time) => (
+                                      <SelectItem key={time} value={time}>{time}</SelectItem>
+                                    ))}
+                                  </SelectContent>
+                                </Select>
+                              ) : selectedTimes.length > 0 ? (
+                                <Select value={holdForm.timeLabel} onValueChange={(value) => setHoldForm((prev) => ({ ...prev, timeLabel: value }))}>
+                                  <SelectTrigger>
+                                    <SelectValue />
+                                  </SelectTrigger>
+                                  <SelectContent>
+                                    {selectedTimes.map((time) => (
+                                      <SelectItem key={time} value={time}>{time}</SelectItem>
+                                    ))}
+                                  </SelectContent>
+                                </Select>
+                              ) : (
+                                <Input
+                                  value={holdForm.timeLabel}
+                                  onChange={(event) => setHoldForm((prev) => ({ ...prev, timeLabel: event.target.value }))}
+                                  placeholder="10:00 - 12:00 PM"
+                                />
+                              )}
+                              <p className="text-xs leading-relaxed text-muted-foreground">
+                                {holdForm.allowCustomTime
+                                  ? "Use only when an admin approved a resident or manual booking outside the normal class times."
+                                  : "Regular mode shows times that belong to the selected class."}
+                              </p>
+                            </div>
+
+                            <div className="space-y-2">
+                              <Label htmlFor="hold-seats">Seats to hold</Label>
+                              <Select value={holdForm.seats} onValueChange={(value) => setHoldForm((prev) => ({ ...prev, seats: value }))}>
+                                <SelectTrigger id="hold-seats">
+                                  <SelectValue />
+                                </SelectTrigger>
+                                <SelectContent>
+                                  {Array.from({ length: maxSeats }, (_, index) => index + 1).map((seat) => (
+                                    <SelectItem key={seat} value={seat.toString()}>{seat}</SelectItem>
+                                  ))}
+                                </SelectContent>
+                              </Select>
+                            </div>
+                          </div>
+                        </section>
+
+                        <section className="rounded-md border border-border bg-background p-4">
+                          <div className="flex items-start gap-3">
+                            <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-primary text-sm font-semibold text-primary-foreground">3</span>
+                            <div>
+                              <h3 className="font-heading text-base font-bold text-foreground">Dates and repeat days</h3>
+                              <p className="text-sm text-muted-foreground">Single-day holds use the same start and end date. Leave end date empty only for an ongoing resident schedule.</p>
+                            </div>
+                          </div>
+                          <div className="mt-4 grid gap-4 lg:grid-cols-2">
+                            <div className="space-y-2">
+                              <Label htmlFor="hold-start">Start date</Label>
+                              <Input
+                                id="hold-start"
+                                type="date"
+                                value={holdForm.startDate}
+                                onChange={(event) => setHoldForm((prev) => ({ ...prev, startDate: event.target.value }))}
+                              />
+                            </div>
+                            <div className="space-y-2">
+                              <Label htmlFor="hold-end">End date</Label>
+                              <Input
+                                id="hold-end"
+                                type="date"
+                                value={holdForm.endDate}
+                                onChange={(event) => setHoldForm((prev) => ({ ...prev, endDate: event.target.value }))}
+                              />
+                            </div>
+                            <div className="space-y-2 lg:col-span-2">
+                              <Label>Repeat on these days</Label>
+                              <div className="flex flex-wrap gap-2">
+                                {holdWeekdayChoices.map((day) => (
+                                  <button
+                                    key={day}
+                                    type="button"
+                                    onClick={() => toggleWeekday(day)}
+                                    className={`min-h-11 min-w-14 rounded-md border px-3 py-2 text-sm font-medium transition ${
+                                      holdForm.weekdays.includes(day.toString())
+                                        ? "border-primary bg-primary text-primary-foreground"
+                                        : "border-border bg-background text-muted-foreground hover:text-foreground"
+                                    }`}
+                                  >
+                                    {dayNames[day].slice(0, 3)}
+                                  </button>
+                                ))}
+                              </div>
+                            </div>
+                            <div className="space-y-2 lg:col-span-2">
+                              <Label htmlFor="hold-notes">Internal notes</Label>
+                              <Textarea
+                                id="hold-notes"
+                                value={holdForm.notes}
+                                onChange={(event) => setHoldForm((prev) => ({ ...prev, notes: event.target.value }))}
+                                placeholder="Payment status, source, schedule change reason, or staff notes"
+                                rows={3}
+                              />
+                            </div>
+                          </div>
+                        </section>
                       </div>
-                      <div className="space-y-2">
-                        <Label htmlFor="student-email">Email</Label>
-                        <Input
-                          id="student-email"
-                          value={holdForm.studentEmail}
-                          onChange={(event) => setHoldForm((prev) => ({ ...prev, studentEmail: event.target.value }))}
-                          placeholder="optional"
-                        />
-                      </div>
-                      <div className="space-y-2">
-                        <Label>Class slot</Label>
-                        <Select
-                          value={holdForm.workshopId}
-                          onValueChange={(value) => {
-                            const nextWorkshop = classOptions.find((workshop) => workshop.id === value) || classOptions[0]
-                            const nextWeekdays = (nextWorkshop.schedule?.flatMap(parseScheduleDays) || []).slice(0, 1).map(String)
-                            setHoldForm((prev) => ({
-                              ...prev,
-                              workshopId: value,
-                              timeLabel: prev.allowCustomTime
-                                ? prev.timeLabel
-                                : nextWorkshop.schedule?.[0] ? parseTimeLabel(nextWorkshop.schedule[0]) : "",
-                              seats: "1",
-                              weekdays: prev.allowCustomTime ? prev.weekdays : nextWeekdays,
-                            }))
-                          }}
-                        >
-                          <SelectTrigger>
-                            <SelectValue />
-                          </SelectTrigger>
-                          <SelectContent>
-                            {classOptions.map((workshop) => (
-                              <SelectItem key={workshop.id} value={workshop.id}>{workshop.title}</SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
-                      </div>
-                      <div className="space-y-2">
-                        <div className="flex flex-wrap items-center justify-between gap-2">
-                          <Label>Time</Label>
-                          <label className="flex items-center gap-2 text-xs font-medium text-muted-foreground">
-                            <input
-                              type="checkbox"
-                              checked={holdForm.allowCustomTime}
-                              onChange={(event) => {
-                                const enabled = event.target.checked
-                                setHoldForm((prev) => ({
-                                  ...prev,
-                                  allowCustomTime: enabled,
-                                  weekdays: enabled
-                                    ? prev.weekdays
-                                    : selectedWeekdays.slice(0, 1).map(String),
-                                  timeLabel: enabled
-                                    ? prev.timeLabel
-                                    : selectedTimes[0] || prev.timeLabel,
-                                }))
-                              }}
-                              className="h-4 w-4 rounded border-border"
-                            />
-                            Use any studio time
-                          </label>
+
+                      <aside className="rounded-md border border-border bg-muted/30 p-4 xl:sticky xl:top-4 xl:self-start">
+                        <div className="flex items-center gap-2">
+                          <CalendarPlus className="h-4 w-4 text-primary" />
+                          <h3 className="font-heading text-base font-bold text-foreground">Hold preview</h3>
                         </div>
-                        {holdForm.allowCustomTime ? (
-                          <Select value={holdForm.timeLabel} onValueChange={(value) => setHoldForm((prev) => ({ ...prev, timeLabel: value }))}>
-                            <SelectTrigger>
-                              <SelectValue />
-                            </SelectTrigger>
-                            <SelectContent>
-                              {allKnownTimeLabels.map((time) => (
-                                <SelectItem key={time} value={time}>{time}</SelectItem>
-                              ))}
-                            </SelectContent>
-                          </Select>
-                        ) : selectedTimes.length > 0 ? (
-                          <Select value={holdForm.timeLabel} onValueChange={(value) => setHoldForm((prev) => ({ ...prev, timeLabel: value }))}>
-                            <SelectTrigger>
-                              <SelectValue />
-                            </SelectTrigger>
-                            <SelectContent>
-                              {selectedTimes.map((time) => (
-                                <SelectItem key={time} value={time}>{time}</SelectItem>
-                              ))}
-                            </SelectContent>
-                          </Select>
-                        ) : (
-                          <Input
-                            value={holdForm.timeLabel}
-                            onChange={(event) => setHoldForm((prev) => ({ ...prev, timeLabel: event.target.value }))}
-                            placeholder="10:00 - 12:00 PM"
-                          />
-                        )}
-                        {holdForm.allowCustomTime && (
-                          <p className="text-xs leading-relaxed text-muted-foreground">
-                            Use this for approved resident schedule changes. It still blocks the shared seat pool for that exact date and time.
+                        <div className="mt-4 space-y-3 text-sm">
+                          <div>
+                            <p className="text-xs uppercase tracking-wide text-muted-foreground">Name</p>
+                            <p className="font-medium text-foreground">{holdForm.studentName.trim() || "Add a name"}</p>
+                          </div>
+                          <div>
+                            <p className="text-xs uppercase tracking-wide text-muted-foreground">Class and time</p>
+                            <p className="font-medium text-foreground">{selectedWorkshop?.title || holdForm.workshopId}</p>
+                            <p className="text-muted-foreground">{holdForm.timeLabel || "Choose a time"} · {holdPreviewMode}</p>
+                          </div>
+                          <div>
+                            <p className="text-xs uppercase tracking-wide text-muted-foreground">Dates</p>
+                            <p className="font-medium text-foreground">{holdPreviewDateRange}</p>
+                            <p className="text-muted-foreground">{holdPreviewDays}</p>
+                          </div>
+                          <div className="rounded-md border border-border bg-background p-3">
+                            <p className="text-xs uppercase tracking-wide text-muted-foreground">Public availability impact</p>
+                            <p className="mt-1 font-medium text-foreground">
+                              Blocks {holdPreviewSeats} seat{holdPreviewSeats === 1 ? "" : "s"} for every matching date and time.
+                            </p>
+                          </div>
+                        </div>
+
+                        {holdError && (
+                          <p className="mt-4 rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive">
+                            {holdError}
                           </p>
                         )}
-                      </div>
-                      <div className="space-y-2">
-                        <Label htmlFor="hold-seats">Seats held</Label>
-                        <Select value={holdForm.seats} onValueChange={(value) => setHoldForm((prev) => ({ ...prev, seats: value }))}>
-                          <SelectTrigger id="hold-seats">
-                            <SelectValue />
-                          </SelectTrigger>
-                          <SelectContent>
-                            {Array.from({ length: maxSeats }, (_, index) => index + 1).map((seat) => (
-                              <SelectItem key={seat} value={seat.toString()}>{seat}</SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
-                      </div>
-                      <div className="space-y-2">
-                        <Label htmlFor="hold-start">Start date</Label>
-                        <Input
-                          id="hold-start"
-                          type="date"
-                          value={holdForm.startDate}
-                          onChange={(event) => setHoldForm((prev) => ({ ...prev, startDate: event.target.value }))}
-                        />
-                      </div>
-                      <div className="space-y-2">
-                        <Label htmlFor="hold-end">End date</Label>
-                        <Input
-                          id="hold-end"
-                          type="date"
-                          value={holdForm.endDate}
-                          onChange={(event) => setHoldForm((prev) => ({ ...prev, endDate: event.target.value }))}
-                        />
-                      </div>
-                      <div className="space-y-2">
-                        <Label>Class days</Label>
-                        <div className="flex flex-wrap gap-2">
-                          {holdWeekdayChoices.map((day) => (
-                            <button
-                              key={day}
-                              type="button"
-                              onClick={() => toggleWeekday(day)}
-                              className={`rounded-md border px-3 py-2 text-xs font-medium transition ${
-                                holdForm.weekdays.includes(day.toString())
-                                  ? "border-primary bg-primary text-primary-foreground"
-                                  : "border-border bg-background text-muted-foreground hover:text-foreground"
-                              }`}
-                            >
-                              {dayNames[day].slice(0, 3)}
-                            </button>
-                          ))}
-                        </div>
-                      </div>
-                    </div>
 
-                    <div className="mt-4 grid gap-4 lg:grid-cols-[1fr_auto] lg:items-end">
-                      <div className="space-y-2">
-                        <Label htmlFor="hold-notes">Notes</Label>
-                        <Textarea
-                          id="hold-notes"
-                          value={holdForm.notes}
-                          onChange={(event) => setHoldForm((prev) => ({ ...prev, notes: event.target.value }))}
-                          placeholder="Optional schedule notes"
-                          rows={2}
-                        />
-                      </div>
-                      <div className="flex flex-col gap-2 sm:flex-row lg:flex-col">
-                        <Button
-                          onClick={saveHold}
-                          disabled={savingHold || !holdForm.studentName || !holdForm.startDate || holdForm.weekdays.length === 0}
-                          className="h-10"
-                        >
-                          {savingHold && <Loader2 className="h-4 w-4 animate-spin" />}
-                          {editingHoldId ? "Update Hold" : "Add Hold"}
-                        </Button>
-                        {editingHoldId && (
+                        <div className="mt-4 space-y-2">
                           <Button
-                            type="button"
-                            variant="outline"
-                            onClick={resetHoldForm}
-                            disabled={savingHold}
-                            className="h-10"
+                            onClick={saveHold}
+                            disabled={savingHold || !holdForm.studentName || !holdForm.startDate || holdForm.weekdays.length === 0}
+                            className="h-11 w-full"
                           >
-                            Cancel edit
+                            {savingHold && <Loader2 className="h-4 w-4 animate-spin" />}
+                            {editingHoldId ? "Update seat hold" : "Save seat hold"}
                           </Button>
-                        )}
-                      </div>
+                          {editingHoldId && (
+                            <Button
+                              type="button"
+                              variant="outline"
+                              onClick={resetHoldForm}
+                              disabled={savingHold}
+                              className="h-11 w-full"
+                            >
+                              Cancel edit
+                            </Button>
+                          )}
+                        </div>
+                      </aside>
                     </div>
-                    {holdError && <p className="mt-3 text-sm text-destructive">{holdError}</p>}
                   </AccordionContent>
                 </AccordionItem>
               </Accordion>
