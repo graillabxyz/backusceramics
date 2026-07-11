@@ -8,17 +8,24 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Textarea } from "@/components/ui/textarea"
 import { Label } from "@/components/ui/label"
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import {
-  ArrowLeft, Loader2, Upload, Plus, Clock, User, MapPin, Mail, Phone, Package, ImageIcon,
+  ArrowLeft, Loader2, Upload, Plus, Clock, User, MapPin, Mail, Phone, Package,
+  FileText, Download, X,
 } from "lucide-react"
 import Link from "next/link"
+import {
+  formatAttachmentSize,
+  parseOrderAttachments,
+  parseOrderImageUrls,
+  type OrderAttachment,
+} from "@/lib/order-attachments"
 
 interface OrderUpdate {
   id: string
   title: string
   description: string | null
   images: string | null
+  attachments: string | null
   createdAt: string
 }
 
@@ -66,7 +73,8 @@ export default function OrderDetailPage({ params }: { params: Promise<{ id: stri
   const [showUpdateForm, setShowUpdateForm] = useState(false)
   const [updateTitle, setUpdateTitle] = useState("")
   const [updateDescription, setUpdateDescription] = useState("")
-  const [updateImages, setUpdateImages] = useState<File[]>([])
+  const [updateFiles, setUpdateFiles] = useState<File[]>([])
+  const [updateError, setUpdateError] = useState("")
   const fileInputRef = useRef<HTMLInputElement>(null)
 
   useEffect(() => {
@@ -110,18 +118,23 @@ export default function OrderDetailPage({ params }: { params: Promise<{ id: stri
     e.preventDefault()
     if (!updateTitle.trim()) return
     setAddingUpdate(true)
+    setUpdateError("")
 
     try {
-      // For now, upload images as base64 (local storage)
       const imageUrls: string[] = []
-      for (const file of updateImages) {
+      const attachments: OrderAttachment[] = []
+      for (const file of updateFiles) {
         const formData = new FormData()
         formData.append("file", file)
-        const uploadRes = await fetch("/api/upload", { method: "POST", body: formData })
-        if (uploadRes.ok) {
-          const { url } = await uploadRes.json()
-          imageUrls.push(url)
+        const isPdf = file.type === "application/pdf" || file.name.toLowerCase().endsWith(".pdf")
+        const endpoint = isPdf ? `/api/orders/${id}/attachments` : "/api/upload"
+        const uploadRes = await fetch(endpoint, { method: "POST", body: formData })
+        const uploadData = await uploadRes.json().catch(() => ({}))
+        if (!uploadRes.ok) {
+          throw new Error(uploadData.error || `${file.name} could not be uploaded`)
         }
+        if (isPdf) attachments.push(uploadData as OrderAttachment)
+        else if (uploadData.url) imageUrls.push(uploadData.url)
       }
 
       const res = await fetch(`/api/orders/${id}/updates`, {
@@ -131,18 +144,23 @@ export default function OrderDetailPage({ params }: { params: Promise<{ id: stri
           title: updateTitle,
           description: updateDescription || null,
           images: imageUrls.length > 0 ? imageUrls : null,
+          attachments: attachments.length > 0 ? attachments : null,
         }),
       })
 
-      if (res.ok) {
-        await fetchOrder()
-        setUpdateTitle("")
-        setUpdateDescription("")
-        setUpdateImages([])
-        setShowUpdateForm(false)
+      const responseData = await res.json().catch(() => ({}))
+      if (!res.ok) {
+        throw new Error(responseData.error || "The update could not be posted")
       }
+
+      await fetchOrder()
+      setUpdateTitle("")
+      setUpdateDescription("")
+      setUpdateFiles([])
+      setShowUpdateForm(false)
     } catch (err) {
       console.error("Failed to add update:", err)
+      setUpdateError(err instanceof Error ? err.message : "The update could not be posted. Please try again.")
     } finally {
       setAddingUpdate(false)
     }
@@ -340,14 +358,34 @@ export default function OrderDetailPage({ params }: { params: Promise<{ id: stri
                 />
               </div>
               <div className="space-y-2">
-                <Label>Images</Label>
+                <Label>Photos and PDF documents</Label>
                 <input
                   type="file"
                   ref={fileInputRef}
                   onChange={(e) => {
-                    if (e.target.files) setUpdateImages(Array.from(e.target.files))
+                    const files = Array.from(e.target.files || [])
+                    const invalidFile = files.find((file) => {
+                      const isPdf = file.type === "application/pdf" || file.name.toLowerCase().endsWith(".pdf")
+                      return !file.type.startsWith("image/") && !isPdf
+                    })
+                    const oversizedFile = files.find((file) => {
+                      const isPdf = file.type === "application/pdf" || file.name.toLowerCase().endsWith(".pdf")
+                      return file.size > (isPdf ? 12 : 8) * 1024 * 1024
+                    })
+                    if (invalidFile) {
+                      setUpdateError(`${invalidFile.name} is not an image or PDF.`)
+                      e.target.value = ""
+                      return
+                    }
+                    if (oversizedFile) {
+                      setUpdateError(`${oversizedFile.name} is too large. Images can be 8MB and PDFs can be 12MB.`)
+                      e.target.value = ""
+                      return
+                    }
+                    setUpdateError(files.length > 10 ? "Choose no more than 10 files for one update." : "")
+                    setUpdateFiles(files.slice(0, 10))
                   }}
-                  accept="image/*"
+                  accept="image/*,application/pdf,.pdf"
                   multiple
                   className="hidden"
                 />
@@ -358,20 +396,43 @@ export default function OrderDetailPage({ params }: { params: Promise<{ id: stri
                   onClick={() => fileInputRef.current?.click()}
                 >
                   <Upload className="h-4 w-4 mr-2" />
-                  {updateImages.length > 0 ? `${updateImages.length} selected` : "Upload Photos"}
+                  {updateFiles.length > 0 ? `${updateFiles.length} selected` : "Choose files"}
                 </Button>
-                {updateImages.length > 0 && (
-                  <div className="flex gap-2 mt-2">
-                    {updateImages.map((file, i) => (
-                      <div key={i} className="w-16 h-16 rounded border overflow-hidden bg-muted">
-                        <img
-                          src={URL.createObjectURL(file)}
-                          alt=""
-                          className="w-full h-full object-cover"
-                        />
-                      </div>
-                    ))}
+                <p className="text-xs text-muted-foreground">Up to 10 files. Images: 8MB each. PDFs: 12MB each.</p>
+                {updateFiles.length > 0 && (
+                  <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-3">
+                    {updateFiles.map((file, i) => {
+                      const isPdf = file.type === "application/pdf" || file.name.toLowerCase().endsWith(".pdf")
+                      return (
+                        <div key={`${file.name}-${file.lastModified}`} className="flex min-w-0 items-center gap-3 rounded-md border bg-background p-2">
+                          {isPdf ? (
+                            <FileText className="h-9 w-9 shrink-0 text-primary" />
+                          ) : (
+                            <img src={URL.createObjectURL(file)} alt="" className="h-10 w-10 shrink-0 rounded object-cover" />
+                          )}
+                          <div className="min-w-0 flex-1">
+                            <p className="truncate text-sm font-medium">{file.name}</p>
+                            <p className="text-xs text-muted-foreground">{formatAttachmentSize(file.size)}</p>
+                          </div>
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="icon"
+                            className="h-8 w-8 shrink-0"
+                            aria-label={`Remove ${file.name}`}
+                            onClick={() => setUpdateFiles((current) => current.filter((_, index) => index !== i))}
+                          >
+                            <X className="h-4 w-4" />
+                          </Button>
+                        </div>
+                      )
+                    })}
                   </div>
+                )}
+                {updateError && (
+                  <p role="alert" className="rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive">
+                    {updateError}
+                  </p>
                 )}
               </div>
               <div className="flex gap-2">
@@ -394,7 +455,8 @@ export default function OrderDetailPage({ params }: { params: Promise<{ id: stri
           ) : (
             <div className="space-y-6">
               {order.updates.map((update) => {
-                const images = update.images ? JSON.parse(update.images) as string[] : []
+                const images = parseOrderImageUrls(update.images)
+                const attachments = parseOrderAttachments(update.attachments)
                 return (
                   <div key={update.id} className="relative pl-6 border-l-2 border-border">
                     <div className="absolute left-[-5px] top-1 w-2 h-2 rounded-full bg-primary" />
@@ -412,6 +474,26 @@ export default function OrderDetailPage({ params }: { params: Promise<{ id: stri
                             <div key={i} className="w-24 h-24 rounded-lg overflow-hidden border bg-muted">
                               <img src={url} alt="" className="w-full h-full object-cover" />
                             </div>
+                          ))}
+                        </div>
+                      )}
+                      {attachments.length > 0 && (
+                        <div className="mt-3 grid gap-2 sm:grid-cols-2 xl:grid-cols-3">
+                          {attachments.map((attachment) => (
+                            <a
+                              key={attachment.path}
+                              href={`/api/orders/${order.id}/attachments?path=${encodeURIComponent(attachment.path)}`}
+                              target="_blank"
+                              rel="noreferrer"
+                              className="flex min-w-0 items-center gap-3 rounded-md border bg-background p-3 transition-colors hover:bg-muted/60"
+                            >
+                              <FileText className="h-8 w-8 shrink-0 text-primary" />
+                              <span className="min-w-0 flex-1">
+                                <span className="block truncate text-sm font-medium text-foreground">{attachment.name}</span>
+                                <span className="block text-xs text-muted-foreground">PDF · {formatAttachmentSize(attachment.size)}</span>
+                              </span>
+                              <Download className="h-4 w-4 shrink-0 text-muted-foreground" />
+                            </a>
                           ))}
                         </div>
                       )}

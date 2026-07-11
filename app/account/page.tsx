@@ -8,6 +8,8 @@ import {
   CheckCircle2,
   ClipboardList,
   Clock,
+  Download,
+  FileText,
   GraduationCap,
   Loader2,
   PackageCheck,
@@ -18,11 +20,14 @@ import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { useAuth } from "@/lib/auth-context"
 import { formatPrice, workshops } from "@/lib/classes-data"
+import { formatAttachmentSize, parseOrderAttachments, parseOrderImageUrls } from "@/lib/order-attachments"
 
 interface OrderUpdate {
   id: string
   title: string
   description?: string | null
+  images?: string | null
+  attachments?: string | null
   createdAt: string
 }
 
@@ -99,6 +104,64 @@ function orderProgress(status: string) {
   if (status === "SHIPPED" || status === "COMPLETED") return 100
   if (index < 0) return 12
   return Math.max(12, Math.round(((index + 1) / orderSteps.length) * 100))
+}
+
+function OrderUpdates({ orderId, updates }: { orderId: string; updates: OrderUpdate[] }) {
+  if (updates.length === 0) return null
+
+  return (
+    <details className="group mt-4 border-t border-border pt-3">
+      <summary className="cursor-pointer list-none text-sm font-medium text-primary hover:underline">
+        View {updates.length} studio update{updates.length === 1 ? "" : "s"}
+      </summary>
+      <div className="mt-4 space-y-5">
+        {updates.map((update) => {
+          const images = parseOrderImageUrls(update.images)
+          const attachments = parseOrderAttachments(update.attachments)
+          return (
+            <article key={update.id} className="border-l-2 border-primary/30 pl-4">
+              <div className="flex flex-wrap items-baseline justify-between gap-2">
+                <h4 className="text-sm font-semibold text-foreground">{update.title}</h4>
+                <time className="text-xs text-muted-foreground">{formatDate(update.createdAt)}</time>
+              </div>
+              {update.description && (
+                <p className="mt-2 whitespace-pre-wrap text-sm text-muted-foreground">{update.description}</p>
+              )}
+              {images.length > 0 && (
+                <div className="mt-3 flex flex-wrap gap-2">
+                  {images.map((url) => (
+                    <a key={url} href={url} target="_blank" rel="noreferrer" className="block h-20 w-20 overflow-hidden rounded-md border bg-muted">
+                      <img src={url} alt="Order progress" className="h-full w-full object-cover" />
+                    </a>
+                  ))}
+                </div>
+              )}
+              {attachments.length > 0 && (
+                <div className="mt-3 grid gap-2 sm:grid-cols-2">
+                  {attachments.map((attachment) => (
+                    <a
+                      key={attachment.path}
+                      href={`/api/orders/${orderId}/attachments?path=${encodeURIComponent(attachment.path)}`}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="flex min-w-0 items-center gap-3 rounded-md border bg-muted/30 p-3 transition-colors hover:bg-muted"
+                    >
+                      <FileText className="h-7 w-7 shrink-0 text-primary" />
+                      <span className="min-w-0 flex-1">
+                        <span className="block truncate text-sm font-medium text-foreground">{attachment.name}</span>
+                        <span className="block text-xs text-muted-foreground">PDF · {formatAttachmentSize(attachment.size)}</span>
+                      </span>
+                      <Download className="h-4 w-4 shrink-0 text-muted-foreground" />
+                    </a>
+                  ))}
+                </div>
+              )}
+            </article>
+          )
+        })}
+      </div>
+    </details>
+  )
 }
 
 export default function AccountDashboardPage() {
@@ -368,6 +431,7 @@ export default function AccountDashboardPage() {
                     <div className="mt-3 h-1.5 rounded-full bg-muted">
                       <div className="h-1.5 rounded-full bg-primary" style={{ width: `${orderProgress(order.status)}%` }} />
                     </div>
+                    <OrderUpdates orderId={order.id} updates={order.updates || []} />
                   </div>
                 ))}
               </div>

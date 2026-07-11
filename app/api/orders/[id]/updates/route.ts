@@ -3,6 +3,7 @@ import { auth } from "@/lib/auth"
 import { prisma } from "@/lib/prisma"
 import { isFullAdminRole } from "@/lib/permissions"
 import { cleanString, isRequestBodyTooLarge } from "@/lib/server-security"
+import type { OrderAttachment } from "@/lib/order-attachments"
 
 const MAX_ORDER_UPDATE_BODY_BYTES = 64 * 1024
 
@@ -22,11 +23,29 @@ export async function POST(
 
   const body = await req.json().catch(() => null)
   if (!body || typeof body !== "object") return NextResponse.json({ error: "Order update is not valid JSON" }, { status: 400 })
-  const { title, description, images } = body
+  const { title, description, images, attachments } = body
   const updateTitle = cleanString(title, 160)
   const updateDescription = cleanString(description, 4000)
   const imageUrls = Array.isArray(images)
     ? images.map((image) => cleanString(image, 500)).filter(Boolean).slice(0, 20)
+    : []
+  const orderAttachments: OrderAttachment[] = Array.isArray(attachments)
+    ? attachments.flatMap((attachment) => {
+        if (!attachment || typeof attachment !== "object") return []
+        const name = cleanString(attachment.name, 160)
+        const storagePath = cleanString(attachment.path, 500)
+        const size = Number(attachment.size)
+        if (
+          !name
+          || !storagePath.startsWith(`orders/${id}/`)
+          || !storagePath.endsWith(".pdf")
+          || !Number.isFinite(size)
+          || size <= 0
+          || size > 12 * 1024 * 1024
+          || attachment.mimeType !== "application/pdf"
+        ) return []
+        return [{ name, path: storagePath, size, mimeType: "application/pdf" as const }]
+      }).slice(0, 10)
     : []
 
   if (!updateTitle) {
@@ -42,6 +61,7 @@ export async function POST(
       title: updateTitle,
       description: updateDescription || null,
       images: imageUrls.length > 0 ? JSON.stringify(imageUrls) : null,
+      attachments: orderAttachments.length > 0 ? JSON.stringify(orderAttachments) : null,
     },
   })
 

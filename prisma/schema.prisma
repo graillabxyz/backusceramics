@@ -115,6 +115,7 @@ model OrderUpdate {
   title       String
   description String?
   images      String? // JSON array of image URLs
+  attachments String? // JSON array of private order attachment metadata
 
   createdAt DateTime @default(now())
 }
