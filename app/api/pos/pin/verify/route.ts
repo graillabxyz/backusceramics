@@ -4,6 +4,7 @@ import { canUsePos } from "@/lib/permissions"
 import { prisma } from "@/lib/prisma"
 import { isValidPosPin, POS_PIN_LOCK_SECONDS, verifyPosPin } from "@/lib/pos-pin"
 import { clearPosOperatorCookie, setPosOperatorCookie } from "@/lib/pos-operator-session"
+import { checkRateLimit, isRequestBodyTooLarge, rateLimitHeaders } from "@/lib/server-security"
 
 const POS_PIN_ROLES = ["OWNER", "ADMIN", "MANAGER", "POS_OPERATOR"]
 
@@ -11,6 +12,18 @@ export async function POST(req: NextRequest) {
   const session = await auth()
   if (!session || !canUsePos(session.user.role)) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
+  }
+
+  if (isRequestBodyTooLarge(req, 4 * 1024)) {
+    return NextResponse.json({ error: "PIN request is too large" }, { status: 413 })
+  }
+
+  const rateLimit = checkRateLimit(req, { key: "pos-pin", limit: 10, windowMs: 5 * 60_000 })
+  if (!rateLimit.allowed) {
+    return NextResponse.json(
+      { error: "Too many PIN attempts. Wait a few minutes before trying again.", code: "POS_PIN_RATE_LIMITED" },
+      { status: 429, headers: rateLimitHeaders(rateLimit.retryAfterSeconds) }
+    )
   }
 
   const { pin } = await req.json().catch(() => ({}))

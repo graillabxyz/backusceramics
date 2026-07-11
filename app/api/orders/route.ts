@@ -3,10 +3,19 @@ import { auth } from "@/lib/auth"
 import { prisma } from "@/lib/prisma"
 import { isFullAdminRole } from "@/lib/permissions"
 import { Resend } from "resend"
-import { cleanString, escapeHtml, isRequestBodyTooLarge, safeHeaderValue } from "@/lib/server-security"
+import {
+  checkRateLimit,
+  cleanString,
+  escapeHtml,
+  isRequestBodyTooLarge,
+  isValidEmailAddress,
+  rateLimitHeaders,
+  safeHeaderValue,
+} from "@/lib/server-security"
 
 const resend = new Resend(process.env.RESEND_API_KEY || "re_placeholder")
 const MAX_ORDER_BODY_BYTES = 128 * 1024
+const CUSTOM_ORDER_MINIMUM_IDR = 3_500_000
 
 export async function GET() {
   const session = await auth()
@@ -32,6 +41,14 @@ export async function GET() {
 }
 
 export async function POST(req: NextRequest) {
+  const rateLimit = checkRateLimit(req, { key: "order-inquiry", limit: 3, windowMs: 30 * 60_000 })
+  if (!rateLimit.allowed) {
+    return NextResponse.json(
+      { error: "Too many order requests. Please wait and try again." },
+      { status: 429, headers: rateLimitHeaders(rateLimit.retryAfterSeconds) }
+    )
+  }
+
   if (isRequestBodyTooLarge(req, MAX_ORDER_BODY_BYTES)) {
     return NextResponse.json({ error: "Order request is too large" }, { status: 413 })
   }
@@ -46,9 +63,9 @@ export async function POST(req: NextRequest) {
   const contactLocation = cleanString(contact?.location, 180)
   const orderPieces = Array.isArray(pieces) ? pieces.slice(0, 50) : []
   const orderPreferences = preferences && typeof preferences === "object" ? preferences : {}
-  const minimumOrderIdr = Number(preferences?.minimumOrderIdr || 3500000)
+  const minimumOrderIdr = CUSTOM_ORDER_MINIMUM_IDR
 
-  if (!contactName || !contactEmail) {
+  if (!contactName || !isValidEmailAddress(contactEmail)) {
     return NextResponse.json({ error: "Missing required contact fields" }, { status: 400 })
   }
 

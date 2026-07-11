@@ -9,9 +9,12 @@ import {
   XenditApiError,
   XenditConfigurationError,
 } from "@/lib/xendit"
-import { isRequestBodyTooLarge } from "@/lib/server-security"
+import { checkRateLimit, isRequestBodyTooLarge, rateLimitHeaders } from "@/lib/server-security"
 import {
   classSeatPoolKey,
+  buildDefaultRangeSessions,
+  buildRangeSessionsFromSchedules,
+  type CalendarSession,
   getScheduleOffering,
   hasSessionStartPassed,
   normalizeTimeLabel,
@@ -20,6 +23,8 @@ import {
   parseWeekdays,
 } from "@/lib/class-schedule"
 import { recordAnalyticsEvent } from "@/lib/analytics-server"
+import type { Prisma } from "@prisma/client"
+import { getTrustedRequestOrigin } from "@/lib/request-origin"
 
 export const runtime = "nodejs"
 const MAX_PAYMENT_SESSION_BODY_BYTES = 64 * 1024
@@ -64,14 +69,59 @@ interface PaymentTrace {
   startedAt: number
 }
 
+type SeatAvailabilityDb = Pick<Prisma.TransactionClient, "classSchedule" | "classBooking" | "classHold">
+
+class SeatReservationConflict extends Error {}
+
+function resolveSlotWorkshopId(parentWorkshop: (typeof workshops)[number], requestedSlotWorkshopId?: string) {
+  if (!requestedSlotWorkshopId) return parentWorkshop.id
+  if (parentWorkshop.category !== "residency") {
+    return requestedSlotWorkshopId === parentWorkshop.id ? parentWorkshop.id : null
+  }
+
+  return ["beginner-wheel", "handbuilding"].includes(requestedSlotWorkshopId)
+    ? requestedSlotWorkshopId
+    : null
+}
+
+async function isPublishedMeeting({
+  dateKey,
+  timeLabel,
+  workshopId,
+  scheduleId,
+}: {
+  dateKey: string
+  timeLabel: string
+  workshopId: string
+  scheduleId?: string | null
+}) {
+  const date = parseDateKey(dateKey)
+  const schedules = await prisma.classSchedule.findMany({
+    where: {
+      status: "ACTIVE",
+      startDate: { lte: date },
+      OR: [{ endDate: null }, { endDate: { gte: date } }],
+    },
+  })
+  const sessions: CalendarSession[] = [
+    ...buildDefaultRangeSessions(date, date),
+    ...buildRangeSessionsFromSchedules(date, date, schedules),
+  ]
+
+  return sessions.some((session) => (
+    session.workshop.id === workshopId &&
+    session.dateKey === dateKey &&
+    normalizeTimeLabel(session.timeLabel) === normalizeTimeLabel(timeLabel) &&
+    (!scheduleId || session.scheduleId === scheduleId)
+  ))
+}
+
 function markPaymentStep(trace: PaymentTrace | undefined, step: string) {
   if (trace) trace.step = step
 }
 
-function tagPaymentResponse(response: NextResponse, trace: PaymentTrace) {
-  response.headers.set("x-payment-route-version", process.env.VERCEL_GIT_COMMIT_SHA || "local")
-  response.headers.set("x-payment-route-step", trace.step)
-  response.headers.set("x-payment-route-elapsed-ms", String(Date.now() - trace.startedAt))
+function tagPaymentResponse(response: NextResponse) {
+  response.headers.set("Cache-Control", "no-store")
   return response
 }
 
@@ -112,24 +162,12 @@ function toE164OrUndefined(value?: string) {
   return /^\+[1-9]\d{7,14}$/.test(trimmed) ? trimmed : undefined
 }
 
-function getOrigin(req: NextRequest) {
-  return req.headers.get("origin") || req.nextUrl.origin
-}
-
 function isHttpsUrl(value: string) {
   return value.startsWith("https://")
 }
 
 function getPaymentOrigin(req: NextRequest) {
-  const configuredSiteUrl = process.env.NEXT_PUBLIC_SITE_URL?.trim().replace(/\/$/, "")
-  const vercelProductionUrl = process.env.VERCEL_PROJECT_PRODUCTION_URL
-    ? `https://${process.env.VERCEL_PROJECT_PRODUCTION_URL.trim().replace(/\/$/, "")}`
-    : ""
-  const origin = getOrigin(req).replace(/\/$/, "")
-
-  if (configuredSiteUrl && isHttpsUrl(configuredSiteUrl)) return configuredSiteUrl
-  if (vercelProductionUrl && isHttpsUrl(vercelProductionUrl)) return vercelProductionUrl
-  return origin
+  return getTrustedRequestOrigin(req)
 }
 
 function safeInternalPath(value: unknown, fallback = "/classes/calendar") {
@@ -164,18 +202,20 @@ async function getAvailableSeats({
   dateKey,
   timeLabel,
   fallbackCapacity,
+  db = prisma,
 }: {
   workshopId: string
   scheduleId?: string | null
   dateKey: string
   timeLabel: string
   fallbackCapacity: number
+  db?: SeatAvailabilityDb
 }) {
   const sessionDate = parseDateKey(dateKey)
   let schedule = null
   if (scheduleId) {
     try {
-      schedule = await prisma.classSchedule.findUnique({ where: { id: scheduleId } })
+      schedule = await db.classSchedule.findUnique({ where: { id: scheduleId } })
     } catch (error) {
       console.error("Could not load schedule while checking payment availability", {
         error,
@@ -188,7 +228,7 @@ async function getAvailableSeats({
 
   let existingBookings: ExistingBookingSeat[] = []
   try {
-    existingBookings = await prisma.classBooking.findMany({
+    existingBookings = await db.classBooking.findMany({
       where: {
         ...activeBookingStatusWhere(),
         preferredDate: { startsWith: dateKey },
@@ -210,7 +250,7 @@ async function getAvailableSeats({
 
   let holds: { timeLabel: string; seats: number; weekdays: string }[] = []
   try {
-    holds = await prisma.classHold.findMany({
+    holds = await db.classHold.findMany({
       where: {
         status: "ACTIVE",
         startDate: { lte: sessionDate },
@@ -229,6 +269,7 @@ async function getAvailableSeats({
       dateKey,
       timeLabel,
     })
+    throw error
   }
 
   const key = classSeatPoolKey(dateKey, timeLabel)
@@ -307,9 +348,9 @@ async function handlePaymentSessionPost(req: NextRequest, trace?: PaymentTrace) 
     markPaymentStep(trace, "xendit-config")
     getXenditSecretKey()
   } catch (error) {
-    const message = error instanceof Error ? error.message : "Xendit is not configured yet"
+    console.error("Xendit payment configuration is unavailable", { error })
     return NextResponse.json(
-      { error: message, code: paymentErrorCodes.configurationMissing },
+      { error: "Payment is temporarily unavailable. Please try again shortly.", code: paymentErrorCodes.configurationMissing },
       { status: 503 }
     )
   }
@@ -376,12 +417,33 @@ async function handlePaymentSessionPost(req: NextRequest, trace?: PaymentTrace) 
         )
       }
 
-      const slotWorkshopId = meeting.slotWorkshopId || workshopId
+      const slotWorkshopId = resolveSlotWorkshopId(workshop, meeting.slotWorkshopId)
+      if (!slotWorkshopId) {
+        return NextResponse.json(
+          { error: "Selected studio slot does not belong to this program", code: paymentErrorCodes.invalidRequest },
+          { status: 400 }
+        )
+      }
       const slotWorkshop = getScheduleOffering(slotWorkshopId) || workshops.find((item) => item.id === slotWorkshopId)
       if (!slotWorkshop) {
         return NextResponse.json(
           { error: "Selected studio slot was not found", code: paymentErrorCodes.invalidRequest },
           { status: 404 }
+        )
+      }
+
+      if (!await isPublishedMeeting({
+        dateKey: meeting.dateKey,
+        timeLabel: meeting.timeLabel,
+        workshopId: slotWorkshopId,
+        scheduleId,
+      })) {
+        return NextResponse.json(
+          {
+            error: `${meeting.dateLabel || meeting.dateKey} at ${meeting.timeLabel} is not an available class time.`,
+            code: paymentErrorCodes.invalidRequest,
+          },
+          { status: 409 }
         )
       }
 
@@ -439,11 +501,37 @@ async function handlePaymentSessionPost(req: NextRequest, trace?: PaymentTrace) 
   let createdBookings: { id: string }[] = []
   try {
     markPaymentStep(trace, "reservation-prisma")
-    createdBookings = await prisma.$transaction(
-      meetings.map((meeting) =>
-        prisma.classBooking.create({
+    createdBookings = await prisma.$transaction(async (tx) => {
+      const seatPoolKeys = Array.from(new Set(meetings.map((meeting) => classSeatPoolKey(meeting.dateKey, meeting.timeLabel)))).sort()
+      for (const seatPoolKey of seatPoolKeys) {
+        await tx.$queryRaw`SELECT pg_advisory_xact_lock(hashtext(${seatPoolKey}))`
+      }
+
+      for (const meeting of meetings) {
+        const slotWorkshopId = resolveSlotWorkshopId(workshop, meeting.slotWorkshopId)
+        if (!slotWorkshopId) throw new SeatReservationConflict("Selected studio slot does not belong to this program")
+        const slotWorkshop = getScheduleOffering(slotWorkshopId) || workshops.find((item) => item.id === slotWorkshopId)
+        if (!slotWorkshop) throw new SeatReservationConflict("Selected studio slot was not found")
+
+        const availableSeats = await getAvailableSeats({
+          workshopId: slotWorkshopId,
+          scheduleId,
+          dateKey: meeting.dateKey,
+          timeLabel: meeting.timeLabel,
+          fallbackCapacity: slotWorkshop.maxParticipants ?? maxParticipants,
+          db: tx,
+        })
+        if (participants > availableSeats) {
+          throw new SeatReservationConflict(
+            `Only ${Math.max(availableSeats, 0)} ${availableSeats === 1 ? "seat is" : "seats are"} still available for ${meeting.dateLabel || meeting.dateKey} at ${meeting.timeLabel}.`
+          )
+        }
+      }
+
+      return Promise.all(meetings.map((meeting) =>
+        tx.classBooking.create({
           data: {
-            workshopId: meeting.slotWorkshopId || workshopId,
+            workshopId: resolveSlotWorkshopId(workshop, meeting.slotWorkshopId) || workshopId,
             ...(bookingScheduleId ? { scheduleId: bookingScheduleId } : {}),
             userId: attachLocalUserToBooking ? session.user.id : null,
             preferredDate: `${meeting.dateKey} · ${meeting.timeLabel}`,
@@ -456,8 +544,8 @@ async function handlePaymentSessionPost(req: NextRequest, trace?: PaymentTrace) 
             contactPhone: contactPhone || null,
           },
         })
-      )
-    )
+      ))
+    }, { timeout: 10_000 })
   } catch (error) {
     console.error("Could not reserve booking before Xendit payment with Prisma", {
       error,
@@ -465,6 +553,12 @@ async function handlePaymentSessionPost(req: NextRequest, trace?: PaymentTrace) 
       scheduleId,
       meetingCount: meetings.length,
     })
+    if (error instanceof SeatReservationConflict) {
+      return NextResponse.json(
+        { error: error.message, code: paymentErrorCodes.invalidRequest },
+        { status: 409 }
+      )
+    }
     return NextResponse.json(
       {
         error: "Could not reserve those class seats before payment. Please refresh and try again.",
@@ -614,13 +708,10 @@ async function handlePaymentSessionPost(req: NextRequest, trace?: PaymentTrace) 
       },
     }, req)
 
-	    return NextResponse.json(
+    return NextResponse.json(
       {
-        error: error instanceof Error ? error.message : "Could not start payment",
+        error: "Payment could not be started right now. Please try again shortly or message us on WhatsApp.",
         code: isConfigError ? paymentErrorCodes.configurationMissing : paymentErrorCodes.xenditInvoiceFailed,
-        xenditStatus: isXenditError ? error.status : undefined,
-        xenditCode: isXenditError ? error.xenditCode : undefined,
-        xenditMessage: isXenditError ? error.message : undefined,
       },
       { status: isConfigError ? 503 : 502 }
     )
@@ -628,6 +719,14 @@ async function handlePaymentSessionPost(req: NextRequest, trace?: PaymentTrace) 
 }
 
 export async function POST(req: NextRequest) {
+  const rateLimit = checkRateLimit(req, { key: "class-payment", limit: 10, windowMs: 10 * 60_000 })
+  if (!rateLimit.allowed) {
+    return NextResponse.json(
+      { error: "Too many payment attempts. Please wait a few minutes and try again.", code: "PAYMENT_RATE_LIMITED" },
+      { status: 429, headers: rateLimitHeaders(rateLimit.retryAfterSeconds) }
+    )
+  }
+
   const trace: PaymentTrace = {
     step: "received",
     startedAt: Date.now(),
@@ -635,7 +734,7 @@ export async function POST(req: NextRequest) {
 
   try {
     const response = await handlePaymentSessionPost(req, trace)
-    return tagPaymentResponse(response, trace)
+    return tagPaymentResponse(response)
   } catch (error) {
     console.error("Unhandled payment session route error", {
       error,
@@ -649,11 +748,8 @@ export async function POST(req: NextRequest) {
       {
         error: "Payment could not be started right now. Please try again shortly or message us on WhatsApp.",
         code: paymentErrorCodes.unhandled,
-        message: error instanceof Error ? error.message : undefined,
-        step: trace.step,
-        elapsedMs: Date.now() - trace.startedAt,
       },
       { status: 500 }
-    ), trace)
+    ))
   }
 }

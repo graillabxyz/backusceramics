@@ -35,24 +35,31 @@ export async function POST(req: NextRequest) {
   const validation = validateClassHoldPayload(data)
   if ("error" in validation) return NextResponse.json({ error: validation.error }, { status: validation.status })
   const holdData = validation.data
-  const capacityError = await validateClassHoldCapacity(holdData)
-  if (capacityError) return NextResponse.json({ error: capacityError.error }, { status: capacityError.status })
+  const result = await prisma.$transaction(async (tx) => {
+    const capacityError = await validateClassHoldCapacity(holdData, { db: tx, lockSeatPools: true })
+    if (capacityError) return { capacityError, hold: null }
 
-  const hold = await prisma.classHold.create({
-    data: {
-      createdBy: session.user.id,
-      studentName: holdData.studentName,
-      studentEmail: holdData.studentEmail,
-      workshopId: holdData.workshopId,
-      timeLabel: holdData.timeLabel,
-      seats: holdData.seats,
-      weekdays: JSON.stringify(holdData.weekdays),
-      startDate: holdData.startDate,
-      endDate: holdData.endDate,
-      notes: holdData.notes,
-      ...(holdData.status ? { status: holdData.status } : {}),
-    },
-  })
+    const hold = await tx.classHold.create({
+      data: {
+        createdBy: session.user.id,
+        studentName: holdData.studentName,
+        studentEmail: holdData.studentEmail,
+        workshopId: holdData.workshopId,
+        timeLabel: holdData.timeLabel,
+        seats: holdData.seats,
+        weekdays: JSON.stringify(holdData.weekdays),
+        startDate: holdData.startDate,
+        endDate: holdData.endDate,
+        notes: holdData.notes,
+        ...(holdData.status ? { status: holdData.status } : {}),
+      },
+    })
+    return { capacityError: null, hold }
+  }, { timeout: 10_000 })
 
-  return NextResponse.json(hold)
+  if (result.capacityError) {
+    return NextResponse.json({ error: result.capacityError.error }, { status: result.capacityError.status })
+  }
+
+  return NextResponse.json(result.hold)
 }

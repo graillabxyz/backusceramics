@@ -1,6 +1,14 @@
 import { Resend } from 'resend'
 import { NextRequest, NextResponse } from 'next/server'
-import { cleanString, escapeHtml, isRequestBodyTooLarge, safeHeaderValue } from "@/lib/server-security"
+import {
+  checkRateLimit,
+  cleanString,
+  escapeHtml,
+  isRequestBodyTooLarge,
+  isValidEmailAddress,
+  rateLimitHeaders,
+  safeHeaderValue,
+} from "@/lib/server-security"
 
 const resend = new Resend(process.env.RESEND_API_KEY || "re_placeholder")
 const MAX_SUBMIT_ORDER_BODY_BYTES = 128 * 1024
@@ -264,6 +272,14 @@ function buildEmailHTML(data: OrderPayload): string {
 
 export async function POST(req: NextRequest) {
   try {
+    const rateLimit = checkRateLimit(req, { key: "custom-order", limit: 3, windowMs: 30 * 60_000 })
+    if (!rateLimit.allowed) {
+      return NextResponse.json(
+        { error: "Too many order requests. Please wait and try again." },
+        { status: 429, headers: rateLimitHeaders(rateLimit.retryAfterSeconds) }
+      )
+    }
+
     if (isRequestBodyTooLarge(req, MAX_SUBMIT_ORDER_BODY_BYTES)) {
       return NextResponse.json({ error: 'Order request is too large' }, { status: 413 })
     }
@@ -275,7 +291,7 @@ export async function POST(req: NextRequest) {
       hasEmail: Boolean(data.contact?.email),
     })
 
-    if (!data.contact?.name || !data.contact?.email) {
+    if (!data.contact?.name || !isValidEmailAddress(data.contact?.email)) {
       return NextResponse.json({ error: 'Missing required contact fields' }, { status: 400 })
     }
 

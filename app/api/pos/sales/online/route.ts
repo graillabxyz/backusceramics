@@ -12,6 +12,7 @@ import {
 import { recordAnalyticsEvent } from "@/lib/analytics-server"
 import { cleanString, isRequestBodyTooLarge, safeHeaderValue } from "@/lib/server-security"
 import { getPosOperatorFromRequest } from "@/lib/pos-operator-session"
+import { getTrustedRequestOrigin } from "@/lib/request-origin"
 
 const MAX_POS_ONLINE_SALE_BODY_BYTES = 64 * 1024
 
@@ -37,12 +38,6 @@ function sanitizeReference(value: string) {
 
 function sanitizeCustomerName(value?: string | null) {
   return (value || "BackusCustomer").replace(/[^a-zA-Z0-9]/g, "").slice(0, 50) || "BackusCustomer"
-}
-
-function getOrigin(req: NextRequest) {
-  const configuredSiteUrl = process.env.NEXT_PUBLIC_SITE_URL?.trim().replace(/\/$/, "")
-  const requestOrigin = (req.headers.get("origin") || req.nextUrl.origin).replace(/\/$/, "")
-  return configuredSiteUrl?.startsWith("https://") ? configuredSiteUrl : requestOrigin
 }
 
 async function restorePendingSaleInventory(saleId: string) {
@@ -195,7 +190,7 @@ export async function POST(req: NextRequest) {
     })
 
     createdSaleId = sale.id
-    const origin = getOrigin(req)
+    const origin = getTrustedRequestOrigin(req)
     const paymentSession = await createXenditPaymentSession({
       reference_id: paymentReference,
       session_type: "PAY",

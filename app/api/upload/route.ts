@@ -4,6 +4,7 @@ import { isFullAdminRole } from "@/lib/permissions"
 import { createClient } from "@supabase/supabase-js"
 import { writeFile, mkdir } from "fs/promises"
 import path from "path"
+import { checkRateLimit, isRequestBodyTooLarge, rateLimitHeaders } from "@/lib/server-security"
 
 const MAX_UPLOAD_SIZE = 8 * 1024 * 1024
 const ALLOWED_IMAGE_MIME_TYPES = [
@@ -17,22 +18,13 @@ const ALLOWED_IMAGE_MIME_TYPES = [
 ]
 const ALLOWED_IMAGE_EXTENSIONS = new Set([".jpg", ".jpeg", ".png", ".webp", ".gif", ".heic", ".heif", ".avif"])
 
-function getExtension(filename: string) {
-  return path.extname(filename).toLowerCase() || ".jpg"
+interface DetectedImageType {
+  contentType: string
+  extension: string
 }
 
-function getContentType(file: File) {
-  const normalizedType = file.type.toLowerCase()
-  if (ALLOWED_IMAGE_MIME_TYPES.includes(normalizedType)) return normalizedType
-
-  const ext = getExtension(file.name)
-  if (ext === ".png") return "image/png"
-  if (ext === ".webp") return "image/webp"
-  if (ext === ".gif") return "image/gif"
-  if (ext === ".heic") return "image/heic"
-  if (ext === ".heif") return "image/heif"
-  if (ext === ".avif") return "image/avif"
-  return "image/jpeg"
+function getExtension(filename: string) {
+  return path.extname(filename).toLowerCase() || ".jpg"
 }
 
 function isAllowedImage(file: File) {
@@ -43,12 +35,44 @@ function isAllowedImage(file: File) {
   return ALLOWED_IMAGE_EXTENSIONS.has(ext) && hasAllowedType
 }
 
-function getUploadFilename(file: File) {
-  const ext = getExtension(file.name)
-  return `${Date.now()}-${Math.random().toString(36).slice(2, 8)}${ext}`
+function detectImageType(buffer: Buffer): DetectedImageType | null {
+  if (buffer.length < 12) return null
+
+  if (buffer[0] === 0xff && buffer[1] === 0xd8 && buffer[2] === 0xff) {
+    return { contentType: "image/jpeg", extension: ".jpg" }
+  }
+
+  if (buffer.subarray(0, 8).equals(Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]))) {
+    return { contentType: "image/png", extension: ".png" }
+  }
+
+  const header = buffer.subarray(0, 12).toString("ascii")
+  if (header.startsWith("GIF87a") || header.startsWith("GIF89a")) {
+    return { contentType: "image/gif", extension: ".gif" }
+  }
+
+  if (header.startsWith("RIFF") && header.slice(8, 12) === "WEBP") {
+    return { contentType: "image/webp", extension: ".webp" }
+  }
+
+  if (buffer.subarray(4, 8).toString("ascii") === "ftyp") {
+    const brand = buffer.subarray(8, 12).toString("ascii").toLowerCase()
+    if (brand === "avif" || brand === "avis") {
+      return { contentType: "image/avif", extension: ".avif" }
+    }
+    if (["heic", "heix", "hevc", "hevx", "mif1", "msf1"].includes(brand)) {
+      return { contentType: "image/heic", extension: ".heic" }
+    }
+  }
+
+  return null
 }
 
-async function uploadToSupabaseStorage(file: File, buffer: Buffer) {
+function getUploadFilename(extension: string) {
+  return `${Date.now()}-${Math.random().toString(36).slice(2, 8)}${extension}`
+}
+
+async function uploadToSupabaseStorage(buffer: Buffer, detectedType: DetectedImageType) {
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
   const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY
   const bucket = process.env.SUPABASE_STORAGE_BUCKET || "product-images"
@@ -86,9 +110,9 @@ async function uploadToSupabaseStorage(file: File, buffer: Buffer) {
     }
   }
 
-  const filename = `products/${getUploadFilename(file)}`
+  const filename = `products/${getUploadFilename(detectedType.extension)}`
   const { error } = await supabase.storage.from(bucket).upload(filename, buffer, {
-    contentType: getContentType(file),
+    contentType: detectedType.contentType,
     upsert: false,
   })
 
@@ -104,6 +128,18 @@ export async function POST(req: NextRequest) {
   const session = await auth()
   if (!session || !isFullAdminRole(session.user.role)) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
+  }
+
+  if (isRequestBodyTooLarge(req, MAX_UPLOAD_SIZE + 64 * 1024)) {
+    return NextResponse.json({ error: "Image must be smaller than 8MB" }, { status: 413 })
+  }
+
+  const rateLimit = checkRateLimit(req, { key: "product-image-upload", limit: 20, windowMs: 10 * 60_000 })
+  if (!rateLimit.allowed) {
+    return NextResponse.json(
+      { error: "Too many image uploads. Please wait a few minutes and try again." },
+      { status: 429, headers: rateLimitHeaders(rateLimit.retryAfterSeconds) }
+    )
   }
 
   const formData = await req.formData()
@@ -123,9 +159,13 @@ export async function POST(req: NextRequest) {
 
   const bytes = await file.arrayBuffer()
   const buffer = Buffer.from(bytes)
+  const detectedType = detectImageType(buffer)
+  if (!detectedType) {
+    return NextResponse.json({ error: "The uploaded file is not a supported image" }, { status: 400 })
+  }
 
   try {
-    const storageUrl = await uploadToSupabaseStorage(file, buffer)
+    const storageUrl = await uploadToSupabaseStorage(buffer, detectedType)
     if (storageUrl) {
       return NextResponse.json({ url: storageUrl })
     }
@@ -156,7 +196,7 @@ export async function POST(req: NextRequest) {
   await mkdir(uploadsDir, { recursive: true })
 
   // Generate unique filename
-  const filename = getUploadFilename(file)
+  const filename = getUploadFilename(detectedType.extension)
   const filepath = path.join(uploadsDir, filename)
 
   await writeFile(filepath, buffer)

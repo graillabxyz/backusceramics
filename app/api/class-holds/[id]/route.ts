@@ -5,6 +5,7 @@ import { classHoldStatuses, validateClassHoldPayload } from "@/lib/class-hold-va
 import { validateClassHoldCapacity } from "@/lib/class-hold-capacity"
 import { isFullAdminRole } from "@/lib/permissions"
 import { isRequestBodyTooLarge } from "@/lib/server-security"
+import { parseWeekdays } from "@/lib/class-schedule"
 
 const MAX_CLASS_HOLD_BODY_BYTES = 32 * 1024
 
@@ -30,39 +31,82 @@ export async function PATCH(
       return NextResponse.json({ error: "Invalid hold status" }, { status: 400 })
     }
 
-    const hold = await prisma.classHold.update({
-      where: { id },
-      data: {
-        status: data.status,
-      },
-    })
+    if (data.status !== "ACTIVE") {
+      const hold = await prisma.classHold.update({
+        where: { id },
+        data: { status: data.status },
+      })
+      return NextResponse.json(hold)
+    }
 
-    return NextResponse.json(hold)
+    const result = await prisma.$transaction(async (tx) => {
+      const existing = await tx.classHold.findUnique({ where: { id } })
+      if (!existing) return { notFound: true, capacityError: null, hold: null }
+
+      const capacityError = await validateClassHoldCapacity({
+        studentName: existing.studentName,
+        studentEmail: existing.studentEmail,
+        workshopId: existing.workshopId,
+        timeLabel: existing.timeLabel,
+        seats: existing.seats,
+        weekdays: parseWeekdays(existing.weekdays),
+        startDate: existing.startDate,
+        endDate: existing.endDate,
+        notes: existing.notes,
+        status: "ACTIVE",
+      }, { excludeHoldId: id, db: tx, lockSeatPools: true })
+
+      if (capacityError) return { notFound: false, capacityError, hold: null }
+
+      const hold = await tx.classHold.update({
+        where: { id },
+        data: { status: "ACTIVE" },
+      })
+      return { notFound: false, capacityError: null, hold }
+    }, { timeout: 10_000 })
+
+    if (result.notFound) return NextResponse.json({ error: "Class hold not found" }, { status: 404 })
+    if (result.capacityError) {
+      return NextResponse.json({ error: result.capacityError.error }, { status: result.capacityError.status })
+    }
+
+    return NextResponse.json(result.hold)
   }
 
   const validation = validateClassHoldPayload(data)
   if ("error" in validation) return NextResponse.json({ error: validation.error }, { status: validation.status })
   const holdData = validation.data
-  const capacityError = await validateClassHoldCapacity(holdData, { excludeHoldId: id })
-  if (capacityError) return NextResponse.json({ error: capacityError.error }, { status: capacityError.status })
+  const result = await prisma.$transaction(async (tx) => {
+    const capacityError = await validateClassHoldCapacity(holdData, {
+      excludeHoldId: id,
+      db: tx,
+      lockSeatPools: true,
+    })
+    if (capacityError) return { capacityError, hold: null }
 
-  const hold = await prisma.classHold.update({
-    where: { id },
-    data: {
-      studentName: holdData.studentName,
-      studentEmail: holdData.studentEmail,
-      workshopId: holdData.workshopId,
-      timeLabel: holdData.timeLabel,
-      seats: holdData.seats,
-      weekdays: JSON.stringify(holdData.weekdays),
-      startDate: holdData.startDate,
-      endDate: holdData.endDate,
-      notes: holdData.notes,
-      ...(holdData.status ? { status: holdData.status } : {}),
-    },
-  })
+    const hold = await tx.classHold.update({
+      where: { id },
+      data: {
+        studentName: holdData.studentName,
+        studentEmail: holdData.studentEmail,
+        workshopId: holdData.workshopId,
+        timeLabel: holdData.timeLabel,
+        seats: holdData.seats,
+        weekdays: JSON.stringify(holdData.weekdays),
+        startDate: holdData.startDate,
+        endDate: holdData.endDate,
+        notes: holdData.notes,
+        ...(holdData.status ? { status: holdData.status } : {}),
+      },
+    })
+    return { capacityError: null, hold }
+  }, { timeout: 10_000 })
 
-  return NextResponse.json(hold)
+  if (result.capacityError) {
+    return NextResponse.json({ error: result.capacityError.error }, { status: result.capacityError.status })
+  }
+
+  return NextResponse.json(result.hold)
 }
 
 export async function DELETE(

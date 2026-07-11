@@ -839,6 +839,10 @@ export function ClassesCalendar({ initialClass }: ClassesCalendarProps) {
                 <p className="mt-3 text-sm leading-relaxed text-muted-foreground">
                   Try another session type or move to the next week to see more availability.
                 </p>
+                <Button type="button" variant="outline" className="mt-5 w-full" onClick={() => moveWeek(1)}>
+                  See next week
+                  <ChevronRight className="h-4 w-4" />
+                </Button>
               </CardContent>
             </Card>
           )}

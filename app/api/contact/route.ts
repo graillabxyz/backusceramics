@@ -1,12 +1,29 @@
 import { Resend } from 'resend'
 import { NextRequest, NextResponse } from 'next/server'
-import { cleanString, escapeHtml, isRequestBodyTooLarge, safeEmailSubject, safeHeaderValue } from "@/lib/server-security"
+import {
+  checkRateLimit,
+  cleanString,
+  escapeHtml,
+  isRequestBodyTooLarge,
+  isValidEmailAddress,
+  rateLimitHeaders,
+  safeEmailSubject,
+  safeHeaderValue,
+} from "@/lib/server-security"
 
 const resend = new Resend(process.env.RESEND_API_KEY || "re_placeholder")
 const MAX_CONTACT_BODY_BYTES = 32 * 1024
 
 export async function POST(req: NextRequest) {
   try {
+    const rateLimit = checkRateLimit(req, { key: "contact-form", limit: 5, windowMs: 10 * 60_000 })
+    if (!rateLimit.allowed) {
+      return NextResponse.json(
+        { error: "Too many messages. Please wait a few minutes and try again." },
+        { status: 429, headers: rateLimitHeaders(rateLimit.retryAfterSeconds) }
+      )
+    }
+
     if (isRequestBodyTooLarge(req, MAX_CONTACT_BODY_BYTES)) {
       return NextResponse.json({ error: 'Message is too large' }, { status: 413 })
     }
@@ -17,7 +34,7 @@ export async function POST(req: NextRequest) {
     const contactSubject = safeEmailSubject(subject, 'New Message')
     const contactMessage = cleanString(message, 5000)
 
-    if (!contactName || !contactEmail || !contactMessage) {
+    if (!contactName || !isValidEmailAddress(contactEmail) || !contactMessage) {
       return NextResponse.json({ error: 'Missing required fields' }, { status: 400 })
     }
 

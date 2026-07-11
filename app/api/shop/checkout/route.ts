@@ -8,11 +8,14 @@ import {
   XenditConfigurationError,
 } from "@/lib/xendit"
 import { recordAnalyticsEvent } from "@/lib/analytics-server"
-import { cleanString, isRequestBodyTooLarge, safeHeaderValue } from "@/lib/server-security"
+import { checkRateLimit, cleanString, isRequestBodyTooLarge, isValidEmailAddress, rateLimitHeaders, safeHeaderValue } from "@/lib/server-security"
+import { getTrustedRequestOrigin } from "@/lib/request-origin"
 
 const MAX_SHOP_CHECKOUT_BODY_BYTES = 64 * 1024
 const PUBLIC_CATEGORY_IDS = PUBLIC_WARES_CATEGORIES.map((category) => category.id)
 const ONLINE_SHOP_NOTE = "[online-shop]"
+
+class ShopCheckoutValidationError extends Error {}
 
 interface CheckoutItemRequest {
   productId: string
@@ -44,12 +47,6 @@ function sanitizeReference(value: string) {
 
 function sanitizeCustomerName(value?: string | null) {
   return (value || "BackusCustomer").replace(/[^a-zA-Z0-9]/g, "").slice(0, 50) || "BackusCustomer"
-}
-
-function getOrigin(req: NextRequest) {
-  const configuredSiteUrl = process.env.NEXT_PUBLIC_SITE_URL?.trim().replace(/\/$/, "")
-  const requestOrigin = (req.headers.get("origin") || req.nextUrl.origin).replace(/\/$/, "")
-  return configuredSiteUrl?.startsWith("https://") ? configuredSiteUrl : requestOrigin
 }
 
 async function restoreOnlineShopInventory(saleId: string) {
@@ -89,6 +86,14 @@ export async function POST(req: NextRequest) {
     )
   }
 
+  const rateLimit = checkRateLimit(req, { key: "shop-checkout", limit: 8, windowMs: 10 * 60_000 })
+  if (!rateLimit.allowed) {
+    return NextResponse.json(
+      { error: "Too many checkout attempts. Please wait a few minutes and try again.", code: "SHOP_RATE_LIMITED" },
+      { status: 429, headers: rateLimitHeaders(rateLimit.retryAfterSeconds) }
+    )
+  }
+
   if (isRequestBodyTooLarge(req, MAX_SHOP_CHECKOUT_BODY_BYTES)) {
     return NextResponse.json({ error: "Checkout payload is too large" }, { status: 413 })
   }
@@ -103,8 +108,8 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Checkout needs at least one available item." }, { status: 400 })
   }
 
-  if (!receiptEmail) {
-    return NextResponse.json({ error: "Add an email address before payment." }, { status: 400 })
+  if (!isValidEmailAddress(receiptEmail)) {
+    return NextResponse.json({ error: "Add a valid email address before payment." }, { status: 400 })
   }
 
   const paymentReference = sanitizeReference(`shop_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`)
@@ -125,13 +130,13 @@ export async function POST(req: NextRequest) {
           product.cafeOnly ||
           !PUBLIC_CATEGORY_IDS.includes(product.category as (typeof PUBLIC_CATEGORY_IDS)[number])
         ) {
-          throw new Error(`${product?.name || "This piece"} is no longer available online`)
+          throw new ShopCheckoutValidationError(`${product?.name || "This piece"} is no longer available online`)
         }
         if (product.price <= 0) {
-          throw new Error(`${product.name} needs a price before it can be sold online`)
+          throw new ShopCheckoutValidationError(`${product.name} needs a price before it can be sold online`)
         }
         if (product.quantity < item.quantity) {
-          throw new Error(`Only ${product.quantity} ${product.name} available`)
+          throw new ShopCheckoutValidationError(`Only ${product.quantity} ${product.name} available`)
         }
 
         const updated = await tx.posProduct.updateMany({
@@ -148,7 +153,7 @@ export async function POST(req: NextRequest) {
         })
 
         if (updated.count !== 1) {
-          throw new Error(`${product.name} changed while starting checkout`)
+          throw new ShopCheckoutValidationError(`${product.name} changed while starting checkout`)
         }
 
         const remaining = product.quantity - item.quantity
@@ -195,7 +200,7 @@ export async function POST(req: NextRequest) {
     })
 
     createdSaleId = sale.id
-    const origin = getOrigin(req)
+    const origin = getTrustedRequestOrigin(req)
     const paymentSession = await createXenditPaymentSession({
       reference_id: paymentReference,
       session_type: "PAY",
@@ -270,6 +275,7 @@ export async function POST(req: NextRequest) {
 
     const isXenditError = error instanceof XenditApiError
     const isConfigError = error instanceof XenditConfigurationError
+    const isValidationError = error instanceof ShopCheckoutValidationError
     console.error("Could not start online shop checkout", {
       error,
       xenditStatus: isXenditError ? error.status : undefined,
@@ -280,12 +286,12 @@ export async function POST(req: NextRequest) {
       {
         error: isConfigError
           ? "Online payment is not configured yet."
-          : error instanceof Error
+          : isValidationError && error instanceof Error
             ? error.message
-            : "Checkout could not be started.",
+            : "Checkout could not be started right now. Please try again shortly.",
         code: isConfigError ? "SHOP_PAYMENT_CONFIGURATION_MISSING" : "SHOP_PAYMENT_FAILED",
       },
-      { status: isConfigError ? 503 : 409 }
+      { status: isConfigError ? 503 : isValidationError ? 409 : 502 }
     )
   }
 }

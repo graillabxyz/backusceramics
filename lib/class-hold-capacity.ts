@@ -1,4 +1,5 @@
 import { prisma } from "@/lib/prisma"
+import type { Prisma } from "@prisma/client"
 import type { ValidatedClassHold } from "@/lib/class-hold-validation"
 import {
   buildDefaultRangeSessions,
@@ -18,6 +19,8 @@ interface CapacityRequest {
 
 interface ValidateClassHoldCapacityOptions {
   excludeHoldId?: string
+  db?: Prisma.TransactionClient
+  lockSeatPools?: boolean
 }
 
 function startOfDay(date: Date) {
@@ -95,9 +98,11 @@ export async function validateClassHoldCapacity(
 ) {
   if ((holdData.status || "ACTIVE") !== "ACTIVE") return null
 
+  const db = options.db || prisma
+
   const rangeStart = startOfDay(holdData.startDate)
   const rangeEnd = endOfDay(holdData.endDate ?? holdData.startDate)
-  const schedules = await prisma.classSchedule.findMany({
+  const schedules = await db.classSchedule.findMany({
     where: {
       status: "ACTIVE",
       startDate: { lte: rangeEnd },
@@ -118,9 +123,17 @@ export async function validateClassHoldCapacity(
     }
   }
 
+
+  if (options.lockSeatPools) {
+    const seatPoolKeys = Array.from(requestedSeatPools.keys()).sort()
+    for (const seatPoolKey of seatPoolKeys) {
+      await db.$queryRaw`SELECT pg_advisory_xact_lock(hashtext(${seatPoolKey}))`
+    }
+  }
+
   const dateKeys = Array.from(new Set(Array.from(requestedSeatPools.values()).map((item) => item.dateKey)))
   const [bookings, holds] = await Promise.all([
-    prisma.classBooking.findMany({
+    db.classBooking.findMany({
       where: {
         ...activeBookingStatusWhere(),
         OR: dateKeys.map((dateKey) => ({
@@ -132,7 +145,7 @@ export async function validateClassHoldCapacity(
         participants: true,
       },
     }),
-    prisma.classHold.findMany({
+    db.classHold.findMany({
       where: {
         status: "ACTIVE",
         ...(options.excludeHoldId ? { id: { not: options.excludeHoldId } } : {}),

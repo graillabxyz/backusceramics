@@ -2,6 +2,7 @@ import { NextResponse, type NextRequest } from "next/server"
 import { createServerClient } from "@supabase/ssr"
 import { AUTH_RETURN_TO_COOKIE, sanitizeAuthReturnTo } from "@/lib/auth-redirect"
 import { ensureLocalUserFromSupabaseAuthUser } from "@/lib/auth-user-sync"
+import { getTrustedRequestOrigin } from "@/lib/request-origin"
 
 function getSupabaseCallbackConfig() {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL
@@ -29,11 +30,7 @@ export async function GET(request: NextRequest) {
   }
   const next = sanitizeAuthReturnTo(requestedNext || cookieNext, "/account") || "/account"
 
-  // Dynamically resolve correct public origin using headers to prevent localhost redirect
-  const host = request.headers.get("x-forwarded-host") || request.headers.get("host") || "backusceramics.com"
-  const proto = request.headers.get("x-forwarded-proto") || "https"
-  const cleanProto = proto.split(",")[0].trim()
-  const origin = `${cleanProto}://${host}`
+  const origin = getTrustedRequestOrigin(request)
 
   if (code) {
     // Create the redirect response object first so we can attach cookies directly to it

@@ -1,6 +1,7 @@
 "use client"
 
 import React, { useState, useRef, useId } from "react"
+import Link from "next/link"
 import { Navigation } from "@/components/navigation"
 import { Footer } from "@/components/footer"
 import { BrandClosingSection } from "@/components/brand-closing-section"
@@ -223,7 +224,7 @@ export default function CustomOrdersPage() {
               Expect to hear from us within 2-3 business days with a quote and timeline.
             </p>
             <Button asChild size="lg">
-              <a href="/">Return Home</a>
+              <Link href="/">Return Home</Link>
             </Button>
           </div>
         </section>

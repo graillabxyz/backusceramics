@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server"
 import { createAdminNotification } from "@/lib/admin-notification-events"
-import { cleanString, hashIpAddress, isRequestBodyTooLarge } from "@/lib/server-security"
+import { checkRateLimit, cleanString, hashIpAddress, isRequestBodyTooLarge, rateLimitHeaders } from "@/lib/server-security"
 
 export const runtime = "nodejs"
 const MAX_VISIT_BODY_BYTES = 16 * 1024
@@ -25,6 +25,14 @@ function locationMessage({ city, region, country }: { city?: string | null; regi
 }
 
 export async function POST(req: NextRequest) {
+  const rateLimit = checkRateLimit(req, { key: "visit-notifications", limit: 30, windowMs: 60_000 })
+  if (!rateLimit.allowed) {
+    return NextResponse.json(
+      { error: "Too many visit events" },
+      { status: 429, headers: rateLimitHeaders(rateLimit.retryAfterSeconds) }
+    )
+  }
+
   if (isRequestBodyTooLarge(req, MAX_VISIT_BODY_BYTES)) {
     return NextResponse.json({ error: "Visit payload is too large" }, { status: 413 })
   }
