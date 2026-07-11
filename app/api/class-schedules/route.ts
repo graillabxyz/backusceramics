@@ -6,6 +6,7 @@ import { isFullAdminRole } from "@/lib/permissions"
 import { cleanString, isRequestBodyTooLarge } from "@/lib/server-security"
 
 const MAX_CLASS_SCHEDULE_BODY_BYTES = 32 * 1024
+const scheduleCategories = ["weekly-class", "multi-day", "event"] as const
 
 function parseWeekdays(value: unknown) {
   if (!Array.isArray(value)) return null
@@ -36,7 +37,10 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Schedule request is too large" }, { status: 413 })
   }
 
-  const data = await req.json()
+  const data = await req.json().catch(() => null)
+  if (!data || typeof data !== "object") {
+    return NextResponse.json({ error: "Schedule request is not valid JSON" }, { status: 400 })
+  }
   const offering = getScheduleOffering(data.offeringId)
   if (!offering) {
     return NextResponse.json({ error: "Choose a valid class or event" }, { status: 400 })
@@ -52,18 +56,30 @@ export async function POST(req: NextRequest) {
   }
 
   const maxParticipants = Number(data.maxParticipants || offering.maxParticipants || 8)
-  if (!Number.isInteger(maxParticipants) || maxParticipants < 1) {
+  if (!Number.isInteger(maxParticipants) || maxParticipants < 1 || maxParticipants > 50) {
     return NextResponse.json({ error: "Capacity is invalid" }, { status: 400 })
   }
 
   const weekdays = parseWeekdays(data.weekdays)
+  const category = scheduleCategories.includes(data.category) ? data.category : null
+  const timeLabel = cleanString(data.timeLabel, 80)
+  if (!category) {
+    return NextResponse.json({ error: "Choose a valid schedule type" }, { status: 400 })
+  }
+  if (!timeLabel) {
+    return NextResponse.json({ error: "Add a class time" }, { status: 400 })
+  }
+  if (category === "weekly-class" && !weekdays) {
+    return NextResponse.json({ error: "Choose at least one repeat day" }, { status: 400 })
+  }
+
   const schedule = await prisma.classSchedule.create({
     data: {
       createdBy: session.user.id,
       offeringId: offering.id,
       title: cleanString(data.title, 160) || offering.title,
-      category: cleanString(data.category, 80) || (offering.id.includes("event") || offering.id === "private-atelier" ? "event" : "class"),
-      timeLabel: cleanString(data.timeLabel, 80),
+      category,
+      timeLabel,
       startDate,
       endDate,
       weekdays: weekdays ? JSON.stringify(weekdays) : null,

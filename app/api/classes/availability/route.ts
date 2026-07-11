@@ -29,6 +29,12 @@ function parseMonthStart(value: string | null) {
   return new Date(source.getFullYear(), source.getMonth(), 1)
 }
 
+function isValidDateParam(value: string | null) {
+  if (!value || !/^\d{4}-\d{2}-\d{2}$/.test(value)) return false
+  const parsed = parseDateKey(value)
+  return !Number.isNaN(parsed.getTime()) && formatDateKey(parsed) === value
+}
+
 function endOfMonth(date: Date) {
   return new Date(date.getFullYear(), date.getMonth() + 1, 0)
 }
@@ -108,6 +114,10 @@ function activeBookingStatusWhere(now = new Date()) {
 
 export async function GET(req: NextRequest) {
   const monthStartParam = req.nextUrl.searchParams.get("monthStart")
+  const weekStartParam = req.nextUrl.searchParams.get("weekStart")
+  if ((monthStartParam && !isValidDateParam(monthStartParam)) || (weekStartParam && !isValidDateParam(weekStartParam))) {
+    return NextResponse.json({ error: "Invalid calendar date" }, { status: 400 })
+  }
   const includeHoldDetails = req.nextUrl.searchParams.get("includeHoldDetails") === "1"
   let canIncludeHoldDetails = false
 
@@ -120,7 +130,7 @@ export async function GET(req: NextRequest) {
     }
   }
 
-  const weekStart = parseWeekStart(req.nextUrl.searchParams.get("weekStart"))
+  const weekStart = parseWeekStart(weekStartParam)
   const rangeStart = monthStartParam ? parseMonthStart(monthStartParam) : weekStart
   const rangeEnd = monthStartParam ? endOfMonth(rangeStart) : addDays(weekStart, 6)
   let schedules = []

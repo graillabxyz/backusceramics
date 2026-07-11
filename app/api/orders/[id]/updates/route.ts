@@ -20,7 +20,9 @@ export async function POST(
     return NextResponse.json({ error: "Order update is too large" }, { status: 413 })
   }
 
-  const { title, description, images } = await req.json()
+  const body = await req.json().catch(() => null)
+  if (!body || typeof body !== "object") return NextResponse.json({ error: "Order update is not valid JSON" }, { status: 400 })
+  const { title, description, images } = body
   const updateTitle = cleanString(title, 160)
   const updateDescription = cleanString(description, 4000)
   const imageUrls = Array.isArray(images)
@@ -30,6 +32,9 @@ export async function POST(
   if (!updateTitle) {
     return NextResponse.json({ error: "Title is required" }, { status: 400 })
   }
+
+  const order = await prisma.order.findUnique({ where: { id }, select: { id: true } })
+  if (!order) return NextResponse.json({ error: "Order not found" }, { status: 404 })
 
   const update = await prisma.orderUpdate.create({
     data: {

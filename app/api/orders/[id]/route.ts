@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server"
 import { auth } from "@/lib/auth"
 import { prisma } from "@/lib/prisma"
 import { isFullAdminRole } from "@/lib/permissions"
+import { isRequestBodyTooLarge } from "@/lib/server-security"
 
 const orderStatuses = [
   "INQUIRY",
@@ -15,6 +16,7 @@ const orderStatuses = [
   "SHIPPED",
   "CANCELLED",
 ] as const
+const MAX_ORDER_STATUS_BODY_BYTES = 8 * 1024
 
 export async function GET(
   req: NextRequest,
@@ -56,7 +58,9 @@ export async function PATCH(
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
   }
 
-  const data = await req.json()
+  if (isRequestBodyTooLarge(req, MAX_ORDER_STATUS_BODY_BYTES)) return NextResponse.json({ error: "Order update is too large" }, { status: 413 })
+  const data = await req.json().catch(() => null)
+  if (!data || typeof data !== "object") return NextResponse.json({ error: "Order update is not valid JSON" }, { status: 400 })
   const updateData: Record<string, string> = {}
 
   if (data.status) {
@@ -65,6 +69,9 @@ export async function PATCH(
     }
     updateData.status = data.status
   }
+
+  const existing = await prisma.order.findUnique({ where: { id }, select: { id: true } })
+  if (!existing) return NextResponse.json({ error: "Order not found" }, { status: 404 })
 
   const order = await prisma.order.update({
     where: { id },

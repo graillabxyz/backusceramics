@@ -71,7 +71,8 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Product payload is too large" }, { status: 413 })
   }
 
-  const data = await req.json()
+  const data = await req.json().catch(() => null)
+  if (!data || typeof data !== "object") return NextResponse.json({ error: "Product request is not valid JSON" }, { status: 400 })
   const name = cleanString(data.name, 160)
   const category = normalizeProductCategory(data.category)
   const rawStatus = data.status || "DRAFT"

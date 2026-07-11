@@ -9,10 +9,10 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Textarea } from "@/components/ui/textarea"
 import { Archive, CalendarDays, CalendarPlus, CheckCircle2, CircleDashed, Clock, GraduationCap, Loader2, Pencil, Trash2, Users } from "lucide-react"
 import { dayNames, parseDateKey, parseScheduleDays, parseTimeHour, parseTimeLabel, scheduleOfferings } from "@/lib/class-schedule"
+import { ClassOperationsCalendar, type ClassOperationsRow } from "@/components/admin/class-operations-calendar"
 
 interface Booking {
   id: string
@@ -103,6 +103,7 @@ const initialScheduleForm = {
   endDate: "",
   weekdays: ["1", "2", "3", "4", "5"],
   notes: "",
+  status: "ACTIVE",
 }
 
 const statusColors: Record<string, string> = {
@@ -192,8 +193,10 @@ export default function AdminBookingsPage() {
   const [holdForm, setHoldForm] = useState(initialHoldForm)
   const [scheduleForm, setScheduleForm] = useState(initialScheduleForm)
   const [editingHoldId, setEditingHoldId] = useState<string | null>(null)
+  const [editingScheduleId, setEditingScheduleId] = useState<string | null>(null)
   const [activeTab, setActiveTab] = useState("requests")
   const [holdAccordionValue, setHoldAccordionValue] = useState("add-hold")
+  const [scheduleAccordionValue, setScheduleAccordionValue] = useState("")
   const [loading, setLoading] = useState(true)
   const [availabilityLoading, setAvailabilityLoading] = useState(true)
   const [savingHold, setSavingHold] = useState(false)
@@ -201,6 +204,7 @@ export default function AdminBookingsPage() {
   const [holdError, setHoldError] = useState("")
   const [scheduleError, setScheduleError] = useState("")
   const [availabilityError, setAvailabilityError] = useState("")
+  const [pageError, setPageError] = useState("")
 
   const selectedWorkshop = classOptions.find((workshop) => workshop.id === holdForm.workshopId) || classOptions[0]
   const selectedTimes = selectedWorkshop.schedule?.map(parseTimeLabel) || []
@@ -236,12 +240,6 @@ export default function AdminBookingsPage() {
   const activeSchedules = schedules.filter((schedule) => schedule.status !== "CANCELLED")
   const activeHolds = holds.filter((hold) => hold.status === "ACTIVE")
   const heldSeats = activeHolds.reduce((total, hold) => total + hold.seats, 0)
-  const availabilityByDate = useMemo(() => {
-    return availabilityRows.reduce<Record<string, AvailabilityRow[]>>((groups, row) => {
-      groups[row.dateKey] = [...(groups[row.dateKey] || []), row]
-      return groups
-    }, {})
-  }, [availabilityRows])
   const availabilityTotals = useMemo(() => {
     const uniquePools = new Map<string, AvailabilityRow>()
     for (const row of availabilityRows) {
@@ -258,13 +256,20 @@ export default function AdminBookingsPage() {
       { booked: 0, held: 0, open: 0 }
     )
   }, [availabilityRows])
-  const availabilityMonthLabel = formatDate(availabilityMonth)
+  const availabilityMonthLabel = parseDateKey(availabilityMonth).toLocaleDateString("en-US", {
+    month: "long",
+    year: "numeric",
+  })
 
   useEffect(() => {
     fetchBookings()
     fetchArchivedBookings()
     fetchHolds()
     fetchSchedules()
+    const requestedView = new URLSearchParams(window.location.search).get("view")
+    if (["requests", "calendar", "holds", "archive"].includes(requestedView || "")) {
+      setActiveTab(requestedView!)
+    }
   }, [])
 
   useEffect(() => {
@@ -274,9 +279,12 @@ export default function AdminBookingsPage() {
   const fetchBookings = async () => {
     try {
       const res = await fetch("/api/bookings")
-      if (res.ok) setBookings(await res.json())
+      const data = await res.json().catch(() => [])
+      if (!res.ok) throw new Error(data.error || "Could not load bookings")
+      setBookings(Array.isArray(data) ? data : [])
     } catch (err) {
       console.error("Failed to fetch bookings:", err)
+      setPageError(err instanceof Error ? err.message : "Could not load bookings")
     } finally {
       setLoading(false)
     }
@@ -285,27 +293,36 @@ export default function AdminBookingsPage() {
   const fetchArchivedBookings = async () => {
     try {
       const res = await fetch("/api/bookings?view=archived")
-      if (res.ok) setArchivedBookings(await res.json())
+      const data = await res.json().catch(() => [])
+      if (!res.ok) throw new Error(data.error || "Could not load archived bookings")
+      setArchivedBookings(Array.isArray(data) ? data : [])
     } catch (err) {
       console.error("Failed to fetch archived bookings:", err)
+      setPageError(err instanceof Error ? err.message : "Could not load archived bookings")
     }
   }
 
   const fetchHolds = async () => {
     try {
       const res = await fetch("/api/class-holds")
-      if (res.ok) setHolds(await res.json())
+      const data = await res.json().catch(() => [])
+      if (!res.ok) throw new Error(data.error || "Could not load seat holds")
+      setHolds(Array.isArray(data) ? data : [])
     } catch (err) {
       console.error("Failed to fetch class holds:", err)
+      setPageError(err instanceof Error ? err.message : "Could not load seat holds")
     }
   }
 
   const fetchSchedules = async () => {
     try {
       const res = await fetch("/api/class-schedules")
-      if (res.ok) setSchedules(await res.json())
+      const data = await res.json().catch(() => [])
+      if (!res.ok) throw new Error(data.error || "Could not load class schedules")
+      setSchedules(Array.isArray(data) ? data : [])
     } catch (err) {
       console.error("Failed to fetch class schedules:", err)
+      setPageError(err instanceof Error ? err.message : "Could not load class schedules")
     }
   }
 
@@ -331,17 +348,19 @@ export default function AdminBookingsPage() {
   }
 
   const updateStatus = async (id: string, status: string) => {
+    setPageError("")
     try {
       const res = await fetch(`/api/bookings/${id}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ status }),
       })
-      if (res.ok) {
-        await Promise.all([fetchBookings(), fetchArchivedBookings()])
-      }
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok) throw new Error(data.error || "Could not update booking")
+      await Promise.all([fetchBookings(), fetchArchivedBookings(), fetchAvailability()])
     } catch (err) {
       console.error("Failed to update booking:", err)
+      setPageError(err instanceof Error ? err.message : "Could not update booking")
     }
   }
 
@@ -402,13 +421,13 @@ export default function AdminBookingsPage() {
     setHoldAccordionValue("add-hold")
   }
 
-  const createSchedule = async () => {
+  const saveSchedule = async () => {
     setScheduleError("")
     setSavingSchedule(true)
 
     try {
-      const res = await fetch("/api/class-schedules", {
-        method: "POST",
+      const res = await fetch(editingScheduleId ? `/api/class-schedules/${editingScheduleId}` : "/api/class-schedules", {
+        method: editingScheduleId ? "PATCH" : "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           ...scheduleForm,
@@ -424,7 +443,9 @@ export default function AdminBookingsPage() {
       }
 
       setScheduleForm(initialScheduleForm)
-      await fetchSchedules()
+      setEditingScheduleId(null)
+      setScheduleAccordionValue("")
+      await Promise.all([fetchSchedules(), fetchAvailability()])
     } catch (err) {
       setScheduleError(err instanceof Error ? err.message : "Could not create calendar schedule")
     } finally {
@@ -432,24 +453,55 @@ export default function AdminBookingsPage() {
     }
   }
 
+  const openEditSchedule = (schedule: ClassSchedule) => {
+    setScheduleForm({
+      offeringId: schedule.offeringId,
+      title: schedule.title,
+      category: schedule.category,
+      timeLabel: schedule.timeLabel,
+      maxParticipants: schedule.maxParticipants.toString(),
+      startDate: inputDateValue(schedule.startDate),
+      endDate: inputDateValue(schedule.endDate),
+      weekdays: parseWeekdayList(schedule.weekdays).map(String),
+      notes: schedule.notes || "",
+      status: schedule.status,
+    })
+    setEditingScheduleId(schedule.id)
+    setScheduleError("")
+    setScheduleAccordionValue("add-schedule")
+    window.setTimeout(() => document.getElementById("calendar-schedule-editor")?.scrollIntoView({ behavior: "smooth", block: "start" }), 100)
+  }
+
+  const resetScheduleForm = () => {
+    setScheduleForm(initialScheduleForm)
+    setEditingScheduleId(null)
+    setScheduleError("")
+  }
+
   const deleteHold = async (id: string) => {
+    setPageError("")
     try {
       const res = await fetch(`/api/class-holds/${id}`, { method: "DELETE" })
-      if (res.ok) {
-        setHolds((prev) => prev.filter((hold) => hold.id !== id))
-        await fetchAvailability()
-      }
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok) throw new Error(data.error || "Could not remove seat hold")
+      setHolds((prev) => prev.filter((hold) => hold.id !== id))
+      await fetchAvailability()
     } catch (err) {
       console.error("Failed to delete class hold:", err)
+      setPageError(err instanceof Error ? err.message : "Could not remove seat hold")
     }
   }
 
   const deleteSchedule = async (id: string) => {
+    setPageError("")
     try {
       const res = await fetch(`/api/class-schedules/${id}`, { method: "DELETE" })
-      if (res.ok) setSchedules((prev) => prev.filter((schedule) => schedule.id !== id))
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok) throw new Error(data.error || "Could not cancel schedule")
+      await Promise.all([fetchSchedules(), fetchAvailability()])
     } catch (err) {
       console.error("Failed to delete class schedule:", err)
+      setPageError(err instanceof Error ? err.message : "Could not cancel schedule")
     }
   }
 
@@ -491,6 +543,21 @@ export default function AdminBookingsPage() {
     setHoldError("")
     setActiveTab("holds")
     setHoldAccordionValue("add-hold")
+  }
+
+  const editHoldFromCalendar = (holdId: string) => {
+    const hold = holds.find((item) => item.id === holdId)
+    if (hold) openEditHold(hold)
+  }
+
+  const prefillScheduleFromCalendar = (dateKey: string) => {
+    setScheduleForm((current) => ({
+      ...current,
+      startDate: dateKey,
+      endDate: current.category === "weekly-class" ? current.endDate : dateKey,
+    }))
+    setScheduleAccordionValue("add-schedule")
+    window.setTimeout(() => document.getElementById("calendar-schedule-editor")?.scrollIntoView({ behavior: "smooth", block: "start" }), 100)
   }
 
   const renderBookingList = (items: Booking[], emptyTitle: string, emptyDescription: string) => {
@@ -579,6 +646,12 @@ export default function AdminBookingsPage() {
         </div>
       </div>
 
+      {pageError && (
+        <div className="rounded-md border border-destructive/30 bg-destructive/10 px-4 py-3 text-sm text-destructive" role="alert">
+          {pageError}
+        </div>
+      )}
+
       <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
         <Card className="py-4">
           <CardContent className="flex items-center gap-4 px-4">
@@ -645,7 +718,7 @@ export default function AdminBookingsPage() {
         <TabsList className="grid w-full grid-cols-4 lg:w-fit">
           <TabsTrigger value="requests">Requests</TabsTrigger>
           <TabsTrigger value="calendar">Calendar</TabsTrigger>
-          <TabsTrigger value="holds">Resident Holds</TabsTrigger>
+          <TabsTrigger value="holds">Holds</TabsTrigger>
           <TabsTrigger value="archive">Archive</TabsTrigger>
         </TabsList>
 
@@ -689,134 +762,35 @@ export default function AdminBookingsPage() {
         </TabsContent>
 
         <TabsContent value="calendar" className="space-y-4">
-          <Card>
-            <CardHeader className="border-b pb-5">
-              <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
-                <div>
-                  <CardTitle className="font-heading text-xl font-bold">Availability Calendar</CardTitle>
-                  <CardDescription>
-                    Month view of public sessions, confirmed bookings, temporary holds, and open seats.
-                  </CardDescription>
-                </div>
-                <div className="flex flex-wrap items-center gap-2">
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    onClick={() => setAvailabilityMonth((month) => shiftMonth(month, -1))}
-                  >
-                    Previous
-                  </Button>
-                  <span className="inline-flex h-9 min-w-36 items-center justify-center rounded-md border border-border px-3 text-sm font-medium">
-                    {availabilityMonthLabel}
-                  </span>
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    onClick={() => setAvailabilityMonth((month) => shiftMonth(month, 1))}
-                  >
-                    Next
-                  </Button>
-                  <Button type="button" variant="secondary" size="sm" onClick={fetchAvailability} disabled={availabilityLoading}>
-                    {availabilityLoading && <Loader2 className="h-4 w-4 animate-spin" />}
-                    Refresh
-                  </Button>
-                </div>
-              </div>
-              <div className="mt-4 grid gap-2 sm:grid-cols-3">
-                <div className="rounded-md border border-border bg-muted/30 px-3 py-2">
-                  <p className="text-xs uppercase tracking-wide text-muted-foreground">Open seats</p>
-                  <p className="text-2xl font-semibold text-foreground">{availabilityTotals.open}</p>
-                </div>
-                <div className="rounded-md border border-border bg-muted/30 px-3 py-2">
-                  <p className="text-xs uppercase tracking-wide text-muted-foreground">Booked seats</p>
-                  <p className="text-2xl font-semibold text-foreground">{availabilityTotals.booked}</p>
-                </div>
-                <div className="rounded-md border border-border bg-muted/30 px-3 py-2">
-                  <p className="text-xs uppercase tracking-wide text-muted-foreground">Held seats</p>
-                  <p className="text-2xl font-semibold text-foreground">{availabilityTotals.held}</p>
-                </div>
-              </div>
-              <p className="mt-3 text-sm text-muted-foreground">
-                Use Hold seat when someone books by WhatsApp or Instagram. Holds reduce public availability immediately.
-              </p>
-            </CardHeader>
-            <CardContent className="p-0">
-              {availabilityError ? (
-                <div className="m-5 rounded-md border border-destructive/30 bg-destructive/10 px-4 py-3 text-sm text-destructive">
-                  {availabilityError}
-                </div>
-              ) : availabilityLoading ? (
-                <div className="flex items-center justify-center py-16">
-                  <Loader2 className="h-8 w-8 animate-spin text-primary" />
-                </div>
-              ) : availabilityRows.length === 0 ? (
-                <div className="py-12 text-center">
-                  <CalendarDays className="mx-auto mb-3 h-8 w-8 text-muted-foreground" />
-                  <p className="font-medium text-foreground">No bookable sessions this month</p>
-                  <p className="text-sm text-muted-foreground">Add sessions below or move to another month.</p>
-                </div>
-              ) : (
-                <div className="divide-y">
-                  {Object.entries(availabilityByDate).map(([dateKey, rows]) => (
-                    <div key={dateKey} className="grid gap-3 p-4 lg:grid-cols-[180px_minmax(0,1fr)] lg:p-5">
-                      <div>
-                        <p className="font-heading text-lg font-bold text-foreground">{formatDate(dateKey)}</p>
-                        <p className="text-sm text-muted-foreground">{dayNames[dateKeyWeekday(dateKey)]}</p>
-                      </div>
-                      <div className="grid gap-2">
-                        {rows.map((row) => {
-                          const isFull = row.availableSeats <= 0
-                          return (
-                            <div
-                              key={`${row.sessionId}-${row.timeLabel}`}
-                              className="grid gap-3 rounded-md border border-border bg-background p-3 md:grid-cols-[minmax(0,1fr)_auto] md:items-center"
-                            >
-                              <div className="min-w-0">
-                                <div className="flex flex-wrap items-center gap-2">
-                                  <p className="font-medium text-foreground">{row.title}</p>
-                                  <Badge variant="outline">{row.timeLabel}</Badge>
-                                  <Badge variant={isFull ? "secondary" : "outline"}>
-                                    {isFull ? "Full" : `${row.availableSeats} open`}
-                                  </Badge>
-                                </div>
-                                <div className="mt-2 flex flex-wrap gap-2 text-xs text-muted-foreground">
-                                  <span>{row.maxParticipants} seats total</span>
-                                  <span>{row.bookedSeats} booked</span>
-                                  <span>{row.heldSeats} held</span>
-                                  <span>{row.category}</span>
-                                  <span>shared time pool</span>
-                                </div>
-                                {row.holds.length > 0 && (
-                                  <div className="mt-2 flex flex-wrap gap-2">
-                                    {row.holds.map((hold) => (
-                                      <Badge key={hold.id} variant="secondary">
-                                        {hold.studentName}: {hold.seats}
-                                      </Badge>
-                                    ))}
-                                  </div>
-                                )}
-                              </div>
-                              <Button
-                                type="button"
-                                variant="outline"
-                                size="sm"
-                                disabled={isFull}
-                                onClick={() => prefillHoldFromAvailability(row)}
-                              >
-                                Hold seat
-                              </Button>
-                            </div>
-                          )
-                        })}
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </CardContent>
-          </Card>
+          <div className="grid grid-cols-3 gap-2">
+            <div className="rounded-md border border-border bg-background px-3 py-2 shadow-sm">
+              <p className="text-xs text-muted-foreground">Open</p>
+              <p className="text-xl font-semibold">{availabilityTotals.open}</p>
+            </div>
+            <div className="rounded-md border border-border bg-background px-3 py-2 shadow-sm">
+              <p className="text-xs text-muted-foreground">Booked</p>
+              <p className="text-xl font-semibold">{availabilityTotals.booked}</p>
+            </div>
+            <div className="rounded-md border border-border bg-background px-3 py-2 shadow-sm">
+              <p className="text-xs text-muted-foreground">Held</p>
+              <p className="text-xl font-semibold">{availabilityTotals.held}</p>
+            </div>
+          </div>
+
+          <ClassOperationsCalendar
+            monthStart={availabilityMonth}
+            monthLabel={availabilityMonthLabel}
+            rows={availabilityRows as ClassOperationsRow[]}
+            loading={availabilityLoading}
+            error={availabilityError}
+            onPreviousMonth={() => setAvailabilityMonth((month) => shiftMonth(month, -1))}
+            onNextMonth={() => setAvailabilityMonth((month) => shiftMonth(month, 1))}
+            onToday={() => setAvailabilityMonth(monthStartKey())}
+            onRefresh={fetchAvailability}
+            onHoldSeat={prefillHoldFromAvailability}
+            onEditHold={editHoldFromCalendar}
+            onAddSchedule={prefillScheduleFromCalendar}
+          />
 
           <Card>
             <CardHeader className="border-b pb-5">
@@ -836,56 +810,58 @@ export default function AdminBookingsPage() {
                   <p className="text-sm text-muted-foreground">Add the first public session below.</p>
                 </div>
               ) : (
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead className="pl-5">Session</TableHead>
-                      <TableHead>Dates</TableHead>
-                      <TableHead>Time</TableHead>
-                      <TableHead>Capacity</TableHead>
-                      <TableHead>Status</TableHead>
-                      <TableHead className="w-12 pr-5" />
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {schedules.map((schedule) => {
-                      const offering = classOptions.find((item) => item.id === schedule.offeringId)
-                      const weekdays = parseWeekdayList(schedule.weekdays)
-                      return (
-                        <TableRow key={schedule.id}>
-                          <TableCell className="pl-5">
-                            <div className="font-medium text-foreground">{schedule.title}</div>
-                            <div className="text-xs text-muted-foreground">{offering?.title || schedule.offeringId}</div>
-                          </TableCell>
-                          <TableCell>
-                            <div>{formatDateRange(schedule.startDate, schedule.endDate)}</div>
-                            <div className="text-xs text-muted-foreground">{weekdayLabel(weekdays)}</div>
-                          </TableCell>
-                          <TableCell>{schedule.timeLabel}</TableCell>
-                          <TableCell>{schedule.maxParticipants}</TableCell>
-                          <TableCell>
-                            <div className="flex flex-wrap gap-2">
-                              <Badge variant="outline">{schedule.category}</Badge>
-                              <Badge variant={schedule.status === "ACTIVE" ? "secondary" : "outline"}>{schedule.status}</Badge>
-                            </div>
-                          </TableCell>
-                          <TableCell className="pr-5 text-right">
-                            <Button variant="ghost" size="icon" onClick={() => deleteSchedule(schedule.id)} aria-label={`Delete schedule ${schedule.title}`}>
-                              <Trash2 className="h-4 w-4" />
+                <div className="divide-y divide-border">
+                  {schedules.map((schedule) => {
+                    const offering = classOptions.find((item) => item.id === schedule.offeringId)
+                    const weekdays = parseWeekdayList(schedule.weekdays)
+                    return (
+                      <div key={schedule.id} className="grid gap-4 p-4 md:grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)_auto] md:items-center sm:p-5">
+                        <div className="min-w-0">
+                          <div className="flex flex-wrap items-center gap-2">
+                            <p className="font-semibold text-foreground">{schedule.title}</p>
+                            <Badge variant={schedule.status === "ACTIVE" ? "secondary" : "outline"}>{schedule.status.toLowerCase()}</Badge>
+                          </div>
+                          <p className="mt-1 text-sm text-muted-foreground">{offering?.title || schedule.offeringId}</p>
+                        </div>
+                        <div className="grid grid-cols-2 gap-x-4 gap-y-2 text-sm">
+                          <div>
+                            <p className="text-xs text-muted-foreground">Date</p>
+                            <p className="font-medium">{formatDateRange(schedule.startDate, schedule.endDate)}</p>
+                          </div>
+                          <div>
+                            <p className="text-xs text-muted-foreground">Time</p>
+                            <p className="font-medium">{schedule.timeLabel}</p>
+                          </div>
+                          <div>
+                            <p className="text-xs text-muted-foreground">Repeats</p>
+                            <p className="font-medium">{weekdayLabel(weekdays)}</p>
+                          </div>
+                          <div>
+                            <p className="text-xs text-muted-foreground">Capacity</p>
+                            <p className="font-medium">{schedule.maxParticipants} seats</p>
+                          </div>
+                        </div>
+                        <div className="flex gap-2 md:justify-end">
+                          <Button variant="outline" size="sm" onClick={() => openEditSchedule(schedule)}>
+                            <Pencil className="mr-2 h-4 w-4" />Edit
+                          </Button>
+                          {schedule.status !== "CANCELLED" && (
+                            <Button variant="ghost" size="sm" onClick={() => deleteSchedule(schedule.id)}>
+                              Cancel
                             </Button>
-                          </TableCell>
-                        </TableRow>
-                      )
-                    })}
-                  </TableBody>
-                </Table>
+                          )}
+                        </div>
+                      </div>
+                    )
+                  })}
+                </div>
               )}
             </CardContent>
           </Card>
 
-          <Card>
+          <Card id="calendar-schedule-editor">
             <CardContent className="px-5">
-              <Accordion type="single" collapsible>
+              <Accordion type="single" collapsible value={scheduleAccordionValue} onValueChange={setScheduleAccordionValue}>
                 <AccordionItem value="add-schedule">
                   <AccordionTrigger className="py-0 hover:no-underline">
                     <div className="flex items-center gap-3">
@@ -893,8 +869,8 @@ export default function AdminBookingsPage() {
                         <CalendarPlus className="h-4 w-4" />
                       </div>
                       <div>
-                        <p className="font-heading text-base font-bold text-foreground">Add calendar schedule</p>
-                        <p className="text-sm font-normal text-muted-foreground">Create a class, event, or multi-day run for the public calendar.</p>
+                        <p className="font-heading text-base font-bold text-foreground">{editingScheduleId ? "Edit calendar schedule" : "Add calendar schedule"}</p>
+                        <p className="text-sm font-normal text-muted-foreground">{editingScheduleId ? "Update the public dates, time, repeat pattern, or capacity." : "Create a class, event, or multi-day run for the public calendar."}</p>
                       </div>
                     </div>
                   </AccordionTrigger>
@@ -965,6 +941,19 @@ export default function AdminBookingsPage() {
                           onChange={(event) => setScheduleForm((prev) => ({ ...prev, maxParticipants: event.target.value }))}
                         />
                       </div>
+                      {editingScheduleId && (
+                        <div className="space-y-2">
+                          <Label>Publishing status</Label>
+                          <Select value={scheduleForm.status} onValueChange={(value) => setScheduleForm((prev) => ({ ...prev, status: value }))}>
+                            <SelectTrigger><SelectValue /></SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="ACTIVE">Active</SelectItem>
+                              <SelectItem value="PAUSED">Paused</SelectItem>
+                              <SelectItem value="CANCELLED">Cancelled</SelectItem>
+                            </SelectContent>
+                          </Select>
+                        </div>
+                      )}
                       <div className="space-y-2">
                         <Label htmlFor="schedule-start">Start date</Label>
                         <Input
@@ -1018,10 +1007,13 @@ export default function AdminBookingsPage() {
                           rows={2}
                         />
                       </div>
-                      <Button onClick={createSchedule} disabled={savingSchedule || !scheduleForm.startDate || !scheduleForm.timeLabel} className="h-10">
+                      <div className="flex flex-wrap gap-2">
+                        {editingScheduleId && <Button type="button" variant="outline" onClick={resetScheduleForm} disabled={savingSchedule}>Cancel edit</Button>}
+                        <Button onClick={saveSchedule} disabled={savingSchedule || !scheduleForm.startDate || !scheduleForm.timeLabel} className="h-10">
                         {savingSchedule && <Loader2 className="h-4 w-4 animate-spin" />}
-                        Add Schedule
-                      </Button>
+                          {editingScheduleId ? "Save changes" : "Add schedule"}
+                        </Button>
+                      </div>
                     </div>
                     {scheduleError && <p className="mt-3 text-sm text-destructive">{scheduleError}</p>}
                   </AccordionContent>

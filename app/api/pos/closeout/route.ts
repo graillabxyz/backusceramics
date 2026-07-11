@@ -14,6 +14,11 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
   }
 
+  const posOperator = await getPosOperatorFromRequest(req)
+  if (!posOperator) {
+    return NextResponse.json({ error: "Unlock the POS with a cashier PIN to view closeout reports.", code: "POS_PIN_LOCKED" }, { status: 423 })
+  }
+
   const dateKey = req.nextUrl.searchParams.get("date")
   const report = await buildPosCloseoutReport(dateKey)
   const closeout = await prisma.posCloseout.findUnique({
@@ -38,6 +43,11 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
   }
 
+  const posOperator = await getPosOperatorFromRequest(req)
+  if (!posOperator) {
+    return NextResponse.json({ error: "Unlock the POS with a cashier PIN before closing the day.", code: "POS_PIN_LOCKED" }, { status: 423 })
+  }
+
   if (isRequestBodyTooLarge(req, MAX_POS_CLOSEOUT_BODY_BYTES)) {
     return NextResponse.json({ error: "Closeout payload is too large" }, { status: 413 })
   }
@@ -47,8 +57,7 @@ export async function POST(req: NextRequest) {
   const notes = typeof data.notes === "string" ? cleanString(data.notes, 2000) : ""
   const requestedEmail = typeof data.reportEmail === "string" ? safeHeaderValue(data.reportEmail, 254) : ""
   const reportEmail = requestedEmail || session.user.email || ""
-  const posOperator = await getPosOperatorFromRequest(req)
-  const closedById = posOperator?.id || session.user.id
+  const closedById = posOperator.id
 
   const closeout = await prisma.posCloseout.upsert({
     where: { businessDate: report.businessDate },

@@ -227,6 +227,10 @@ export default function PosCloseoutPage() {
     try {
       const res = await fetch(`/api/pos/closeout?date=${encodeURIComponent(date)}`)
       const data = await res.json().catch(() => ({}))
+      if (res.status === 423 && data.code === "POS_PIN_LOCKED") {
+        window.location.assign(`/admin/pos?returnTo=${encodeURIComponent("/admin/pos/closeout?posFullscreen=1")}`)
+        return
+      }
       if (!res.ok) throw new Error(data.error || "Could not load closeout report")
 
       setReport(data.report)
@@ -259,6 +263,10 @@ export default function PosCloseoutPage() {
         }),
       })
       const data = await res.json().catch(() => ({}))
+      if (res.status === 423 && data.code === "POS_PIN_LOCKED") {
+        window.location.assign(`/admin/pos?returnTo=${encodeURIComponent("/admin/pos/closeout?posFullscreen=1")}`)
+        return
+      }
       if (!res.ok) throw new Error(data.error || "Could not close out this day")
 
       setReport(data.report)

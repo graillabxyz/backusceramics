@@ -36,7 +36,8 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Application is too large" }, { status: 413 })
   }
 
-  const data = await req.json()
+  const data = await req.json().catch(() => null)
+  if (!data || typeof data !== "object") return NextResponse.json({ error: "Application is not valid JSON" }, { status: 400 })
 
   const programId = cleanString(data.programId, 120)
   if (!programId) {

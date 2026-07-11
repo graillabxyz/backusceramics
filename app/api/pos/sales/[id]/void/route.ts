@@ -3,15 +3,29 @@ import { auth } from "@/lib/auth"
 import { prisma } from "@/lib/prisma"
 import { canUsePos } from "@/lib/permissions"
 import { recordAnalyticsEvent } from "@/lib/analytics-server"
+import { getPosOperatorFromRequest } from "@/lib/pos-operator-session"
+import { isRequestBodyTooLarge } from "@/lib/server-security"
 
 interface RouteContext {
   params: Promise<{ id: string }>
 }
 
+const MAX_VOID_BODY_BYTES = 8 * 1024
+class PosVoidValidationError extends Error {}
+
 export async function POST(req: NextRequest, context: RouteContext) {
   const session = await auth()
   if (!session || !canUsePos(session.user.role)) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
+  }
+
+  const posOperator = await getPosOperatorFromRequest(req)
+  if (!posOperator) {
+    return NextResponse.json({ error: "Unlock the POS with a cashier PIN before voiding a sale.", code: "POS_PIN_LOCKED" }, { status: 423 })
+  }
+
+  if (isRequestBodyTooLarge(req, MAX_VOID_BODY_BYTES)) {
+    return NextResponse.json({ error: "Void request is too large" }, { status: 413 })
   }
 
   const { id } = await context.params
@@ -27,15 +41,15 @@ export async function POST(req: NextRequest, context: RouteContext) {
       })
 
       if (!existing) {
-        throw new Error("Sale not found")
+        throw new PosVoidValidationError("Sale not found")
       }
 
       if (existing.status === "VOIDED") {
-        throw new Error("Sale has already been voided")
+        throw new PosVoidValidationError("Sale has already been voided")
       }
 
       if (existing.status === "CANCELLED") {
-        throw new Error("Cancelled sales do not need to be voided")
+        throw new PosVoidValidationError("Cancelled sales do not need to be voided")
       }
 
       if (restock) {
@@ -56,7 +70,7 @@ export async function POST(req: NextRequest, context: RouteContext) {
         data: {
           status: "VOIDED",
           voidedAt: new Date(),
-          voidedById: session.user.id,
+          voidedById: posOperator.id,
           voidReason: reason || null,
         },
         include: {
@@ -82,7 +96,7 @@ export async function POST(req: NextRequest, context: RouteContext) {
 
     await recordAnalyticsEvent({
       type: "pos_sale_voided",
-      userId: session.user.id,
+      userId: posOperator.id,
       source: "pos",
       value: sale.total,
       currency: sale.currency,
@@ -96,8 +110,10 @@ export async function POST(req: NextRequest, context: RouteContext) {
     return NextResponse.json(sale)
   } catch (error) {
     console.error("Could not void POS sale", { saleId: id, error })
-    const message = error instanceof Error ? error.message : "Sale could not be voided"
-    const status = message === "Sale not found" ? 404 : 409
+    const message = error instanceof PosVoidValidationError ? error.message : "Sale could not be voided. Please try again."
+    const status = error instanceof PosVoidValidationError
+      ? message === "Sale not found" ? 404 : 409
+      : 500
     return NextResponse.json({ error: message }, { status })
   }
 }

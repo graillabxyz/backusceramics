@@ -39,7 +39,8 @@ export async function PATCH(req: NextRequest, { params }: ProductRouteContext) {
   }
 
   const { id } = await params
-  const data = await req.json()
+  const data = await req.json().catch(() => null)
+  if (!data || typeof data !== "object") return NextResponse.json({ error: "Product request is not valid JSON" }, { status: 400 })
   const updateData: Record<string, unknown> = {}
   const nextCategory = "category" in data ? normalizeProductCategory(data.category) : undefined
   const currentProduct = await prisma.posProduct.findUnique({

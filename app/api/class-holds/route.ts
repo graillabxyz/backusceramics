@@ -31,7 +31,8 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Hold request is too large" }, { status: 413 })
   }
 
-  const data = await req.json()
+  const data = await req.json().catch(() => null)
+  if (!data || typeof data !== "object") return NextResponse.json({ error: "Hold request is not valid JSON" }, { status: 400 })
   const validation = validateClassHoldPayload(data)
   if ("error" in validation) return NextResponse.json({ error: validation.error }, { status: validation.status })
   const holdData = validation.data

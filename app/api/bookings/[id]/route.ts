@@ -2,8 +2,10 @@ import { NextRequest, NextResponse } from "next/server"
 import { auth } from "@/lib/auth"
 import { prisma } from "@/lib/prisma"
 import { isFullAdminRole } from "@/lib/permissions"
+import { isRequestBodyTooLarge } from "@/lib/server-security"
 
 const bookingStatuses = ["PENDING", "CONFIRMED", "COMPLETED", "CANCELLED", "ARCHIVED"] as const
+const MAX_BOOKING_STATUS_BODY_BYTES = 8 * 1024
 
 export async function PATCH(
   req: NextRequest,
@@ -15,7 +17,8 @@ export async function PATCH(
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
   }
 
-  const { status } = await req.json()
+  if (isRequestBodyTooLarge(req, MAX_BOOKING_STATUS_BODY_BYTES)) return NextResponse.json({ error: "Booking update is too large" }, { status: 413 })
+  const { status } = await req.json().catch(() => ({}))
   if (!bookingStatuses.includes(status)) {
     return NextResponse.json({ error: "Invalid booking status" }, { status: 400 })
   }
@@ -29,6 +32,9 @@ export async function PATCH(
         : status === "ARCHIVED"
           ? { archivedAt: now, holdExpiresAt: null }
           : { cancelledAt: null, archivedAt: null }
+
+  const existing = await prisma.classBooking.findUnique({ where: { id }, select: { id: true } })
+  if (!existing) return NextResponse.json({ error: "Booking not found" }, { status: 404 })
 
   const booking = await prisma.classBooking.update({
     where: { id },

@@ -97,6 +97,10 @@ export default function PosSalesPage() {
     try {
       const res = await fetch("/api/pos/sales?limit=150")
       const data = await res.json().catch(() => [])
+      if (res.status === 423 && data.code === "POS_PIN_LOCKED") {
+        window.location.assign(`/admin/pos?returnTo=${encodeURIComponent("/admin/pos/sales?posFullscreen=1")}`)
+        return
+      }
       if (!res.ok) throw new Error(data.error || "Could not load POS sales")
       setSales(data)
     } catch (salesError) {
@@ -130,6 +134,10 @@ export default function PosSalesPage() {
         }),
       })
       const data = await res.json().catch(() => ({}))
+      if (res.status === 423 && data.code === "POS_PIN_LOCKED") {
+        window.location.assign(`/admin/pos?returnTo=${encodeURIComponent("/admin/pos/sales?posFullscreen=1")}`)
+        return
+      }
       if (!res.ok) throw new Error(data.error || "Sale could not be voided")
 
       setSales((current) => current.map((sale) => sale.id === data.id ? data : sale))
