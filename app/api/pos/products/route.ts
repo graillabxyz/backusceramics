@@ -45,6 +45,13 @@ function parseVolumeMl(value: unknown, category: string) {
   return { value: volumeMl }
 }
 
+function parseOptionalPositiveInteger(value: unknown, label: string) {
+  if (value === null || value === undefined || value === "") return { value: null }
+  const parsed = Number(value)
+  if (!Number.isInteger(parsed) || parsed <= 0) return { value: null, error: `${label} must be a positive whole number` }
+  return { value: parsed }
+}
+
 export async function GET() {
   const session = await auth()
   if (!session || !canUsePos(session.user.role)) {
@@ -86,6 +93,10 @@ export async function POST(req: NextRequest) {
   const cafeOnly = category === "F_AND_B" || Boolean(data.cafeOnly)
   const showInShop = cafeOnly || isDraft || !isCupCategory(category) ? false : Boolean(data.showInShop)
   const volumeMl = parseVolumeMl(data.volumeMl, category)
+  const weightGrams = parseOptionalPositiveInteger(data.weightGrams, "Weight")
+  const lengthCm = parseOptionalPositiveInteger(data.lengthCm, "Length")
+  const widthCm = parseOptionalPositiveInteger(data.widthCm, "Width")
+  const heightCm = parseOptionalPositiveInteger(data.heightCm, "Height")
 
   if (!name) {
     return NextResponse.json({ error: "Product name is required" }, { status: 400 })
@@ -111,6 +122,9 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: volumeMl.error }, { status: 400 })
   }
 
+  const measurementError = weightGrams.error || lengthCm.error || widthCm.error || heightCm.error
+  if (measurementError) return NextResponse.json({ error: measurementError }, { status: 400 })
+
   const product = await prisma.posProduct.create({
     data: {
       createdBy: session.user.id,
@@ -119,6 +133,10 @@ export async function POST(req: NextRequest) {
       sku: data.sku ? cleanString(data.sku, 120) : null,
       description: data.description ? cleanString(data.description, 4000) : null,
       volumeMl: volumeMl.value,
+      weightGrams: weightGrams.value,
+      lengthCm: lengthCm.value,
+      widthCm: widthCm.value,
+      heightCm: heightCm.value,
       imageUrls: serializeProductImageUrls(data.imageUrls),
       price: price ?? 0,
       category,

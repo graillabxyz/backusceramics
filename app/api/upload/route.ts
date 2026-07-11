@@ -4,7 +4,10 @@ import { isFullAdminRole } from "@/lib/permissions"
 import { createClient } from "@supabase/supabase-js"
 import { writeFile, mkdir } from "fs/promises"
 import path from "path"
+import sharp from "sharp"
 import { checkRateLimit, isRequestBodyTooLarge, rateLimitHeaders } from "@/lib/server-security"
+
+export const runtime = "nodejs"
 
 const MAX_UPLOAD_SIZE = 8 * 1024 * 1024
 const ALLOWED_IMAGE_MIME_TYPES = [
@@ -72,7 +75,7 @@ function getUploadFilename(extension: string) {
   return `${Date.now()}-${Math.random().toString(36).slice(2, 8)}${extension}`
 }
 
-async function uploadToSupabaseStorage(buffer: Buffer, detectedType: DetectedImageType) {
+async function uploadToSupabaseStorage(buffer: Buffer) {
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
   const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY
   const bucket = process.env.SUPABASE_STORAGE_BUCKET || "product-images"
@@ -92,7 +95,7 @@ async function uploadToSupabaseStorage(buffer: Buffer, detectedType: DetectedIma
     const { error: createBucketError } = await supabase.storage.createBucket(bucket, {
       public: true,
       fileSizeLimit: MAX_UPLOAD_SIZE,
-      allowedMimeTypes: ALLOWED_IMAGE_MIME_TYPES,
+      allowedMimeTypes: ["image/webp"],
     })
 
     if (createBucketError && !createBucketError.message.toLowerCase().includes("already exists")) {
@@ -102,7 +105,7 @@ async function uploadToSupabaseStorage(buffer: Buffer, detectedType: DetectedIma
     const { error: updateBucketError } = await supabase.storage.updateBucket(bucket, {
       public: true,
       fileSizeLimit: MAX_UPLOAD_SIZE,
-      allowedMimeTypes: ALLOWED_IMAGE_MIME_TYPES,
+      allowedMimeTypes: ["image/webp"],
     })
 
     if (updateBucketError) {
@@ -110,9 +113,9 @@ async function uploadToSupabaseStorage(buffer: Buffer, detectedType: DetectedIma
     }
   }
 
-  const filename = `products/${getUploadFilename(detectedType.extension)}`
+  const filename = `products/${getUploadFilename(".webp")}`
   const { error } = await supabase.storage.from(bucket).upload(filename, buffer, {
-    contentType: detectedType.contentType,
+    contentType: "image/webp",
     upsert: false,
   })
 
@@ -164,10 +167,49 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "The uploaded file is not a supported image" }, { status: 400 })
   }
 
+  let optimizedBuffer: Buffer
+  let optimizedInfo: { width: number; height: number; size: number }
   try {
-    const storageUrl = await uploadToSupabaseStorage(buffer, detectedType)
+    const optimized = await sharp(buffer, {
+      limitInputPixels: 40_000_000,
+      failOn: "none",
+    })
+      .autoOrient()
+      .resize({
+        width: 2400,
+        height: 2400,
+        fit: "inside",
+        withoutEnlargement: true,
+      })
+      .webp({ quality: 82, effort: 4, smartSubsample: true })
+      .toBuffer({ resolveWithObject: true })
+
+    optimizedBuffer = optimized.data
+    optimizedInfo = {
+      width: optimized.info.width,
+      height: optimized.info.height,
+      size: optimized.info.size,
+    }
+  } catch (error) {
+    console.error("Product image processing failed", { error, detectedType, originalSize: buffer.length })
+    return NextResponse.json(
+      { error: "That image could not be processed. Try another image or export it as JPG, PNG, or WebP." },
+      { status: 400 }
+    )
+  }
+
+  try {
+    const storageUrl = await uploadToSupabaseStorage(optimizedBuffer)
     if (storageUrl) {
-      return NextResponse.json({ url: storageUrl })
+      return NextResponse.json({
+        url: storageUrl,
+        format: "webp",
+        width: optimizedInfo.width,
+        height: optimizedInfo.height,
+        size: optimizedInfo.size,
+        originalSize: buffer.length,
+        savedBytes: Math.max(buffer.length - optimizedInfo.size, 0),
+      })
     }
   } catch (error) {
     console.error("Supabase product image upload failed", error)
@@ -196,10 +238,18 @@ export async function POST(req: NextRequest) {
   await mkdir(uploadsDir, { recursive: true })
 
   // Generate unique filename
-  const filename = getUploadFilename(detectedType.extension)
+  const filename = getUploadFilename(".webp")
   const filepath = path.join(uploadsDir, filename)
 
-  await writeFile(filepath, buffer)
+  await writeFile(filepath, optimizedBuffer)
 
-  return NextResponse.json({ url: `/uploads/${filename}` })
+  return NextResponse.json({
+    url: `/uploads/${filename}`,
+    format: "webp",
+    width: optimizedInfo.width,
+    height: optimizedInfo.height,
+    size: optimizedInfo.size,
+    originalSize: buffer.length,
+    savedBytes: Math.max(buffer.length - optimizedInfo.size, 0),
+  })
 }

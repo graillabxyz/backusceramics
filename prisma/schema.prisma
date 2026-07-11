@@ -215,6 +215,10 @@ model PosProduct {
   sku         String?
   description String?
   volumeMl    Int?
+  weightGrams Int?
+  lengthCm    Int?
+  widthCm     Int?
+  heightCm    Int?
   imageUrls   String? // JSON array of image URLs
   price       Int
   currency    String  @default("IDR")
@@ -249,6 +253,7 @@ model PosSale {
   subtotal      Int    @default(0)
   discountTotal Int    @default(0)
   taxTotal      Int    @default(0)
+  shippingAmount Int   @default(0)
   total         Int
   currency      String @default("IDR")
   status        String @default("PAID")
@@ -258,6 +263,12 @@ model PosSale {
   paymentSessionId String?
   receiptEmail String?
   receiptSentAt DateTime?
+  fulfillmentMethod String @default("PICKUP")
+  shippingCountry String?
+  shippingPostalCode String?
+  shippingCity String?
+  shippingAddress String?
+  shippingQuote String?
   notes         String?
   voidedAt      DateTime?
   voidReason    String?

@@ -28,6 +28,13 @@ function parseVolumeMl(value: unknown, category: string) {
   return { value: volumeMl }
 }
 
+function parseOptionalPositiveInteger(value: unknown, label: string) {
+  if (value === null || value === undefined || value === "") return { value: null }
+  const parsed = Number(value)
+  if (!Number.isInteger(parsed) || parsed <= 0) return { value: null, error: `${label} must be a positive whole number` }
+  return { value: parsed }
+}
+
 export async function PATCH(req: NextRequest, { params }: ProductRouteContext) {
   const session = await auth()
   if (!session || !canUsePos(session.user.role)) {
@@ -93,6 +100,19 @@ export async function PATCH(req: NextRequest, { params }: ProductRouteContext) {
       return NextResponse.json({ error: volumeMl.error }, { status: 400 })
     }
     updateData.volumeMl = volumeMl.value
+  }
+
+  for (const [field, label] of [
+    ["weightGrams", "Weight"],
+    ["lengthCm", "Length"],
+    ["widthCm", "Width"],
+    ["heightCm", "Height"],
+  ] as const) {
+    if (field in data) {
+      const parsed = parseOptionalPositiveInteger(data[field], label)
+      if (parsed.error) return NextResponse.json({ error: parsed.error }, { status: 400 })
+      updateData[field] = parsed.value
+    }
   }
 
   if ("price" in data) {

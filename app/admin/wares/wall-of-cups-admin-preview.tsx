@@ -203,7 +203,7 @@ export function WallOfCupsAdminPreview({ initialProducts }: WallOfCupsAdminPrevi
                 <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/85 via-black/45 to-transparent p-4 pt-16 text-white">
                   <div className="flex items-end justify-between gap-3">
                     <div className="min-w-0">
-                      <h2 className="truncate font-heading text-xl font-bold">{product.name}</h2>
+                      <h2 className="break-words font-heading text-xl font-bold leading-tight">{product.name}</h2>
                       <p className="mt-1 text-sm text-white/75">
                         {product.volumeMl ? `${product.volumeMl} ml · ` : ""}
                         {product.quantity} available

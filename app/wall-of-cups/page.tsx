@@ -3,8 +3,9 @@ import { ArrowRight, MapPin, ShoppingCart } from "lucide-react"
 import { Navigation } from "@/components/navigation"
 import { Footer } from "@/components/footer"
 import { Button } from "@/components/ui/button"
+import { WallOfCupsGrid } from "@/components/shop/wall-of-cups-grid"
 import { prisma } from "@/lib/prisma"
-import { formatPrice, parseProductImageUrls } from "@/lib/pos-catalog"
+import { parseProductImageUrls } from "@/lib/pos-catalog"
 
 export const dynamic = "force-dynamic"
 
@@ -59,44 +60,16 @@ export default async function WallOfCupsPage() {
       <section className="px-4 pb-20 sm:px-6 lg:px-8">
         <div className="mx-auto max-w-7xl">
           {cups.length > 0 ? (
-            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-              {cups.map((cup) => {
-                const image = firstImage(cup.imageUrls)
-
-                return (
-                  <Link
-                    key={cup.id}
-                    href={`/shop/${cup.slug}`}
-                    className="group relative block overflow-hidden rounded-sm bg-muted"
-                  >
-                    <div className="aspect-[3/4]">
-                      {image ? (
-                        <img
-                          src={image}
-                          alt={cup.name}
-                          className="h-full w-full object-cover transition duration-500 group-hover:scale-[1.03]"
-                        />
-                      ) : (
-                        <div className="flex h-full w-full items-center justify-center text-sm text-muted-foreground">
-                          Image coming soon
-                        </div>
-                      )}
-                    </div>
-                    <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/85 via-black/45 to-transparent p-4 pt-20 text-white">
-                      <div className="flex items-end justify-between gap-3">
-                        <div className="min-w-0">
-                          <h2 className="truncate font-heading text-xl font-bold">{cup.name}</h2>
-                          <p className="mt-1 text-sm text-white/75">
-                            {cup.volumeMl ? `${cup.volumeMl} ml` : "One of one"}
-                          </p>
-                        </div>
-                        <p className="shrink-0 text-sm font-semibold">{formatPrice(cup.price)}</p>
-                      </div>
-                    </div>
-                  </Link>
-                )
-              })}
-            </div>
+            <WallOfCupsGrid cups={cups.map((cup) => ({
+              id: cup.id,
+              slug: cup.slug,
+              name: cup.name,
+              category: cup.category,
+              price: cup.price,
+              quantity: cup.quantity,
+              volumeMl: cup.volumeMl,
+              image: firstImage(cup.imageUrls),
+            }))} />
           ) : (
             <div className="border-y border-border py-16">
               <h2 className="font-heading text-3xl font-bold text-foreground">The wall is being refreshed.</h2>

@@ -43,6 +43,7 @@ import {
   Trash2,
 } from "lucide-react"
 import Link from "next/link"
+import { prepareImageForUpload } from "@/lib/client-image-upload"
 
 interface PosProduct {
   id: string
@@ -51,6 +52,10 @@ interface PosProduct {
   sku: string | null
   description: string | null
   volumeMl: number | null
+  weightGrams: number | null
+  lengthCm: number | null
+  widthCm: number | null
+  heightCm: number | null
   imageUrls: string | null
   price: number
   currency: string
@@ -72,6 +77,10 @@ interface ProductFormState {
   status: string
   description: string
   volumeMl: string
+  weightGrams: string
+  lengthCm: string
+  widthCm: string
+  heightCm: string
   imageUrls: string
   cafeOnly: boolean
   showInShop: boolean
@@ -87,6 +96,10 @@ const emptyForm: ProductFormState = {
   status: "DRAFT",
   description: "",
   volumeMl: "",
+  weightGrams: "",
+  lengthCm: "",
+  widthCm: "",
+  heightCm: "",
   imageUrls: "",
   cafeOnly: false,
   showInShop: false,
@@ -161,6 +174,7 @@ export default function AdminProductsPage() {
   )
   const formImages = useMemo(() => parseProductImageUrls(formData.imageUrls), [formData.imageUrls])
   const formIsCup = isCupCategory(formData.category)
+  const formIsShippable = !["F_AND_B", "CLASSES"].includes(normalizeProductCategory(formData.category))
   const formIsDraft = formData.status === "DRAFT"
 
   useEffect(() => {
@@ -213,6 +227,10 @@ export default function AdminProductsPage() {
       status: product.status,
       description: product.description || "",
       volumeMl: product.volumeMl ? product.volumeMl.toString() : "",
+      weightGrams: product.weightGrams ? product.weightGrams.toString() : "",
+      lengthCm: product.lengthCm ? product.lengthCm.toString() : "",
+      widthCm: product.widthCm ? product.widthCm.toString() : "",
+      heightCm: product.heightCm ? product.heightCm.toString() : "",
       imageUrls: toImageText(product.imageUrls),
       cafeOnly: product.cafeOnly,
       showInShop: product.showInShop,
@@ -276,7 +294,7 @@ export default function AdminProductsPage() {
 
     try {
       const uploadForm = new FormData()
-      uploadForm.append("file", file)
+      uploadForm.append("file", await prepareImageForUpload(file))
       const res = await fetch("/api/upload", { method: "POST", body: uploadForm })
       const data = await res.json().catch(() => ({}))
       if (!res.ok || !data.url) {
@@ -288,7 +306,10 @@ export default function AdminProductsPage() {
         ...current,
         imageUrls: [current.imageUrls, data.url].filter(Boolean).join("\n"),
       }))
-      setImageUploadNotice("Image uploaded and previewed below.")
+      const savedPercent = data.originalSize > 0
+        ? Math.max(Math.round((1 - data.size / data.originalSize) * 100), 0)
+        : 0
+      setImageUploadNotice(`Image uploaded as WebP${savedPercent > 0 ? ` (${savedPercent}% smaller)` : ""} and previewed below.`)
     } catch (uploadError) {
       console.error("Product image upload failed", uploadError)
       setImageUploadError("That image could not be uploaded. Try a smaller JPG, PNG, WebP, HEIC, or HEIF.")
@@ -330,6 +351,10 @@ export default function AdminProductsPage() {
       volumeMl: isCup && formData.volumeMl.trim()
         ? Number(formData.volumeMl)
         : null,
+      weightGrams: formData.weightGrams.trim() ? Number(formData.weightGrams) : null,
+      lengthCm: formData.lengthCm.trim() ? Number(formData.lengthCm) : null,
+      widthCm: formData.widthCm.trim() ? Number(formData.widthCm) : null,
+      heightCm: formData.heightCm.trim() ? Number(formData.heightCm) : null,
       imageUrls: parseProductImageUrls(formData.imageUrls),
       showInShop: cafeOnly || isDraft || !isCup ? false : formData.showInShop,
       featured: isDraft ? false : formData.featured,
@@ -797,6 +822,31 @@ export default function AdminProductsPage() {
                     />
                   </div>
                 )}
+
+                {formIsShippable && <div className="col-span-full rounded-md border border-border bg-background/60 p-3">
+                  <div className="mb-3">
+                    <p className="text-sm font-semibold text-foreground">Shipping measurements</p>
+                    <p className="text-xs text-muted-foreground">Actual piece measurements. Checkout adds protective ceramic packing automatically.</p>
+                  </div>
+                  <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+                    <div className="space-y-2">
+                      <Label htmlFor="weightGrams">Weight (g)</Label>
+                      <Input id="weightGrams" inputMode="numeric" value={formData.weightGrams} onChange={(event) => handleFormChange("weightGrams", event.target.value)} placeholder="450" />
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="lengthCm">Length (cm)</Label>
+                      <Input id="lengthCm" inputMode="numeric" value={formData.lengthCm} onChange={(event) => handleFormChange("lengthCm", event.target.value)} placeholder="10" />
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="widthCm">Width (cm)</Label>
+                      <Input id="widthCm" inputMode="numeric" value={formData.widthCm} onChange={(event) => handleFormChange("widthCm", event.target.value)} placeholder="10" />
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="heightCm">Height (cm)</Label>
+                      <Input id="heightCm" inputMode="numeric" value={formData.heightCm} onChange={(event) => handleFormChange("heightCm", event.target.value)} placeholder="12" />
+                    </div>
+                  </div>
+                </div>}
 
                 <div className="space-y-2">
                   <Label>Status</Label>

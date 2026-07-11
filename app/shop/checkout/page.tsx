@@ -3,7 +3,7 @@
 import { Suspense, useCallback, useEffect, useMemo, useState } from "react"
 import Link from "next/link"
 import { useSearchParams } from "next/navigation"
-import { ArrowLeft, Loader2, ShoppingCart, Trash2 } from "lucide-react"
+import { ArrowLeft, Loader2, PackageCheck, ShoppingCart, Store, Trash2 } from "lucide-react"
 import { Navigation } from "@/components/navigation"
 import { Footer } from "@/components/footer"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
@@ -11,11 +11,13 @@ import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
+import { Textarea } from "@/components/ui/textarea"
 import { MobileStickyCta } from "@/components/mobile-sticky-cta"
 import { useAuth } from "@/lib/auth-context"
 import { formatPrice } from "@/lib/pos-catalog"
 import { clearShopCart, readShopCart, writeShopCart, type ShopCartItem } from "@/lib/shop-cart"
 import { markCheckoutPaymentStarted, trackAnalyticsEvent } from "@/lib/client-analytics"
+import { SHIPPING_DESTINATIONS } from "@/lib/shipping-destinations"
 
 interface CartPreviewItem {
   productId: string
@@ -29,6 +31,22 @@ interface CartPreviewItem {
   quantity: number
   image: string
   volumeMl: number | null
+}
+
+interface ShippingQuote {
+  countryCode: string
+  countryName: string
+  service: string
+  amount: number
+  actualWeightKg: number
+  volumetricWeightKg: number
+  chargeableWeightKg: number
+  packageLengthCm: number
+  packageWidthCm: number
+  packageHeightCm: number
+  estimatedDelivery: string
+  usedProductDefaults: boolean
+  disclaimer: string
 }
 
 function friendlyCheckoutError(status: number, data: Record<string, unknown>) {
@@ -55,6 +73,13 @@ function ShopCheckoutContent() {
   const [items, setItems] = useState<CartPreviewItem[]>([])
   const [receiptEmail, setReceiptEmail] = useState("")
   const [customerName, setCustomerName] = useState("")
+  const [fulfillmentMethod, setFulfillmentMethod] = useState<"PICKUP" | "SHIPPING">("PICKUP")
+  const [shippingCountry, setShippingCountry] = useState("")
+  const [shippingCity, setShippingCity] = useState("")
+  const [shippingPostalCode, setShippingPostalCode] = useState("")
+  const [shippingAddress, setShippingAddress] = useState("")
+  const [shippingQuote, setShippingQuote] = useState<ShippingQuote | null>(null)
+  const [isLoadingQuote, setIsLoadingQuote] = useState(false)
   const [isLoadingCart, setIsLoadingCart] = useState(true)
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [error, setError] = useState("")
@@ -141,6 +166,40 @@ function ShopCheckoutContent() {
 
   const subtotal = useMemo(() => items.reduce((sum, item) => sum + item.price * item.quantity, 0), [items])
   const itemCount = useMemo(() => items.reduce((sum, item) => sum + item.quantity, 0), [items])
+  const shippingAmount = fulfillmentMethod === "SHIPPING" ? shippingQuote?.amount || 0 : 0
+  const total = subtotal + shippingAmount
+
+  useEffect(() => {
+    setShippingQuote(null)
+  }, [cartSignature, shippingCountry])
+
+  const calculateShipping = async () => {
+    setError("")
+    if (!shippingCountry) {
+      setError("Choose a destination before calculating shipping.")
+      return
+    }
+
+    setIsLoadingQuote(true)
+    try {
+      const res = await fetch("/api/shop/shipping-quote", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          countryCode: shippingCountry,
+          items: items.map((item) => ({ productId: item.productId, quantity: item.quantity })),
+        }),
+      })
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok || !data.quote) throw new Error(data.error || "Shipping could not be calculated.")
+      setShippingQuote(data.quote as ShippingQuote)
+    } catch (quoteError) {
+      console.error("Shop shipping quote failed", quoteError)
+      setError(quoteError instanceof Error ? quoteError.message : "Shipping could not be calculated.")
+    } finally {
+      setIsLoadingQuote(false)
+    }
+  }
 
   const updateQuantity = (productId: string, quantity: number) => {
     const previewItem = items.find((item) => item.productId === productId)
@@ -192,6 +251,16 @@ function ShopCheckoutContent() {
       return
     }
 
+    if (fulfillmentMethod === "SHIPPING" && !shippingQuote) {
+      setError("Calculate shipping before continuing to payment.")
+      return
+    }
+
+    if (fulfillmentMethod === "SHIPPING" && (!shippingCity.trim() || !shippingPostalCode.trim() || shippingAddress.trim().length < 8)) {
+      setError("Add the complete shipping city, postal code, and address.")
+      return
+    }
+
     setIsSubmitting(true)
     try {
       const returnPath = `${window.location.pathname}${window.location.search}`
@@ -202,6 +271,11 @@ function ShopCheckoutContent() {
           items: items.map((item) => ({ productId: item.productId, quantity: item.quantity })),
           receiptEmail: receiptEmail.trim(),
           customerName: customerName.trim(),
+          fulfillmentMethod,
+          shippingCountry,
+          shippingCity: shippingCity.trim(),
+          shippingPostalCode: shippingPostalCode.trim(),
+          shippingAddress: shippingAddress.trim(),
         }),
       })
 
@@ -220,6 +294,7 @@ function ShopCheckoutContent() {
           request: {
             itemCount: items.length,
             subtotal,
+            fulfillmentMethod,
           },
         })
         throw new Error(friendlyCheckoutError(res.status, data))
@@ -235,7 +310,7 @@ function ShopCheckoutContent() {
       await trackAnalyticsEvent({
         type: "shop_payment_start_success",
         source: "online_shop",
-        value: subtotal,
+        value: total,
         currency: "IDR",
         metadata: {
           saleId: typeof data.saleId === "string" ? data.saleId : undefined,
@@ -271,7 +346,7 @@ function ShopCheckoutContent() {
                 Review your cart.
               </h1>
               <p className="mt-3 max-w-2xl text-sm leading-relaxed text-muted-foreground">
-                Online payment reserves the selected piece while Xendit confirms payment. Pickup is available at the shop; shipping is arranged after checkout when needed.
+                Online payment reserves the selected piece while Xendit confirms payment. Choose free shop pickup or calculate protected ceramic shipping before paying.
               </p>
             </div>
             <div className="flex w-fit rounded-md border border-border bg-background p-1 text-xs font-medium text-muted-foreground">
@@ -397,11 +472,87 @@ function ShopCheckoutContent() {
                   <span>Subtotal</span>
                   <span>{formatPrice(subtotal)}</span>
                 </div>
+                <div className="flex items-center justify-between text-muted-foreground">
+                  <span>{fulfillmentMethod === "SHIPPING" ? "Packing and shipping" : "Shop pickup"}</span>
+                  <span>{fulfillmentMethod === "SHIPPING" ? (shippingQuote ? formatPrice(shippingAmount) : "Not calculated") : "Free"}</span>
+                </div>
                 <div className="flex items-center justify-between text-lg font-semibold text-foreground">
                   <span>Total</span>
-                  <span>{formatPrice(subtotal)}</span>
+                  <span>{formatPrice(total)}</span>
                 </div>
               </div>
+
+              <div className="space-y-3">
+                <Label>Receive your order</Label>
+                <div className="grid grid-cols-2 gap-2">
+                  <Button
+                    type="button"
+                    variant={fulfillmentMethod === "PICKUP" ? "default" : "outline"}
+                    className="h-auto justify-start gap-2 py-3"
+                    onClick={() => setFulfillmentMethod("PICKUP")}
+                  >
+                    <Store className="h-4 w-4" />
+                    Shop pickup
+                  </Button>
+                  <Button
+                    type="button"
+                    variant={fulfillmentMethod === "SHIPPING" ? "default" : "outline"}
+                    className="h-auto justify-start gap-2 py-3"
+                    onClick={() => setFulfillmentMethod("SHIPPING")}
+                  >
+                    <PackageCheck className="h-4 w-4" />
+                    Ship it
+                  </Button>
+                </div>
+              </div>
+
+              {fulfillmentMethod === "SHIPPING" && (
+                <div className="space-y-3 rounded-md border border-border bg-muted/20 p-4">
+                  <div className="space-y-2">
+                    <Label htmlFor="shop-shipping-country">Destination country</Label>
+                    <select
+                      id="shop-shipping-country"
+                      value={shippingCountry}
+                      onChange={(event) => setShippingCountry(event.target.value)}
+                      className="h-11 w-full rounded-md border border-input bg-background px-3 text-sm"
+                    >
+                      <option value="">Choose a country</option>
+                      {SHIPPING_DESTINATIONS.map((destination) => (
+                        <option key={destination.code} value={destination.code}>{destination.name}</option>
+                      ))}
+                    </select>
+                  </div>
+                  <Button type="button" variant="outline" className="w-full" onClick={calculateShipping} disabled={isLoadingQuote || items.length === 0}>
+                    {isLoadingQuote ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <PackageCheck className="mr-2 h-4 w-4" />}
+                    {shippingQuote ? "Recalculate shipping" : "Calculate shipping"}
+                  </Button>
+                  {shippingQuote && (
+                    <div className="space-y-1 rounded-md bg-background p-3 text-xs leading-relaxed text-muted-foreground">
+                      <div className="flex justify-between gap-3 font-semibold text-foreground">
+                        <span>{shippingQuote.service}</span>
+                        <span>{formatPrice(shippingQuote.amount)}</span>
+                      </div>
+                      <p>{shippingQuote.chargeableWeightKg} kg chargeable · {shippingQuote.packageLengthCm} × {shippingQuote.packageWidthCm} × {shippingQuote.packageHeightCm} cm packed</p>
+                      <p>Estimated {shippingQuote.estimatedDelivery}. Duties and destination taxes are not included.</p>
+                      {shippingQuote.usedProductDefaults && <p>Some piece measurements use protective category defaults; the server will verify the same estimate before payment.</p>}
+                    </div>
+                  )}
+                  <div className="grid grid-cols-2 gap-3">
+                    <div className="space-y-2">
+                      <Label htmlFor="shop-shipping-city">City</Label>
+                      <Input id="shop-shipping-city" value={shippingCity} onChange={(event) => setShippingCity(event.target.value)} />
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="shop-shipping-postcode">Postal code</Label>
+                      <Input id="shop-shipping-postcode" value={shippingPostalCode} onChange={(event) => setShippingPostalCode(event.target.value)} />
+                    </div>
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="shop-shipping-address">Complete address</Label>
+                    <Textarea id="shop-shipping-address" rows={3} value={shippingAddress} onChange={(event) => setShippingAddress(event.target.value)} />
+                  </div>
+                </div>
+              )}
 
               <div className="space-y-2">
                 <Label htmlFor="shop-customer-name">Name</Label>
@@ -447,7 +598,7 @@ function ShopCheckoutContent() {
       </section>
 
       <MobileStickyCta
-        title={formatPrice(subtotal)}
+        title={formatPrice(total)}
         detail={
           error
             ? <span className="text-destructive">{error}</span>

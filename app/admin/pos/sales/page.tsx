@@ -36,11 +36,17 @@ interface PosSale {
   subtotal: number
   discountTotal: number
   taxTotal: number
+  shippingAmount: number
   total: number
   currency: string
   status: string
   paymentMethod: string
   receiptEmail: string | null
+  fulfillmentMethod: string
+  shippingCountry: string | null
+  shippingPostalCode: string | null
+  shippingCity: string | null
+  shippingAddress: string | null
   notes: string | null
   voidedAt: string | null
   voidReason: string | null
@@ -228,8 +234,14 @@ export default function PosSalesPage() {
                         <span>Operator: {sale.operator?.name || sale.operator?.email || "Unknown"}</span>
                         {sale.receiptEmail && <span>Receipt: {sale.receiptEmail}</span>}
                         {sale.taxTotal > 0 && <span>Tax: {formatPrice(sale.taxTotal)}</span>}
+                        {sale.shippingAmount > 0 && <span>Shipping: {formatPrice(sale.shippingAmount)}</span>}
                         {sale.discountTotal > 0 && <span>Discounts: {formatPrice(sale.discountTotal)}</span>}
                       </div>
+                      {sale.fulfillmentMethod === "SHIPPING" && (
+                        <p className="mt-2 text-xs text-muted-foreground">
+                          Ship to: {[sale.shippingAddress, sale.shippingCity, sale.shippingPostalCode, sale.shippingCountry].filter(Boolean).join(", ")}
+                        </p>
+                      )}
                       {sale.status === "VOIDED" && (
                         <div className="mt-3 rounded-md border border-destructive/20 bg-destructive/5 p-3 text-sm text-muted-foreground">
                           <p className="font-medium text-foreground">

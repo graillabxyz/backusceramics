@@ -182,7 +182,7 @@ export default async function ProductPage({ params }: ProductPageProps) {
                       )}
                     </div>
                     <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/85 via-black/35 to-transparent p-3 pt-14 text-white">
-                      <h3 className="truncate font-heading text-lg font-bold">{relatedProduct.name}</h3>
+                      <h3 className="break-words font-heading text-lg font-bold leading-tight">{relatedProduct.name}</h3>
                       <p className="mt-1 text-sm text-white/75">{formatPrice(relatedProduct.price)}</p>
                     </div>
                   </Link>

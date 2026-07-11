@@ -18,11 +18,17 @@ interface ReceiptSale {
   subtotal?: number
   discountTotal?: number
   taxTotal?: number
+  shippingAmount?: number
   total: number
   currency: string
   paymentMethod: string
   createdAt: Date
   receiptEmail?: string | null
+  fulfillmentMethod?: string
+  shippingCountry?: string | null
+  shippingPostalCode?: string | null
+  shippingCity?: string | null
+  shippingAddress?: string | null
   items: ReceiptItem[]
 }
 
@@ -86,8 +92,18 @@ function buildReceiptHtml(sale: ReceiptSale) {
         <div style="font-size:13px;color:#777;">Subtotal ${formatPrice(sale.subtotal ?? sale.total)}</div>
         ${(sale.discountTotal || 0) > 0 ? `<div style="font-size:13px;color:#777;">Discount -${formatPrice(sale.discountTotal || 0)}</div>` : ""}
         ${(sale.taxTotal || 0) > 0 ? `<div style="font-size:13px;color:#777;">Tax ${formatPrice(sale.taxTotal || 0)}</div>` : ""}
+        ${(sale.shippingAmount || 0) > 0 ? `<div style="font-size:13px;color:#777;">Packing and shipping ${formatPrice(sale.shippingAmount || 0)}</div>` : ""}
         <div style="margin-top:8px;font-size:20px;font-weight:700;">${formatPrice(sale.total)}</div>
       </div>
+      ${sale.fulfillmentMethod === "SHIPPING" ? `
+        <div style="padding:16px 0;border-top:1px solid #e8e1d8;">
+          <strong>Shipping to</strong>
+          <p style="margin:6px 0 0;color:#777;line-height:1.5;">
+            ${escapeHtml(sale.shippingAddress || "")}<br>
+            ${escapeHtml([sale.shippingCity, sale.shippingPostalCode, sale.shippingCountry].filter(Boolean).join(", "))}
+          </p>
+        </div>
+      ` : ""}
       <p style="padding-top:20px;border-top:1px solid #e8e1d8;color:#777;font-size:13px;">
         Backus Ceramics, Bali. If you have questions about this purchase, reply to this email or message us on WhatsApp.
       </p>

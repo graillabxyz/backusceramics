@@ -65,6 +65,7 @@ import {
   type PosDiscountType,
   type PosTaxRate,
 } from "@/lib/pos-sale-calculations"
+import { prepareImageForUpload } from "@/lib/client-image-upload"
 
 interface PosProduct {
   id: string
@@ -73,6 +74,10 @@ interface PosProduct {
   sku: string | null
   description: string | null
   volumeMl: number | null
+  weightGrams: number | null
+  lengthCm: number | null
+  widthCm: number | null
+  heightCm: number | null
   imageUrls: string | null
   price: number
   currency: string
@@ -100,6 +105,10 @@ interface QuickProductForm {
   category: string
   description: string
   volumeMl: string
+  weightGrams: string
+  lengthCm: string
+  widthCm: string
+  heightCm: string
   imageUrls: string
   price: string
   quantity: string
@@ -122,6 +131,10 @@ const quickProductDefaults: QuickProductForm = {
   category: "CUPS",
   description: "",
   volumeMl: "",
+  weightGrams: "",
+  lengthCm: "",
+  widthCm: "",
+  heightCm: "",
   imageUrls: "",
   price: "",
   quantity: "1",
@@ -261,6 +274,7 @@ function PosWorkspace() {
     [cart]
   )
   const quickProductIsCup = isCupCategory(quickProduct.category)
+  const quickProductIsShippable = !["F_AND_B", "CLASSES"].includes(normalizeProductCategory(quickProduct.category))
   const quickProductIsDraft = quickProduct.status === "DRAFT"
   const quickProductImages = useMemo(() => parseProductImageUrls(quickProduct.imageUrls), [quickProduct.imageUrls])
 
@@ -416,6 +430,10 @@ function PosWorkspace() {
       category: normalizeProductCategory(product.category),
       description: product.description || "",
       volumeMl: product.volumeMl ? product.volumeMl.toString() : "",
+      weightGrams: product.weightGrams ? product.weightGrams.toString() : "",
+      lengthCm: product.lengthCm ? product.lengthCm.toString() : "",
+      widthCm: product.widthCm ? product.widthCm.toString() : "",
+      heightCm: product.heightCm ? product.heightCm.toString() : "",
       imageUrls: toImageText(product.imageUrls),
       price: product.price ? product.price.toString() : "",
       quantity: product.quantity.toString(),
@@ -511,6 +529,10 @@ function PosWorkspace() {
       volumeMl: isCup && quickProduct.volumeMl.trim()
         ? Number(quickProduct.volumeMl)
         : null,
+      weightGrams: quickProduct.weightGrams.trim() ? Number(quickProduct.weightGrams) : null,
+      lengthCm: quickProduct.lengthCm.trim() ? Number(quickProduct.lengthCm) : null,
+      widthCm: quickProduct.widthCm.trim() ? Number(quickProduct.widthCm) : null,
+      heightCm: quickProduct.heightCm.trim() ? Number(quickProduct.heightCm) : null,
       imageUrls: quickProductImages,
       status: quickProduct.status,
       showInShop: cafeOnly || isDraft || !isCup ? false : quickProduct.showInShop,
@@ -566,6 +588,10 @@ function PosWorkspace() {
       volumeMl: isCup && quickProduct.volumeMl.trim()
         ? Number(quickProduct.volumeMl)
         : null,
+      weightGrams: quickProduct.weightGrams.trim() ? Number(quickProduct.weightGrams) : null,
+      lengthCm: quickProduct.lengthCm.trim() ? Number(quickProduct.lengthCm) : null,
+      widthCm: quickProduct.widthCm.trim() ? Number(quickProduct.widthCm) : null,
+      heightCm: quickProduct.heightCm.trim() ? Number(quickProduct.heightCm) : null,
       imageUrls: quickProductImages,
       showInShop: cafeOnly || isDraft || !isCup ? false : quickProduct.showInShop,
       featured: isDraft ? false : quickProduct.featured,
@@ -608,7 +634,7 @@ function PosWorkspace() {
 
     try {
       const uploadForm = new FormData()
-      uploadForm.append("file", file)
+      uploadForm.append("file", await prepareImageForUpload(file))
       const res = await fetch("/api/upload", { method: "POST", body: uploadForm })
       const data = await res.json().catch(() => ({}))
       if (!res.ok || !data.url) {
@@ -620,7 +646,10 @@ function PosWorkspace() {
         ...current,
         imageUrls: [current.imageUrls, data.url].filter(Boolean).join("\n"),
       }))
-      setImageUploadNotice("Image uploaded and added below.")
+      const savedPercent = data.originalSize > 0
+        ? Math.max(Math.round((1 - data.size / data.originalSize) * 100), 0)
+        : 0
+      setImageUploadNotice(`Image uploaded as WebP${savedPercent > 0 ? ` (${savedPercent}% smaller)` : ""} and added below.`)
     } catch (uploadError) {
       console.error("POS product image upload failed", uploadError)
       setImageUploadError("That image could not be uploaded. Try a smaller JPG, PNG, WebP, HEIC, or HEIF.")
@@ -669,6 +698,10 @@ function PosWorkspace() {
       sku: null,
       description: "Custom-priced piece from the discount box",
       volumeMl: null,
+      weightGrams: null,
+      lengthCm: null,
+      widthCm: null,
+      heightCm: null,
       imageUrls: null,
       price,
       currency: "IDR",
@@ -932,6 +965,33 @@ function PosWorkspace() {
             onChange={(event) => updateQuickProduct("volumeMl", event.target.value)}
             placeholder="180"
           />
+        </div>
+      )}
+
+      {quickProductIsShippable && (
+        <div className="space-y-3 rounded-md border border-border bg-muted/20 p-3 sm:col-span-2">
+          <div>
+            <p className="text-sm font-semibold text-foreground">Shipping measurements</p>
+            <p className="text-xs text-muted-foreground">Metric measurements of the piece before protective packing.</p>
+          </div>
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+            <div className="space-y-2">
+              <Label htmlFor={`${prefix}WeightGrams`}>Weight (g)</Label>
+              <Input id={`${prefix}WeightGrams`} inputMode="numeric" value={quickProduct.weightGrams} onChange={(event) => updateQuickProduct("weightGrams", event.target.value)} placeholder="450" />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor={`${prefix}LengthCm`}>Length (cm)</Label>
+              <Input id={`${prefix}LengthCm`} inputMode="numeric" value={quickProduct.lengthCm} onChange={(event) => updateQuickProduct("lengthCm", event.target.value)} placeholder="10" />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor={`${prefix}WidthCm`}>Width (cm)</Label>
+              <Input id={`${prefix}WidthCm`} inputMode="numeric" value={quickProduct.widthCm} onChange={(event) => updateQuickProduct("widthCm", event.target.value)} placeholder="10" />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor={`${prefix}HeightCm`}>Height (cm)</Label>
+              <Input id={`${prefix}HeightCm`} inputMode="numeric" value={quickProduct.heightCm} onChange={(event) => updateQuickProduct("heightCm", event.target.value)} placeholder="12" />
+            </div>
+          </div>
         </div>
       )}
 

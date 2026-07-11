@@ -11,6 +11,8 @@ import {
 import { recordAnalyticsEvent } from "@/lib/analytics-server"
 import { checkRateLimit, cleanString, isRequestBodyTooLarge, isValidEmailAddress, rateLimitHeaders, safeHeaderValue } from "@/lib/server-security"
 import { getTrustedRequestOrigin } from "@/lib/request-origin"
+import { calculateCeramicShipping, type ShippingQuote } from "@/lib/shop-shipping"
+import { getShippingDestination } from "@/lib/shipping-destinations"
 
 const MAX_SHOP_CHECKOUT_BODY_BYTES = 64 * 1024
 const PUBLIC_CATEGORY_IDS = PUBLIC_WARES_CATEGORIES.map((category) => category.id)
@@ -104,6 +106,11 @@ export async function POST(req: NextRequest) {
   const receiptEmail = safeHeaderValue(data?.receiptEmail || session.user.email || "", 254)
   const customerName = cleanString(data?.customerName || session.user.name || "", 160)
   const notes = cleanString(data?.notes, 1000)
+  const fulfillmentMethod = data?.fulfillmentMethod === "SHIPPING" ? "SHIPPING" : "PICKUP"
+  const shippingCountry = cleanString(data?.shippingCountry, 2).toUpperCase()
+  const shippingCity = cleanString(data?.shippingCity, 120)
+  const shippingPostalCode = cleanString(data?.shippingPostalCode, 24)
+  const shippingAddress = cleanString(data?.shippingAddress, 500)
 
   if (items.length === 0) {
     return NextResponse.json({ error: "Checkout needs at least one available item." }, { status: 400 })
@@ -113,14 +120,23 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Add a valid email address before payment." }, { status: 400 })
   }
 
+  if (fulfillmentMethod === "SHIPPING") {
+    if (!getShippingDestination(shippingCountry)) {
+      return NextResponse.json({ error: "Choose a supported shipping destination." }, { status: 400 })
+    }
+    if (!shippingCity || !shippingPostalCode || shippingAddress.length < 8) {
+      return NextResponse.json({ error: "Add the complete shipping city, postal code, and address." }, { status: 400 })
+    }
+  }
+
   const paymentReference = sanitizeReference(`shop_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`)
   let createdSaleId = ""
 
   try {
     const sale = await prisma.$transaction(async (tx) => {
       const snapshots = []
+      const shippingProducts = []
       let subtotal = 0
-      let total = 0
 
       for (const item of items) {
         const product = await tx.posProduct.findUnique({ where: { id: item.productId } })
@@ -167,7 +183,16 @@ export async function POST(req: NextRequest) {
 
         const lineTotal = product.price * item.quantity
         subtotal += lineTotal
-        total += lineTotal
+        shippingProducts.push({
+          id: product.id,
+          name: product.name,
+          category: product.category,
+          quantity: item.quantity,
+          weightGrams: product.weightGrams,
+          lengthCm: product.lengthCm,
+          widthCm: product.widthCm,
+          heightCm: product.heightCm,
+        })
         snapshots.push({
           productId: product.id,
           nameSnapshot: product.name,
@@ -183,16 +208,29 @@ export async function POST(req: NextRequest) {
         })
       }
 
+      const shippingQuote: ShippingQuote | null = fulfillmentMethod === "SHIPPING"
+        ? calculateCeramicShipping(shippingProducts, shippingCountry)
+        : null
+      const shippingAmount = shippingQuote?.amount || 0
+      const total = subtotal + shippingAmount
+
       return tx.posSale.create({
         data: {
           subtotal,
           discountTotal: 0,
           taxTotal: 0,
+          shippingAmount,
           total,
           status: "PENDING_PAYMENT",
           paymentMethod: "ONLINE",
           paymentReference,
           receiptEmail,
+          fulfillmentMethod,
+          shippingCountry: shippingQuote?.countryCode || null,
+          shippingCity: fulfillmentMethod === "SHIPPING" ? shippingCity : null,
+          shippingPostalCode: fulfillmentMethod === "SHIPPING" ? shippingPostalCode : null,
+          shippingAddress: fulfillmentMethod === "SHIPPING" ? shippingAddress : null,
+          shippingQuote: shippingQuote ? JSON.stringify(shippingQuote) : null,
           notes: `${ONLINE_SHOP_NOTE} ${notes || "Public online shop checkout"}`,
           items: { create: snapshots },
         },
@@ -220,20 +258,32 @@ export async function POST(req: NextRequest) {
           given_names: sanitizeCustomerName(customerName || session.user.name || receiptEmail),
         },
       },
-      items: sale.items.map((item) => ({
-        reference_id: item.productId || item.id,
-        type: "PHYSICAL_PRODUCT",
-        name: item.nameSnapshot,
-        net_unit_amount: Math.max(item.unitPrice, 0),
-        quantity: item.quantity,
-        category: item.categorySnapshot,
-      })),
+      items: [
+        ...sale.items.map((item) => ({
+          reference_id: item.productId || item.id,
+          type: "PHYSICAL_PRODUCT" as const,
+          name: item.nameSnapshot,
+          net_unit_amount: Math.max(item.unitPrice, 0),
+          quantity: item.quantity,
+          category: item.categorySnapshot,
+        })),
+        ...(sale.shippingAmount > 0 ? [{
+          reference_id: `shipping_${sale.id}`,
+          type: "FEE" as const,
+          name: "Ceramic packing and shipping",
+          net_unit_amount: sale.shippingAmount,
+          quantity: 1,
+          category: "SHIPPING",
+        }] : []),
+      ],
       metadata: {
         pos_sale_id: sale.id,
         pos_payment_reference: paymentReference,
         receipt_email: receiptEmail,
         checkout_channel: "online_shop",
         customer_user_id: session.user.id,
+        fulfillment_method: sale.fulfillmentMethod,
+        shipping_country: sale.shippingCountry || "pickup",
       },
       success_return_url: `${origin}/shop/checkout?payment=success&sale=${sale.id}`,
       cancel_return_url: `${origin}/shop/checkout?payment=cancelled&sale=${sale.id}`,

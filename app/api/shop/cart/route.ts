@@ -72,6 +72,10 @@ export async function POST(req: NextRequest) {
         quantity,
         image: parseProductImageUrls(product.imageUrls)[0] || "",
         volumeMl: product.volumeMl,
+        weightGrams: product.weightGrams,
+        lengthCm: product.lengthCm,
+        widthCm: product.widthCm,
+        heightCm: product.heightCm,
       }
     }),
     unavailableProductIds: requestedItems
