@@ -4,6 +4,7 @@ import { createClient } from "@/lib/supabase/server"
 import { prisma } from "@/lib/prisma"
 import { formatPrice, workshops } from "@/lib/classes-data"
 import {
+  createXenditCustomerReference,
   createXenditPaymentSession,
   getXenditSecretKey,
   XenditApiError,
@@ -150,10 +151,6 @@ function sanitizeReference(value: string) {
 
 function sanitizeCustomerName(value?: string | null) {
   return (value || "BackusCustomer").replace(/[^a-zA-Z0-9]/g, "").slice(0, 50) || "BackusCustomer"
-}
-
-function sanitizeCustomerReference(value?: string | null) {
-  return (value || "BackusCustomer").replace(/[^a-zA-Z0-9]/g, "").slice(0, 255) || "BackusCustomer"
 }
 
 function toE164OrUndefined(value?: string) {
@@ -581,7 +578,7 @@ async function handlePaymentSessionPost(req: NextRequest, trace?: PaymentTrace) 
       allow_save_payment_method: "DISABLED",
       locale: "en",
       customer: {
-        reference_id: sanitizeCustomerReference(session.user.id || session.user.email || referenceId),
+        reference_id: createXenditCustomerReference(session.user.id || session.user.email, referenceId),
         type: "INDIVIDUAL",
         email: session.user.email || undefined,
         mobile_number: toE164OrUndefined(contactPhone),

@@ -3,6 +3,7 @@ import { auth } from "@/lib/auth"
 import { prisma } from "@/lib/prisma"
 import { formatPrice, PUBLIC_WARES_CATEGORIES } from "@/lib/pos-catalog"
 import {
+  createXenditCustomerReference,
   createXenditPaymentSession,
   XenditApiError,
   XenditConfigurationError,
@@ -212,7 +213,7 @@ export async function POST(req: NextRequest) {
       allow_save_payment_method: "DISABLED",
       locale: "en",
       customer: {
-        reference_id: session.user.id,
+        reference_id: createXenditCustomerReference(session.user.id || receiptEmail, paymentReference),
         type: "INDIVIDUAL",
         email: receiptEmail,
         individual_detail: {
@@ -280,6 +281,7 @@ export async function POST(req: NextRequest) {
       error,
       xenditStatus: isXenditError ? error.status : undefined,
       xenditCode: isXenditError ? error.xenditCode : undefined,
+      xenditResponseBody: isXenditError ? error.responseBody : undefined,
     })
 
     return NextResponse.json(

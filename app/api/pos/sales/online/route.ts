@@ -5,6 +5,7 @@ import { canUsePos } from "@/lib/permissions"
 import { formatPrice } from "@/lib/pos-catalog"
 import { calculatePosLineTotals, normalizePosDiscountType, normalizePosTaxRate } from "@/lib/pos-sale-calculations"
 import {
+  createXenditCustomerReference,
   createXenditPaymentSession,
   XenditApiError,
   XenditConfigurationError,
@@ -256,7 +257,7 @@ export async function POST(req: NextRequest) {
       allow_save_payment_method: "DISABLED",
       locale: "en",
       customer: {
-        reference_id: receiptEmail || sale.id,
+        reference_id: createXenditCustomerReference(receiptEmail || sale.id, paymentReference),
         type: "INDIVIDUAL",
         email: receiptEmail || undefined,
         individual_detail: {
@@ -320,6 +321,7 @@ export async function POST(req: NextRequest) {
       error,
       xenditStatus: isXenditError ? error.status : undefined,
       xenditCode: isXenditError ? error.xenditCode : undefined,
+      xenditResponseBody: isXenditError ? error.responseBody : undefined,
     })
 
     return NextResponse.json(

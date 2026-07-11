@@ -170,8 +170,20 @@ function compactStringMetadata(metadata?: Record<string, MetadataValue | null | 
   return Object.fromEntries(
     Object.entries(metadata)
       .filter(([, entryValue]) => entryValue !== undefined && entryValue !== null && entryValue !== "")
-      .map(([key, entryValue]) => [key, String(entryValue)])
+      .slice(0, 20)
+      .map(([key, entryValue]) => [key.slice(0, 40), String(entryValue).slice(0, 80)])
   )
+}
+
+export function createXenditCustomerReference(identity: string | null | undefined, transactionReference: string) {
+  const customerPart = String(identity || "BackusCustomer")
+    .replace(/[^a-zA-Z0-9]/g, "")
+    .slice(0, 100) || "BackusCustomer"
+  const transactionPart = transactionReference
+    .replace(/[^a-zA-Z0-9]/g, "")
+    .slice(0, 140) || String(Date.now())
+
+  return `${customerPart}${transactionPart}`.slice(0, 255)
 }
 
 function compactPaymentSessionPayload(payload: CreateXenditPaymentSessionInput) {
