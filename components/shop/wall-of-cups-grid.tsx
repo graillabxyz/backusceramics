@@ -64,7 +64,7 @@ export function WallOfCupsGrid({ cups }: { cups: WallCup[] }) {
               type="button"
               size="icon"
               variant="ghost"
-              className={`absolute bottom-3 right-3 z-10 h-10 w-10 rounded-full border border-white/30 bg-black/55 text-white shadow-sm backdrop-blur transition-opacity hover:bg-black/80 hover:text-white focus-visible:opacity-100 ${added ? "opacity-100" : "opacity-80 sm:opacity-0 sm:group-hover:opacity-100 sm:group-focus-within:opacity-100"}`}
+              className={`absolute bottom-3 right-3 z-10 h-10 w-10 rounded-full border border-white/30 bg-black/55 text-white shadow-sm backdrop-blur transition-opacity hover:bg-black/80 hover:text-white focus-visible:opacity-100 ${added ? "opacity-100" : "opacity-80 sm:pointer-events-none sm:opacity-0 sm:group-hover:pointer-events-auto sm:group-hover:opacity-100 sm:group-focus-within:pointer-events-auto sm:group-focus-within:opacity-100"}`}
               onClick={() => addToCart(cup)}
               disabled={added}
               aria-label={added ? `${cup.name} added to cart` : `Add ${cup.name} to cart`}
