@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from "react"
 import Link from "next/link"
 import { useParams } from "next/navigation"
-import { ArrowLeft, CalendarDays, ChevronLeft, ChevronRight, Clock, Users } from "lucide-react"
+import { AlertCircle, ArrowLeft, CalendarDays, ChevronLeft, ChevronRight, Clock, RefreshCw, Users } from "lucide-react"
 import { Navigation } from "@/components/navigation"
 import { Footer } from "@/components/footer"
 import { BrandClosingSection } from "@/components/brand-closing-section"
@@ -184,6 +184,8 @@ export default function ClassMonthBookingPage() {
   const [selectedSessionId, setSelectedSessionId] = useState("")
   const [seats, setSeats] = useState("1")
   const [loading, setLoading] = useState(true)
+  const [availabilityError, setAvailabilityError] = useState("")
+  const [availabilityReload, setAvailabilityReload] = useState(0)
   const bookingSummaryRef = useRef<HTMLElement | null>(null)
 
   const bookingWindowEnd = useMemo(() => {
@@ -310,6 +312,7 @@ export default function ClassMonthBookingPage() {
 
     async function loadMonth() {
       setLoading(true)
+      setAvailabilityError("")
       try {
         const monthStarts = [
           new Date(monthStart.getFullYear(), monthStart.getMonth() - 1, 1),
@@ -319,7 +322,11 @@ export default function ClassMonthBookingPage() {
         const responses = await Promise.all(
           monthStarts.map((date) => fetch(`/api/classes/availability?monthStart=${formatDateKey(date)}`))
         )
-        if (responses.some((res) => !res.ok)) throw new Error("Could not load class availability")
+        const failedResponse = responses.find((res) => !res.ok)
+        if (failedResponse) {
+          const errorBody = await failedResponse.json().catch(() => ({}))
+          throw new Error(errorBody.error || "Could not load class availability")
+        }
         const months = await Promise.all(responses.map((res) => res.json()))
         if (ignore) return
 
@@ -388,11 +395,13 @@ export default function ClassMonthBookingPage() {
           return firstAvailable?.id || nextSessions[0]?.id || ""
         })
         setSeats("1")
-      } catch {
+      } catch (error) {
+        console.error("Failed to load live class availability", error)
         if (!ignore) {
           setSessions([])
           setAvailability({})
           setSelectedSessionId("")
+          setAvailabilityError("We could not check live class availability. Your dates may still be open. Please try again.")
         }
       } finally {
         if (!ignore) setLoading(false)
@@ -403,7 +412,7 @@ export default function ClassMonthBookingPage() {
     return () => {
       ignore = true
     }
-  }, [bookingWindowEnd, monthStart, slug, today])
+  }, [availabilityReload, bookingWindowEnd, monthStart, slug, today])
 
   useEffect(() => {
     if (Number(seats) > purchasableSeats) setSeats(Math.max(purchasableSeats, 1).toString())
@@ -565,6 +574,20 @@ export default function ClassMonthBookingPage() {
           </div>
 
           <CardContent className="p-0">
+            {availabilityError ? (
+              <div className="flex min-h-72 flex-col items-center justify-center px-6 py-12 text-center">
+                <span className="flex h-11 w-11 items-center justify-center rounded-full bg-destructive/10 text-destructive">
+                  <AlertCircle className="h-5 w-5" />
+                </span>
+                <p className="mt-4 font-semibold text-foreground">Live availability is temporarily unavailable</p>
+                <p className="mt-2 max-w-md text-sm leading-relaxed text-muted-foreground">{availabilityError}</p>
+                <Button type="button" variant="outline" className="mt-5" onClick={() => setAvailabilityReload((value) => value + 1)}>
+                  <RefreshCw className="h-4 w-4" />
+                  Try again
+                </Button>
+              </div>
+            ) : (
+              <>
             <div className="hidden grid-cols-6 border-b border-border/80 bg-secondary/10 md:grid">
               {weekdayLabels.map((label) => (
                 <div key={label} className="px-2 py-3 text-center text-xs font-semibold uppercase text-muted-foreground">
@@ -804,6 +827,8 @@ export default function ClassMonthBookingPage() {
                 )
               })}
             </div>
+              </>
+            )}
           </CardContent>
         </Card>
 

@@ -33,42 +33,64 @@ export async function PATCH(
     }
 
     if (data.status !== "ACTIVE") {
-      const hold = await prisma.classHold.update({
-        where: { id },
-        data: { status: data.status },
-      })
-      return NextResponse.json(hold)
+      try {
+        const hold = await prisma.classHold.update({
+          where: { id },
+          data: { status: data.status },
+        })
+        return NextResponse.json(hold)
+      } catch (error) {
+        const requestId = crypto.randomUUID()
+        console.error("Could not change class seat hold status", { error, requestId, holdId: id, status: data.status })
+        return NextResponse.json(
+          { error: "Could not update this seat hold. Please refresh and try again.", code: "CLASS_HOLD_UPDATE_FAILED", requestId },
+          { status: 503 }
+        )
+      }
     }
 
-    const result = await prisma.$transaction(async (tx) => {
-      const existing = await tx.classHold.findUnique({ where: { id } })
-      if (!existing) return { notFound: true, capacityError: null, hold: null }
+    let result
+    try {
+      result = await prisma.$transaction(async (tx) => {
+        const existing = await tx.classHold.findUnique({ where: { id } })
+        if (!existing) return { notFound: true, capacityError: null, hold: null }
 
-      const capacityError = await validateClassHoldCapacity({
-        studentName: existing.studentName,
-        studentEmail: existing.studentEmail,
-        workshopId: existing.workshopId,
-        timeLabel: existing.timeLabel,
-        seats: existing.seats,
-        weekdays: parseWeekdays(existing.weekdays),
-        startDate: existing.startDate,
-        endDate: existing.endDate,
-        notes: existing.notes,
-        status: "ACTIVE",
-      }, { excludeHoldId: id, db: tx, lockSeatPools: true })
+        const capacityError = await validateClassHoldCapacity({
+          studentName: existing.studentName,
+          studentEmail: existing.studentEmail,
+          workshopId: existing.workshopId,
+          timeLabel: existing.timeLabel,
+          seats: existing.seats,
+          weekdays: parseWeekdays(existing.weekdays),
+          startDate: existing.startDate,
+          endDate: existing.endDate,
+          notes: existing.notes,
+          status: "ACTIVE",
+        }, { excludeHoldId: id, db: tx, lockSeatPools: true })
 
-      if (capacityError) return { notFound: false, capacityError, hold: null }
+        if (capacityError) return { notFound: false, capacityError, hold: null }
 
-      const hold = await tx.classHold.update({
-        where: { id },
-        data: { status: "ACTIVE" },
-      })
-      return { notFound: false, capacityError: null, hold }
-    }, { timeout: 10_000 })
+        const hold = await tx.classHold.update({
+          where: { id },
+          data: { status: "ACTIVE" },
+        })
+        return { notFound: false, capacityError: null, hold }
+      }, { timeout: 10_000 })
+    } catch (error) {
+      const requestId = crypto.randomUUID()
+      console.error("Could not reactivate class seat hold", { error, requestId, holdId: id })
+      return NextResponse.json(
+        { error: "Could not reactivate this seat hold. Please refresh and try again.", code: "CLASS_HOLD_UPDATE_FAILED", requestId },
+        { status: 503 }
+      )
+    }
 
     if (result.notFound) return NextResponse.json({ error: "Class hold not found" }, { status: 404 })
     if (result.capacityError) {
-      return NextResponse.json({ error: result.capacityError.error }, { status: result.capacityError.status })
+      return NextResponse.json(
+        { error: result.capacityError.error, code: "CLASS_HOLD_CAPACITY_CONFLICT" },
+        { status: result.capacityError.status }
+      )
     }
 
     return NextResponse.json(result.hold)
@@ -77,34 +99,47 @@ export async function PATCH(
   const validation = validateClassHoldPayload(data)
   if ("error" in validation) return NextResponse.json({ error: validation.error }, { status: validation.status })
   const holdData = validation.data
-  const result = await prisma.$transaction(async (tx) => {
-    const capacityError = await validateClassHoldCapacity(holdData, {
-      excludeHoldId: id,
-      db: tx,
-      lockSeatPools: true,
-    })
-    if (capacityError) return { capacityError, hold: null }
+  let result
+  try {
+    result = await prisma.$transaction(async (tx) => {
+      const capacityError = await validateClassHoldCapacity(holdData, {
+        excludeHoldId: id,
+        db: tx,
+        lockSeatPools: true,
+      })
+      if (capacityError) return { capacityError, hold: null }
 
-    const hold = await tx.classHold.update({
-      where: { id },
-      data: {
-        studentName: holdData.studentName,
-        studentEmail: holdData.studentEmail,
-        workshopId: holdData.workshopId,
-        timeLabel: holdData.timeLabel,
-        seats: holdData.seats,
-        weekdays: JSON.stringify(holdData.weekdays),
-        startDate: holdData.startDate,
-        endDate: holdData.endDate,
-        notes: holdData.notes,
-        ...(holdData.status ? { status: holdData.status } : {}),
-      },
-    })
-    return { capacityError: null, hold }
-  }, { timeout: 10_000 })
+      const hold = await tx.classHold.update({
+        where: { id },
+        data: {
+          studentName: holdData.studentName,
+          studentEmail: holdData.studentEmail,
+          workshopId: holdData.workshopId,
+          timeLabel: holdData.timeLabel,
+          seats: holdData.seats,
+          weekdays: JSON.stringify(holdData.weekdays),
+          startDate: holdData.startDate,
+          endDate: holdData.endDate,
+          notes: holdData.notes,
+          ...(holdData.status ? { status: holdData.status } : {}),
+        },
+      })
+      return { capacityError: null, hold }
+    }, { timeout: 10_000 })
+  } catch (error) {
+    const requestId = crypto.randomUUID()
+    console.error("Could not update class seat hold", { error, requestId, holdId: id })
+    return NextResponse.json(
+      { error: "Could not update this seat hold. Please refresh and try again.", code: "CLASS_HOLD_UPDATE_FAILED", requestId },
+      { status: 503 }
+    )
+  }
 
   if (result.capacityError) {
-    return NextResponse.json({ error: result.capacityError.error }, { status: result.capacityError.status })
+    return NextResponse.json(
+      { error: result.capacityError.error, code: "CLASS_HOLD_CAPACITY_CONFLICT" },
+      { status: result.capacityError.status }
+    )
   }
 
   return NextResponse.json(result.hold)
@@ -120,6 +155,15 @@ export async function DELETE(
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
   }
 
-  await prisma.classHold.delete({ where: { id } })
-  return NextResponse.json({ ok: true })
+  try {
+    await prisma.classHold.delete({ where: { id } })
+    return NextResponse.json({ ok: true })
+  } catch (error) {
+    const requestId = crypto.randomUUID()
+    console.error("Could not delete class seat hold", { error, requestId, holdId: id })
+    return NextResponse.json(
+      { error: "Could not delete this seat hold. Please refresh and try again.", code: "CLASS_HOLD_DELETE_FAILED", requestId },
+      { status: 503 }
+    )
+  }
 }

@@ -8,6 +8,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
+import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "@/components/ui/sheet"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Textarea } from "@/components/ui/textarea"
 import { Archive, CalendarDays, CalendarPlus, CheckCircle2, CircleDashed, Clock, GraduationCap, Loader2, Pencil, Trash2, Users } from "lucide-react"
@@ -194,6 +195,7 @@ export default function AdminBookingsPage() {
   const [scheduleForm, setScheduleForm] = useState(initialScheduleForm)
   const [editingHoldId, setEditingHoldId] = useState<string | null>(null)
   const [editingScheduleId, setEditingScheduleId] = useState<string | null>(null)
+  const [quickHoldRow, setQuickHoldRow] = useState<AvailabilityRow | null>(null)
   const [activeTab, setActiveTab] = useState("requests")
   const [holdAccordionValue, setHoldAccordionValue] = useState("add-hold")
   const [scheduleAccordionValue, setScheduleAccordionValue] = useState("")
@@ -388,14 +390,29 @@ export default function AdminBookingsPage() {
 
       if (!res.ok) {
         const data = await res.json().catch(() => ({}))
-        throw new Error(data.error || "Could not save resident schedule")
+        console.error("Seat hold API rejected the request", {
+          status: res.status,
+          response: data,
+          request: {
+            workshopId: holdForm.workshopId,
+            timeLabel: holdForm.timeLabel,
+            seats: Number(holdForm.seats),
+            startDate: holdForm.startDate,
+            endDate: holdForm.endDate || null,
+            weekdays: holdForm.weekdays.map(Number),
+          },
+        })
+        throw new Error(data.error || "Could not save this seat hold")
       }
 
+      const wasQuickHold = Boolean(quickHoldRow)
       resetHoldForm()
+      if (wasQuickHold) setQuickHoldRow(null)
       setHoldAccordionValue("")
       await Promise.all([fetchHolds(), fetchAvailability()])
     } catch (err) {
-      setHoldError(err instanceof Error ? err.message : "Could not save resident schedule")
+      console.error("Failed to save class seat hold", err)
+      setHoldError(err instanceof Error ? err.message : "Could not save this seat hold")
     } finally {
       setSavingHold(false)
     }
@@ -416,6 +433,7 @@ export default function AdminBookingsPage() {
       allowCustomTime: isCustomHoldSlot(hold.workshopId, hold.timeLabel, weekdays),
     })
     setEditingHoldId(hold.id)
+    setQuickHoldRow(null)
     setHoldError("")
     setActiveTab("holds")
     setHoldAccordionValue("add-hold")
@@ -528,7 +546,7 @@ export default function AdminBookingsPage() {
   const prefillHoldFromAvailability = (row: AvailabilityRow) => {
     const weekday = dateKeyWeekday(row.dateKey)
     setHoldForm({
-      studentName: "WhatsApp / Instagram hold",
+      studentName: "",
       studentEmail: "",
       workshopId: row.workshopId,
       timeLabel: row.timeLabel,
@@ -536,13 +554,12 @@ export default function AdminBookingsPage() {
       weekdays: [weekday.toString()],
       startDate: row.dateKey,
       endDate: row.dateKey,
-      notes: `Manual seat block for ${row.title}. Replace this note with the customer's name and source before saving.`,
+      notes: "",
       allowCustomTime: true,
     })
     setEditingHoldId(null)
     setHoldError("")
-    setActiveTab("holds")
-    setHoldAccordionValue("add-hold")
+    setQuickHoldRow(row)
   }
 
   const editHoldFromCalendar = (holdId: string) => {
@@ -1433,6 +1450,119 @@ export default function AdminBookingsPage() {
           </Card>
         </TabsContent>
       </Tabs>
+
+      <Sheet
+        open={Boolean(quickHoldRow)}
+        onOpenChange={(open) => {
+          if (!open) {
+            setQuickHoldRow(null)
+            resetHoldForm()
+          }
+        }}
+      >
+        <SheetContent side="right" className="!w-full overflow-y-auto sm:!max-w-md">
+          <SheetHeader className="text-left">
+            <SheetTitle>Block seats booked elsewhere</SheetTitle>
+            <SheetDescription>
+              Use this for any booking taken outside the website. Public availability updates as soon as the hold is saved.
+            </SheetDescription>
+          </SheetHeader>
+
+          {quickHoldRow && (
+            <div className="mt-6 space-y-5">
+              <section className="rounded-md border border-border bg-muted/30 p-4">
+                <p className="font-semibold text-foreground">{quickHoldRow.title}</p>
+                <p className="mt-1 text-sm text-muted-foreground">
+                  {formatDate(quickHoldRow.dateKey)} · {quickHoldRow.timeLabel}
+                </p>
+                <div className="mt-4 grid grid-cols-3 gap-2 text-center">
+                  <div className="rounded-md bg-background px-2 py-2">
+                    <p className="text-lg font-semibold">{quickHoldRow.maxParticipants}</p>
+                    <p className="text-[11px] text-muted-foreground">Total</p>
+                  </div>
+                  <div className="rounded-md bg-background px-2 py-2">
+                    <p className="text-lg font-semibold">{quickHoldRow.bookedSeats + quickHoldRow.heldSeats}</p>
+                    <p className="text-[11px] text-muted-foreground">Taken</p>
+                  </div>
+                  <div className="rounded-md bg-background px-2 py-2">
+                    <p className="text-lg font-semibold">{quickHoldRow.availableSeats}</p>
+                    <p className="text-[11px] text-muted-foreground">Open</p>
+                  </div>
+                </div>
+              </section>
+
+              <div className="space-y-2">
+                <Label htmlFor="quick-hold-name">Customer or booking name</Label>
+                <Input
+                  id="quick-hold-name"
+                  autoFocus
+                  value={holdForm.studentName}
+                  onChange={(event) => setHoldForm((prev) => ({ ...prev, studentName: event.target.value }))}
+                  placeholder="Name shown on the calendar"
+                />
+              </div>
+
+              <div className="grid gap-4 sm:grid-cols-2">
+                <div className="space-y-2">
+                  <Label htmlFor="quick-hold-email">Email, optional</Label>
+                  <Input
+                    id="quick-hold-email"
+                    type="email"
+                    value={holdForm.studentEmail}
+                    onChange={(event) => setHoldForm((prev) => ({ ...prev, studentEmail: event.target.value }))}
+                    placeholder="customer@example.com"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label>Seats to block</Label>
+                  <Select value={holdForm.seats} onValueChange={(value) => setHoldForm((prev) => ({ ...prev, seats: value }))}>
+                    <SelectTrigger><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      {Array.from({ length: quickHoldRow.availableSeats }, (_, index) => index + 1).map((seat) => (
+                        <SelectItem key={seat} value={seat.toString()}>{seat}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="quick-hold-notes">Internal note, optional</Label>
+                <Textarea
+                  id="quick-hold-notes"
+                  value={holdForm.notes}
+                  onChange={(event) => setHoldForm((prev) => ({ ...prev, notes: event.target.value }))}
+                  placeholder="Where the booking was received or payment status"
+                  rows={3}
+                />
+              </div>
+
+              <div className="rounded-md border border-border bg-background px-4 py-3 text-sm">
+                <span className="font-medium text-foreground">
+                  {Math.max(quickHoldRow.availableSeats - Number(holdForm.seats || 1), 0)} seats will remain open.
+                </span>
+                <span className="mt-1 block text-muted-foreground">This blocks only this date and time.</span>
+              </div>
+
+              {holdError && (
+                <p className="rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive">
+                  {holdError}
+                </p>
+              )}
+
+              <Button
+                type="button"
+                onClick={saveHold}
+                disabled={savingHold || !holdForm.studentName.trim() || quickHoldRow.availableSeats <= 0}
+                className="h-12 w-full"
+              >
+                {savingHold && <Loader2 className="h-4 w-4 animate-spin" />}
+                Save seat hold
+              </Button>
+            </div>
+          )}
+        </SheetContent>
+      </Sheet>
     </div>
   )
 }

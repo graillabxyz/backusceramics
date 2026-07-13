@@ -20,12 +20,11 @@ import {
   hasSessionStartPassed,
   normalizeTimeLabel,
   parseDateKey,
-  parsePreferredDate,
-  parseWeekdays,
 } from "@/lib/class-schedule"
 import { recordAnalyticsEvent } from "@/lib/analytics-server"
 import type { Prisma } from "@prisma/client"
 import { getTrustedRequestOrigin } from "@/lib/request-origin"
+import { activeSeatBookingWhere, calculateSeatUsage } from "@/lib/class-seat-accounting"
 
 export const runtime = "nodejs"
 const MAX_PAYMENT_SESSION_BODY_BYTES = 64 * 1024
@@ -130,21 +129,6 @@ function getPaymentHoldExpiresAt() {
   return new Date(Date.now() + 5 * 60 * 1000)
 }
 
-function activeBookingStatusWhere(now = new Date()) {
-  return {
-    OR: [
-      { status: "CONFIRMED" },
-      {
-        status: "PENDING",
-        OR: [
-          { holdExpiresAt: null },
-          { holdExpiresAt: { gt: now } },
-        ],
-      },
-    ],
-  }
-}
-
 function sanitizeReference(value: string) {
   return value.replace(/[^a-zA-Z0-9_-]/g, "").slice(0, 64) || "booking"
 }
@@ -227,7 +211,7 @@ async function getAvailableSeats({
   try {
     existingBookings = await db.classBooking.findMany({
       where: {
-        ...activeBookingStatusWhere(),
+        ...activeSeatBookingWhere(),
         preferredDate: { startsWith: dateKey },
       },
       select: {
@@ -245,7 +229,7 @@ async function getAvailableSeats({
     throw error
   }
 
-  let holds: { timeLabel: string; seats: number; weekdays: string }[] = []
+  let holds: { id: string; timeLabel: string; seats: number; weekdays: string; startDate: Date; endDate: Date | null }[] = []
   try {
     holds = await db.classHold.findMany({
       where: {
@@ -254,9 +238,12 @@ async function getAvailableSeats({
         OR: [{ endDate: null }, { endDate: { gte: sessionDate } }],
       },
       select: {
+        id: true,
         timeLabel: true,
         seats: true,
         weekdays: true,
+        startDate: true,
+        endDate: true,
       },
     })
   } catch (error) {
@@ -270,20 +257,13 @@ async function getAvailableSeats({
   }
 
   const key = classSeatPoolKey(dateKey, timeLabel)
-  const bookedSeats = existingBookings.reduce((sum, booking) => {
-    const preferred = parsePreferredDate(booking.preferredDate)
-    if (!preferred) return sum
-    return classSeatPoolKey(preferred.dateKey, preferred.timeLabel) === key
-      ? sum + booking.participants
-      : sum
-  }, 0)
+  const { bookedSeats, heldSeats } = calculateSeatUsage(
+    [{ date: sessionDate, dateKey, timeLabel }],
+    existingBookings,
+    holds
+  )
 
-  const heldSeats = holds.reduce((sum, hold) => {
-    if (normalizeTimeLabel(hold.timeLabel) !== normalizeTimeLabel(timeLabel)) return sum
-    return parseWeekdays(hold.weekdays).includes(sessionDate.getDay()) ? sum + hold.seats : sum
-  }, 0)
-
-  return capacity - bookedSeats - heldSeats
+  return capacity - (bookedSeats.get(key) || 0) - (heldSeats.get(key) || 0)
 }
 
 async function resolveScheduleIdForBooking(scheduleId: string | null) {

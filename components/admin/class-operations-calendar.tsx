@@ -276,7 +276,16 @@ export function ClassOperationsCalendar({
                     ))}
                   </div>
                 )}
-                <Button type="button" variant="outline" className="mt-4 w-full" disabled={row.availableSeats <= 0} onClick={() => onHoldSeat(row)}>
+                <Button
+                  type="button"
+                  variant="outline"
+                  className="mt-4 w-full"
+                  disabled={row.availableSeats <= 0}
+                  onClick={() => {
+                    onHoldSeat(row)
+                    setSelectedDate(null)
+                  }}
+                >
                   <Users className="mr-2 h-4 w-4" />Hold a seat
                 </Button>
               </article>

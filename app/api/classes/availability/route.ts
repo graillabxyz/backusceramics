@@ -11,13 +11,15 @@ import {
   type CalendarSession,
   formatDateKey,
   hasSessionStartPassed,
-  normalizeTimeLabel,
   parseDateKey,
-  parsePreferredDate,
-  parseWeekdays,
   startOfWeek,
 } from "@/lib/class-schedule"
 import { isFullAdminRole } from "@/lib/permissions"
+import {
+  activeSeatBookingWhere,
+  calculateSeatUsage,
+  mergeCalendarSessions,
+} from "@/lib/class-seat-accounting"
 
 function parseWeekStart(value: string | null) {
   if (!value) return startOfWeek(new Date())
@@ -37,20 +39,6 @@ function isValidDateParam(value: string | null) {
 
 function endOfMonth(date: Date) {
   return new Date(date.getFullYear(), date.getMonth() + 1, 0)
-}
-
-function mergeSessions(defaultSessions: CalendarSession[], scheduledSessions: CalendarSession[]) {
-  const sessions = new Map<string, CalendarSession>()
-
-  for (const session of defaultSessions) {
-    sessions.set(`${session.workshop.id}|${session.dateKey}|${session.timeLabel}`, session)
-  }
-
-  for (const session of scheduledSessions) {
-    sessions.set(`${session.workshop.id}|${session.dateKey}|${session.timeLabel}`, session)
-  }
-
-  return Array.from(sessions.values()).sort((a, b) => a.date.getTime() - b.date.getTime() || a.sortHour - b.sortHour)
 }
 
 function removeStartedSessions(sessions: CalendarSession[]) {
@@ -97,21 +85,6 @@ function buildAvailabilityResponse(rangeStart: Date, sessions: CalendarSession[]
   return NextResponse.json({ rangeStart: formatDateKey(rangeStart), sessions: serializedSessions, availability })
 }
 
-function activeBookingStatusWhere(now = new Date()) {
-  return {
-    OR: [
-      { status: "CONFIRMED" },
-      {
-        status: "PENDING",
-        OR: [
-          { holdExpiresAt: null },
-          { holdExpiresAt: { gt: now } },
-        ],
-      },
-    ],
-  }
-}
-
 export async function GET(req: NextRequest) {
   const monthStartParam = req.nextUrl.searchParams.get("monthStart")
   const weekStartParam = req.nextUrl.searchParams.get("weekStart")
@@ -155,7 +128,10 @@ export async function GET(req: NextRequest) {
       ? buildRangeSessionsFromSchedules(rangeStart, rangeEnd, schedules)
       : buildWeekSessionsFromSchedules(weekStart, schedules)
     : []
-  const sessions = removeStartedSessions(mergeSessions(defaultSessions, scheduledSessions))
+  const sessions = removeStartedSessions(
+    mergeCalendarSessions(defaultSessions, scheduledSessions)
+      .sort((a, b) => a.date.getTime() - b.date.getTime() || a.sortHour - b.sortHour)
+  )
   const dateKeys = Array.from(new Set(sessions.map((session) => session.dateKey)))
 
   let bookings = []
@@ -164,7 +140,7 @@ export async function GET(req: NextRequest) {
     ;[bookings, holds] = await Promise.all([
       prisma.classBooking.findMany({
         where: {
-          ...activeBookingStatusWhere(),
+          ...activeSeatBookingWhere(),
           OR: dateKeys.map((dateKey) => ({
             preferredDate: { startsWith: dateKey },
           })),
@@ -199,40 +175,7 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: "Could not load class availability" }, { status: 503 })
   }
 
-  const bookedSeats = new Map<string, number>()
-  for (const booking of bookings) {
-    const preferred = parsePreferredDate(booking.preferredDate)
-    if (!preferred) continue
-
-    const key = classSeatPoolKey(preferred.dateKey, preferred.timeLabel)
-    bookedSeats.set(key, (bookedSeats.get(key) || 0) + booking.participants)
-  }
-
-  const heldSeats = new Map<string, number>()
-  const holdDetails = new Map<string, { id: string; studentName: string; seats: number }[]>()
-
-  for (const hold of holds) {
-    const weekdays = parseWeekdays(hold.weekdays)
-    const countedKeys = new Set<string>()
-    const holdTime = normalizeTimeLabel(hold.timeLabel)
-
-    for (const session of sessions) {
-      if (normalizeTimeLabel(session.timeLabel) !== holdTime) continue
-      if (!weekdays.includes(session.date.getDay())) continue
-      if (session.date < hold.startDate) continue
-      if (hold.endDate && session.date > hold.endDate) continue
-
-      const key = classSeatPoolKey(session.dateKey, session.timeLabel)
-      if (countedKeys.has(key)) continue
-      countedKeys.add(key)
-
-      heldSeats.set(key, (heldSeats.get(key) || 0) + hold.seats)
-      holdDetails.set(key, [
-        ...(holdDetails.get(key) || []),
-        { id: hold.id, studentName: hold.studentName, seats: hold.seats },
-      ])
-    }
-  }
+  const { bookedSeats, heldSeats, holdDetails } = calculateSeatUsage(sessions, bookings, holds)
 
   return buildAvailabilityResponse(
     rangeStart,

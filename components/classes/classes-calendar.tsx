@@ -3,12 +3,14 @@
 import { useEffect, useMemo, useRef, useState } from "react"
 import Link from "next/link"
 import {
+  AlertCircle,
   ArrowLeft,
   CalendarDays,
   ChevronLeft,
   ChevronRight,
   Clock,
   Loader2,
+  RefreshCw,
   Users,
 } from "lucide-react"
 import { Badge } from "@/components/ui/badge"
@@ -202,6 +204,8 @@ export function ClassesCalendar({ initialClass }: ClassesCalendarProps) {
   const [activeFilter, setActiveFilter] = useState<CalendarFilter>("all")
   const [availability, setAvailability] = useState<Record<string, CalendarAvailability>>({})
   const [availabilityLoading, setAvailabilityLoading] = useState(true)
+  const [availabilityError, setAvailabilityError] = useState("")
+  const [availabilityReload, setAvailabilityReload] = useState(0)
   const [success, setSuccess] = useState("")
   const bookingSummaryRef = useRef<HTMLElement | null>(null)
   const { isAuthenticated, isLoading: authLoading, openAuthModal } = useAuth()
@@ -360,12 +364,17 @@ export function ClassesCalendar({ initialClass }: ClassesCalendarProps) {
 
     async function loadAvailability() {
       setAvailabilityLoading(true)
+      setAvailabilityError("")
       try {
         const responses = await Promise.all([
           fetch(`/api/classes/availability?weekStart=${formatDateKey(weekStart)}`),
           fetch(`/api/classes/availability?weekStart=${formatDateKey(addDays(weekStart, 7))}`),
         ])
-        if (responses.some((res) => !res.ok)) throw new Error("Could not load availability")
+        const failedResponse = responses.find((res) => !res.ok)
+        if (failedResponse) {
+          const errorBody = await failedResponse.json().catch(() => ({}))
+          throw new Error(errorBody.error || "Could not load availability")
+        }
         const weeks = await Promise.all(responses.map((res) => res.json()))
         if (ignore) return
 
@@ -421,10 +430,12 @@ export function ClassesCalendar({ initialClass }: ClassesCalendarProps) {
           if (nextWeekSessions.some((session) => session.id === current)) return current
           return nextWeekSessions.find((session) => session.workshop.slug === initialClass || session.workshop.id === initialClass)?.id || nextWeekSessions[0]?.id || ""
         })
-      } catch {
+      } catch (error) {
+        console.error("Failed to load weekly class availability", error)
         if (!ignore) {
           setSessions([])
           setAvailability({})
+          setAvailabilityError("We could not check live class availability. Your dates may still be open. Please try again.")
         }
       } finally {
         if (!ignore) setAvailabilityLoading(false)
@@ -435,7 +446,7 @@ export function ClassesCalendar({ initialClass }: ClassesCalendarProps) {
     return () => {
       ignore = true
     }
-  }, [initialClass, today, weekStart])
+  }, [availabilityReload, initialClass, today, weekStart])
 
   useEffect(() => {
     if (visibleSessions.length > 0 && !visibleSessions.some((session) => session.id === selectedSessionId)) {
@@ -680,6 +691,20 @@ export function ClassesCalendar({ initialClass }: ClassesCalendarProps) {
             </div>
           </div>
         </div>
+        {availabilityError ? (
+          <div className="xl:col-span-2 flex min-h-72 flex-col items-center justify-center rounded-lg border border-border bg-card px-6 py-12 text-center shadow-sm">
+            <span className="flex h-11 w-11 items-center justify-center rounded-full bg-destructive/10 text-destructive">
+              <AlertCircle className="h-5 w-5" />
+            </span>
+            <p className="mt-4 font-semibold text-foreground">Live availability is temporarily unavailable</p>
+            <p className="mt-2 max-w-md text-sm leading-relaxed text-muted-foreground">{availabilityError}</p>
+            <Button type="button" variant="outline" className="mt-5" onClick={() => setAvailabilityReload((value) => value + 1)}>
+              <RefreshCw className="h-4 w-4" />
+              Try again
+            </Button>
+          </div>
+        ) : (
+          <>
         <div>
           <div className="grid gap-4 lg:grid-cols-3">
             {visibleStudioDays.map(renderDayCard)}
@@ -847,6 +872,8 @@ export function ClassesCalendar({ initialClass }: ClassesCalendarProps) {
             </Card>
           )}
         </aside>
+          </>
+        )}
       </section>
 
       {activeSession && (

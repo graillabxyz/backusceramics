@@ -31,7 +31,7 @@ export async function PATCH(
         ? { cancelledAt: now, archivedAt: null, holdExpiresAt: null }
         : status === "ARCHIVED"
           ? { archivedAt: now, holdExpiresAt: null }
-          : { cancelledAt: null, archivedAt: null }
+          : { cancelledAt: null, archivedAt: null, holdExpiresAt: null }
 
   const existing = await prisma.classBooking.findUnique({ where: { id }, select: { id: true } })
   if (!existing) return NextResponse.json({ error: "Booking not found" }, { status: 404 })
