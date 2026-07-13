@@ -196,6 +196,7 @@ export default function AdminBookingsPage() {
   const [editingHoldId, setEditingHoldId] = useState<string | null>(null)
   const [editingScheduleId, setEditingScheduleId] = useState<string | null>(null)
   const [quickHoldRow, setQuickHoldRow] = useState<AvailabilityRow | null>(null)
+  const [quickHoldDetailsOpen, setQuickHoldDetailsOpen] = useState(false)
   const [activeTab, setActiveTab] = useState("requests")
   const [holdAccordionValue, setHoldAccordionValue] = useState("add-hold")
   const [scheduleAccordionValue, setScheduleAccordionValue] = useState("")
@@ -407,7 +408,10 @@ export default function AdminBookingsPage() {
 
       const wasQuickHold = Boolean(quickHoldRow)
       resetHoldForm()
-      if (wasQuickHold) setQuickHoldRow(null)
+      if (wasQuickHold) {
+        setQuickHoldRow(null)
+        setQuickHoldDetailsOpen(false)
+      }
       setHoldAccordionValue("")
       await Promise.all([fetchHolds(), fetchAvailability()])
     } catch (err) {
@@ -434,6 +438,7 @@ export default function AdminBookingsPage() {
     })
     setEditingHoldId(hold.id)
     setQuickHoldRow(null)
+    setQuickHoldDetailsOpen(false)
     setHoldError("")
     setActiveTab("holds")
     setHoldAccordionValue("add-hold")
@@ -559,6 +564,7 @@ export default function AdminBookingsPage() {
     })
     setEditingHoldId(null)
     setHoldError("")
+    setQuickHoldDetailsOpen(false)
     setQuickHoldRow(row)
   }
 
@@ -1456,109 +1462,123 @@ export default function AdminBookingsPage() {
         onOpenChange={(open) => {
           if (!open) {
             setQuickHoldRow(null)
+            setQuickHoldDetailsOpen(false)
             resetHoldForm()
           }
         }}
       >
-        <SheetContent side="right" className="!w-full overflow-y-auto sm:!max-w-md">
-          <SheetHeader className="text-left">
+        <SheetContent side="right" className="flex h-dvh !w-full flex-col gap-0 overflow-hidden p-0 sm:!max-w-md">
+          <SheetHeader className="shrink-0 border-b border-border px-5 py-4 pr-12 text-left">
             <SheetTitle>Block seats booked elsewhere</SheetTitle>
             <SheetDescription>
-              Use this for any booking taken outside the website. Public availability updates as soon as the hold is saved.
+              Public availability updates as soon as this is saved.
             </SheetDescription>
           </SheetHeader>
 
           {quickHoldRow && (
-            <div className="mt-6 space-y-5">
-              <section className="rounded-md border border-border bg-muted/30 p-4">
-                <p className="font-semibold text-foreground">{quickHoldRow.title}</p>
-                <p className="mt-1 text-sm text-muted-foreground">
-                  {formatDate(quickHoldRow.dateKey)} · {quickHoldRow.timeLabel}
-                </p>
-                <div className="mt-4 grid grid-cols-3 gap-2 text-center">
-                  <div className="rounded-md bg-background px-2 py-2">
-                    <p className="text-lg font-semibold">{quickHoldRow.maxParticipants}</p>
-                    <p className="text-[11px] text-muted-foreground">Total</p>
+            <div className="flex min-h-0 flex-1 flex-col">
+              <div className="flex-1 space-y-4 overflow-y-auto p-4 sm:p-5">
+                <section className="rounded-md border border-border bg-muted/30 p-3.5">
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <p className="truncate font-semibold text-foreground">{quickHoldRow.title}</p>
+                      <p className="mt-1 text-sm text-muted-foreground">{formatDate(quickHoldRow.dateKey)}</p>
+                      <p className="text-sm text-muted-foreground">{quickHoldRow.timeLabel}</p>
+                    </div>
+                    <div className="shrink-0 text-right">
+                      <p className="text-2xl font-semibold text-foreground">{quickHoldRow.availableSeats}</p>
+                      <p className="text-xs text-muted-foreground">open</p>
+                    </div>
                   </div>
-                  <div className="rounded-md bg-background px-2 py-2">
-                    <p className="text-lg font-semibold">{quickHoldRow.bookedSeats + quickHoldRow.heldSeats}</p>
-                    <p className="text-[11px] text-muted-foreground">Taken</p>
+                  <p className="mt-3 border-t border-border pt-2 text-xs text-muted-foreground">
+                    {quickHoldRow.bookedSeats} booked · {quickHoldRow.heldSeats} held · {quickHoldRow.maxParticipants} total
+                  </p>
+                </section>
+
+                <div className="grid grid-cols-[minmax(0,1fr)_112px] gap-3">
+                  <div className="space-y-2">
+                    <Label htmlFor="quick-hold-name">Booking name</Label>
+                    <Input
+                      id="quick-hold-name"
+                      autoFocus
+                      value={holdForm.studentName}
+                      onChange={(event) => setHoldForm((prev) => ({ ...prev, studentName: event.target.value }))}
+                      placeholder="Customer name"
+                    />
                   </div>
-                  <div className="rounded-md bg-background px-2 py-2">
-                    <p className="text-lg font-semibold">{quickHoldRow.availableSeats}</p>
-                    <p className="text-[11px] text-muted-foreground">Open</p>
+                  <div className="space-y-2">
+                    <Label>Seats</Label>
+                    <Select value={holdForm.seats} onValueChange={(value) => setHoldForm((prev) => ({ ...prev, seats: value }))}>
+                      <SelectTrigger><SelectValue /></SelectTrigger>
+                      <SelectContent>
+                        {Array.from({ length: quickHoldRow.availableSeats }, (_, index) => index + 1).map((seat) => (
+                          <SelectItem key={seat} value={seat.toString()}>{seat}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
                   </div>
                 </div>
-              </section>
 
-              <div className="space-y-2">
-                <Label htmlFor="quick-hold-name">Customer or booking name</Label>
-                <Input
-                  id="quick-hold-name"
-                  autoFocus
-                  value={holdForm.studentName}
-                  onChange={(event) => setHoldForm((prev) => ({ ...prev, studentName: event.target.value }))}
-                  placeholder="Name shown on the calendar"
-                />
-              </div>
+                <button
+                  type="button"
+                  onClick={() => setQuickHoldDetailsOpen((open) => !open)}
+                  className="flex min-h-11 w-full items-center justify-between rounded-md border border-border bg-background px-3 text-sm font-medium text-foreground"
+                  aria-expanded={quickHoldDetailsOpen}
+                >
+                  <span>{quickHoldDetailsOpen ? "Hide optional details" : "Add contact or internal note"}</span>
+                  <span aria-hidden="true">{quickHoldDetailsOpen ? "−" : "+"}</span>
+                </button>
 
-              <div className="grid gap-4 sm:grid-cols-2">
-                <div className="space-y-2">
-                  <Label htmlFor="quick-hold-email">Email, optional</Label>
-                  <Input
-                    id="quick-hold-email"
-                    type="email"
-                    value={holdForm.studentEmail}
-                    onChange={(event) => setHoldForm((prev) => ({ ...prev, studentEmail: event.target.value }))}
-                    placeholder="customer@example.com"
-                  />
+                {quickHoldDetailsOpen && (
+                  <div className="space-y-4 rounded-md border border-border bg-muted/20 p-3">
+                    <div className="space-y-2">
+                      <Label htmlFor="quick-hold-email">Email, optional</Label>
+                      <Input
+                        id="quick-hold-email"
+                        type="email"
+                        value={holdForm.studentEmail}
+                        onChange={(event) => setHoldForm((prev) => ({ ...prev, studentEmail: event.target.value }))}
+                        placeholder="customer@example.com"
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="quick-hold-notes">Internal note, optional</Label>
+                      <Textarea
+                        id="quick-hold-notes"
+                        value={holdForm.notes}
+                        onChange={(event) => setHoldForm((prev) => ({ ...prev, notes: event.target.value }))}
+                        placeholder="Source or payment status"
+                        rows={2}
+                      />
+                    </div>
+                  </div>
+                )}
+
+                <div className="rounded-md border border-border bg-background px-3 py-2.5 text-sm">
+                  <span className="font-medium text-foreground">
+                    {Math.max(quickHoldRow.availableSeats - Number(holdForm.seats || 1), 0)} seats remain open
+                  </span>
+                  <span className="ml-1 text-muted-foreground">after this one-time hold.</span>
                 </div>
-                <div className="space-y-2">
-                  <Label>Seats to block</Label>
-                  <Select value={holdForm.seats} onValueChange={(value) => setHoldForm((prev) => ({ ...prev, seats: value }))}>
-                    <SelectTrigger><SelectValue /></SelectTrigger>
-                    <SelectContent>
-                      {Array.from({ length: quickHoldRow.availableSeats }, (_, index) => index + 1).map((seat) => (
-                        <SelectItem key={seat} value={seat.toString()}>{seat}</SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
+
+                {holdError && (
+                  <p className="rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive">
+                    {holdError}
+                  </p>
+                )}
               </div>
 
-              <div className="space-y-2">
-                <Label htmlFor="quick-hold-notes">Internal note, optional</Label>
-                <Textarea
-                  id="quick-hold-notes"
-                  value={holdForm.notes}
-                  onChange={(event) => setHoldForm((prev) => ({ ...prev, notes: event.target.value }))}
-                  placeholder="Where the booking was received or payment status"
-                  rows={3}
-                />
+              <div className="shrink-0 border-t border-border bg-background p-4 pb-[calc(1rem+env(safe-area-inset-bottom))]">
+                <Button
+                  type="button"
+                  onClick={saveHold}
+                  disabled={savingHold || !holdForm.studentName.trim() || quickHoldRow.availableSeats <= 0}
+                  className="h-12 w-full"
+                >
+                  {savingHold && <Loader2 className="h-4 w-4 animate-spin" />}
+                  Save seat hold
+                </Button>
               </div>
-
-              <div className="rounded-md border border-border bg-background px-4 py-3 text-sm">
-                <span className="font-medium text-foreground">
-                  {Math.max(quickHoldRow.availableSeats - Number(holdForm.seats || 1), 0)} seats will remain open.
-                </span>
-                <span className="mt-1 block text-muted-foreground">This blocks only this date and time.</span>
-              </div>
-
-              {holdError && (
-                <p className="rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive">
-                  {holdError}
-                </p>
-              )}
-
-              <Button
-                type="button"
-                onClick={saveHold}
-                disabled={savingHold || !holdForm.studentName.trim() || quickHoldRow.availableSeats <= 0}
-                className="h-12 w-full"
-              >
-                {savingHold && <Loader2 className="h-4 w-4 animate-spin" />}
-                Save seat hold
-              </Button>
             </div>
           )}
         </SheetContent>
