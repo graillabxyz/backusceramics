@@ -101,7 +101,7 @@ export async function validateClassHoldCapacity(
   if (options.lockSeatPools) {
     const seatPoolKeys = Array.from(requestedSeatPools.keys()).sort()
     for (const seatPoolKey of seatPoolKeys) {
-      await db.$queryRaw`SELECT pg_advisory_xact_lock(hashtext(${seatPoolKey}))`
+      await db.$queryRaw`SELECT pg_advisory_xact_lock(hashtext(${seatPoolKey}))::text AS "lock"`
     }
   }
 

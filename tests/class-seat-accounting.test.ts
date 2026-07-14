@@ -5,7 +5,9 @@ import {
   calculateSeatUsage,
   holdAppliesToSession,
 } from "../lib/class-seat-accounting"
+import { validateClassHoldCapacity } from "../lib/class-hold-capacity"
 import { classSeatPoolKey, parseDateKey } from "../lib/class-schedule"
+import type { Prisma } from "@prisma/client"
 
 const monday = parseDateKey("2026-07-13")
 const tuesday = parseDateKey("2026-07-14")
@@ -168,4 +170,40 @@ test("multiple independent holds add together without crossing time pools", () =
 
   assert.equal(usage.heldSeats.get(key), 3)
   assert.equal(usage.holdDetails.get(key)?.length, 2)
+})
+
+test("transaction seat locks cast PostgreSQL void results for Prisma driver adapters", async () => {
+  const lockQueries: string[] = []
+  const db = {
+    classSchedule: {
+      findMany: async () => [],
+    },
+    classBooking: {
+      findMany: async () => [],
+    },
+    classHold: {
+      findMany: async () => [],
+    },
+    $queryRaw: async (query: TemplateStringsArray) => {
+      lockQueries.push(query.join("?"))
+      return [{ lock: "" }]
+    },
+  } as unknown as Prisma.TransactionClient
+
+  const result = await validateClassHoldCapacity({
+    studentName: "External booking",
+    studentEmail: null,
+    workshopId: "beginner-wheel",
+    timeLabel: morningSession.timeLabel,
+    seats: 1,
+    weekdays: [1],
+    startDate: monday,
+    endDate: monday,
+    notes: null,
+    status: "ACTIVE",
+  }, { db, lockSeatPools: true })
+
+  assert.equal(result, null)
+  assert.ok(lockQueries.length > 0)
+  assert.ok(lockQueries.every((query) => query.includes("pg_advisory_xact_lock") && query.includes("::text")))
 })

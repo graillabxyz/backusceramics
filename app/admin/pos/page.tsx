@@ -195,6 +195,7 @@ function defaultTaxRateForProduct(product: PosProduct): PosTaxRate {
 function PosWorkspace() {
   const posRootRef = useRef<HTMLDivElement | null>(null)
   const lastPosActivityRef = useRef(Date.now())
+  const lastPosSessionRefreshRef = useRef(0)
   const [products, setProducts] = useState<PosProduct[]>([])
   const [loading, setLoading] = useState(true)
   const [checkingOut, setCheckingOut] = useState(false)
@@ -223,6 +224,7 @@ function PosWorkspace() {
   const [posStep, setPosStep] = useState<"CATEGORIES" | "ITEMS" | "CHECKOUT">("CATEGORIES")
   const [expandedCartItemId, setExpandedCartItemId] = useState<string | null>(null)
   const [posPinUnlocked, setPosPinUnlocked] = useState(false)
+  const [checkingPosPinSession, setCheckingPosPinSession] = useState(true)
   const [posPin, setPosPin] = useState("")
   const [posPinError, setPosPinError] = useState("")
   const [verifyingPosPin, setVerifyingPosPin] = useState(false)
@@ -279,6 +281,45 @@ function PosWorkspace() {
   const quickProductImages = useMemo(() => parseProductImageUrls(quickProduct.imageUrls), [quickProduct.imageUrls])
 
   useEffect(() => {
+    let active = true
+
+    const restorePosOperatorSession = async () => {
+      try {
+        const res = await fetch("/api/pos/pin/verify", { cache: "no-store" })
+        const data = await res.json().catch(() => ({}))
+        if (!active) return
+
+        if (res.ok) {
+          setLockAfterSeconds(Number(data.lockAfterSeconds) || 5 * 60)
+          lastPosActivityRef.current = Date.now()
+          lastPosSessionRefreshRef.current = Date.now()
+          setPosOperator(data.operator || null)
+          setPosPinUnlocked(true)
+          setPosPinError("")
+        } else {
+          setPosPinUnlocked(false)
+          setPosOperator(null)
+          if (res.status !== 423) {
+            console.error("Could not restore POS operator session", { status: res.status, response: data })
+          }
+        }
+      } catch (sessionError) {
+        if (!active) return
+        console.error("Could not restore POS operator session", sessionError)
+        setPosPinUnlocked(false)
+        setPosOperator(null)
+      } finally {
+        if (active) setCheckingPosPinSession(false)
+      }
+    }
+
+    void restorePosOperatorSession()
+    return () => {
+      active = false
+    }
+  }, [])
+
+  useEffect(() => {
     if (!posPinUnlocked) return
 
     setLoading(true)
@@ -289,6 +330,7 @@ function PosWorkspace() {
     if (!posPinUnlocked || typeof window === "undefined") return
 
     lastPosActivityRef.current = Date.now()
+    let refreshInFlight = false
     const markActivity = () => {
       lastPosActivityRef.current = Date.now()
     }
@@ -296,7 +338,8 @@ function PosWorkspace() {
     activityEvents.forEach((eventName) => window.addEventListener(eventName, markActivity, { passive: true }))
 
     const interval = window.setInterval(() => {
-      if (Date.now() - lastPosActivityRef.current >= lockAfterSeconds * 1000) {
+      const now = Date.now()
+      if (now - lastPosActivityRef.current >= lockAfterSeconds * 1000) {
         setPosPinUnlocked(false)
         setPosPin("")
         setPosOperator(null)
@@ -304,6 +347,27 @@ function PosWorkspace() {
         void fetch("/api/pos/pin/verify", { method: "DELETE" }).catch((error) => {
           console.error("Could not clear POS operator session", error)
         })
+      } else if (
+        !refreshInFlight &&
+        lastPosActivityRef.current > lastPosSessionRefreshRef.current &&
+        now - lastPosSessionRefreshRef.current >= 60_000
+      ) {
+        refreshInFlight = true
+        lastPosSessionRefreshRef.current = now
+        void fetch("/api/pos/pin/verify", { cache: "no-store" })
+          .then((res) => {
+            if (res.status !== 423) return
+            setPosPinUnlocked(false)
+            setPosPin("")
+            setPosOperator(null)
+            setPosPinError("POS locked after inactivity. Enter your PIN to continue.")
+          })
+          .catch((sessionError) => {
+            console.error("Could not refresh POS operator session", sessionError)
+          })
+          .finally(() => {
+            refreshInFlight = false
+          })
       }
     }, 1000)
 
@@ -346,6 +410,7 @@ function PosWorkspace() {
   }, [isFullscreen])
 
   const lockPos = (message = "Enter your POS PIN to reopen the register.") => {
+    setCheckingPosPinSession(false)
     setPosPinUnlocked(false)
     setPosPin("")
     setPosOperator(null)
@@ -381,8 +446,10 @@ function PosWorkspace() {
 
       setLockAfterSeconds(Number(data.lockAfterSeconds) || 5 * 60)
       lastPosActivityRef.current = Date.now()
+      lastPosSessionRefreshRef.current = Date.now()
       setPosOperator(data.operator || null)
       setPosPinUnlocked(true)
+      setCheckingPosPinSession(false)
       setPosPin("")
       setPosPinError("")
       const returnTo = new URLSearchParams(window.location.search).get("returnTo")
@@ -1690,43 +1757,53 @@ function PosWorkspace() {
           onInteractOutside={(event) => event.preventDefault()}
           onPointerDownOutside={(event) => event.preventDefault()}
         >
-          <form onSubmit={handlePosPinSubmit} className="space-y-5">
-            <DialogHeader>
-              <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-primary/10 text-primary sm:mx-0">
-                <LockKeyhole className="h-6 w-6" />
+          {checkingPosPinSession ? (
+            <div className="flex min-h-52 flex-col items-center justify-center gap-3 text-center">
+              <Loader2 className="h-7 w-7 animate-spin text-primary" />
+              <div>
+                <DialogTitle className="font-heading text-xl">Reopening register</DialogTitle>
+                <DialogDescription className="mt-1">Checking the active cashier session.</DialogDescription>
               </div>
-              <DialogTitle className="font-heading text-2xl">Unlock POS</DialogTitle>
-              <DialogDescription>
-                Enter your private 6 digit cashier PIN to use the register. The POS locks again after a short period of inactivity.
-              </DialogDescription>
-            </DialogHeader>
-
-            <div className="space-y-2">
-              <Label htmlFor="posPinEntry">Cashier PIN</Label>
-              <Input
-                id="posPinEntry"
-                type="password"
-                inputMode="numeric"
-                pattern="[0-9]*"
-                maxLength={6}
-                autoFocus
-                value={posPin}
-                onChange={(event) => setPosPin(event.target.value.replace(/\D/g, "").slice(0, 6))}
-                className="h-14 text-center text-2xl font-semibold tracking-[0.4em]"
-                placeholder="000000"
-              />
-              {posPinError && (
-                <p className="rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive">
-                  {posPinError}
-                </p>
-              )}
             </div>
+          ) : (
+            <form onSubmit={handlePosPinSubmit} className="space-y-5">
+              <DialogHeader>
+                <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-primary/10 text-primary sm:mx-0">
+                  <LockKeyhole className="h-6 w-6" />
+                </div>
+                <DialogTitle className="font-heading text-2xl">Unlock POS</DialogTitle>
+                <DialogDescription>
+                  Enter your private 6 digit cashier PIN to use the register. The POS locks again after a short period of inactivity.
+                </DialogDescription>
+              </DialogHeader>
 
-            <Button type="submit" className="h-12 w-full text-base" disabled={verifyingPosPin || posPin.length !== 6}>
-              {verifyingPosPin ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <LockKeyhole className="mr-2 h-4 w-4" />}
-              Unlock register
-            </Button>
-          </form>
+              <div className="space-y-2">
+                <Label htmlFor="posPinEntry">Cashier PIN</Label>
+                <Input
+                  id="posPinEntry"
+                  type="password"
+                  inputMode="numeric"
+                  pattern="[0-9]*"
+                  maxLength={6}
+                  autoFocus
+                  value={posPin}
+                  onChange={(event) => setPosPin(event.target.value.replace(/\D/g, "").slice(0, 6))}
+                  className="h-14 text-center text-2xl font-semibold tracking-[0.4em]"
+                  placeholder="000000"
+                />
+                {posPinError && (
+                  <p className="rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive">
+                    {posPinError}
+                  </p>
+                )}
+              </div>
+
+              <Button type="submit" className="h-12 w-full text-base" disabled={verifyingPosPin || posPin.length !== 6}>
+                {verifyingPosPin ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <LockKeyhole className="mr-2 h-4 w-4" />}
+                Unlock register
+              </Button>
+            </form>
+          )}
         </DialogContent>
       </Dialog>
 

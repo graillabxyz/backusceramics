@@ -3,8 +3,9 @@ import { auth } from "@/lib/auth"
 import { prisma } from "@/lib/prisma"
 import { canUsePos } from "@/lib/permissions"
 import { buildPosCloseoutReport, sendPosCloseoutReportEmail } from "@/lib/pos-closeout"
+import { POS_PIN_LOCK_SECONDS } from "@/lib/pos-pin"
 import { cleanString, isRequestBodyTooLarge, safeHeaderValue } from "@/lib/server-security"
-import { getPosOperatorFromRequest } from "@/lib/pos-operator-session"
+import { getPosOperatorFromRequest, setPosOperatorCookie } from "@/lib/pos-operator-session"
 
 const MAX_POS_CLOSEOUT_BODY_BYTES = 32 * 1024
 
@@ -34,7 +35,9 @@ export async function GET(req: NextRequest) {
     },
   })
 
-  return NextResponse.json({ report, closeout })
+  const response = NextResponse.json({ report, closeout })
+  setPosOperatorCookie(response, posOperator.id, POS_PIN_LOCK_SECONDS)
+  return response
 }
 
 export async function POST(req: NextRequest) {
@@ -110,5 +113,7 @@ export async function POST(req: NextRequest) {
 
   const emailSent = data.emailReport ? await sendPosCloseoutReportEmail(report, reportEmail, notes) : false
 
-  return NextResponse.json({ report, closeout, emailSent })
+  const response = NextResponse.json({ report, closeout, emailSent })
+  setPosOperatorCookie(response, posOperator.id, POS_PIN_LOCK_SECONDS)
+  return response
 }

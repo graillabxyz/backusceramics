@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useMemo, useState } from "react"
+import { useEffect, useMemo, useRef, useState } from "react"
 import Link from "next/link"
 import {
   ArrowLeft,
@@ -197,6 +197,7 @@ function BreakdownTable({ title, items, countLabel }: { title: string; items: Br
 }
 
 export default function PosCloseoutPage() {
+  const lastSessionRefreshRef = useRef(Date.now())
   const [dateKey, setDateKey] = useState(todayInBali())
   const [report, setReport] = useState<CloseoutReport | null>(null)
   const [closeout, setCloseout] = useState<CloseoutRecord | null>(null)
@@ -219,6 +220,35 @@ export default function PosCloseoutPage() {
   useEffect(() => {
     void fetchCloseout(dateKey)
   }, []) // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => {
+    let refreshInFlight = false
+
+    const refreshOperatorSession = () => {
+      const now = Date.now()
+      if (refreshInFlight || now - lastSessionRefreshRef.current < 60_000) return
+
+      refreshInFlight = true
+      lastSessionRefreshRef.current = now
+      void fetch("/api/pos/pin/verify", { cache: "no-store" })
+        .then((res) => {
+          if (res.status !== 423) return
+          window.location.assign(`/admin/pos?returnTo=${encodeURIComponent("/admin/pos/closeout?posFullscreen=1")}`)
+        })
+        .catch((sessionError) => {
+          console.error("Could not refresh POS operator session", sessionError)
+        })
+        .finally(() => {
+          refreshInFlight = false
+        })
+    }
+
+    const activityEvents: Array<keyof WindowEventMap> = ["pointerdown", "keydown", "touchstart"]
+    activityEvents.forEach((eventName) => window.addEventListener(eventName, refreshOperatorSession, { passive: true }))
+    return () => {
+      activityEvents.forEach((eventName) => window.removeEventListener(eventName, refreshOperatorSession))
+    }
+  }, [])
 
   const fetchCloseout = async (date = dateKey) => {
     setError("")
