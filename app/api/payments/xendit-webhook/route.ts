@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server"
+import { revalidatePath } from "next/cache"
 import { timingSafeEqual } from "crypto"
 import { prisma } from "@/lib/prisma"
 import { getXenditCallbackToken } from "@/lib/xendit"
@@ -199,6 +200,7 @@ export async function POST(req: NextRequest) {
 
     if (posSaleStatus === "CANCELLED") {
       const result = await cancelPendingPosSale(sale)
+      if (result.updated) revalidatePath("/wall-of-cups")
       await recordAnalyticsEvent({
         type: "pos_payment_cancelled",
         source: "xendit_webhook",

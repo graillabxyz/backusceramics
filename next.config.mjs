@@ -34,7 +34,14 @@ const nextConfig = {
     turbopackLocalPostcssConfig: true,
   },
   images: {
-    unoptimized: true,
+    formats: ["image/avif", "image/webp"],
+    remotePatterns: [
+      {
+        protocol: "https",
+        hostname: "affzsmtggpjmaofiubai.supabase.co",
+        pathname: "/storage/v1/object/**",
+      },
+    ],
   },
   async headers() {
     return [

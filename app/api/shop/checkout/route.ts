@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server"
+import { revalidatePath } from "next/cache"
 import { auth } from "@/lib/auth"
 import { prisma } from "@/lib/prisma"
 import { formatPrice, PUBLIC_WARES_CATEGORIES } from "@/lib/pos-catalog"
@@ -239,6 +240,7 @@ export async function POST(req: NextRequest) {
     })
 
     createdSaleId = sale.id
+    revalidatePath("/wall-of-cups")
     const origin = getTrustedRequestOrigin(req)
     const paymentSession = await createXenditPaymentSession({
       reference_id: paymentReference,
@@ -319,6 +321,7 @@ export async function POST(req: NextRequest) {
     if (createdSaleId) {
       try {
         await restoreOnlineShopInventory(createdSaleId)
+        revalidatePath("/wall-of-cups")
       } catch (restoreError) {
         console.error("Could not restore online shop inventory after payment failure", { restoreError, createdSaleId })
       }

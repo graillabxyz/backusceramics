@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server"
+import { revalidatePath } from "next/cache"
 import { auth } from "@/lib/auth"
 import { prisma } from "@/lib/prisma"
 import { canUsePos } from "@/lib/permissions"
@@ -106,6 +107,8 @@ export async function POST(req: NextRequest, context: RouteContext) {
         reason: reason || undefined,
       },
     }, req)
+
+    if (restock) revalidatePath("/wall-of-cups")
 
     return NextResponse.json(sale)
   } catch (error) {

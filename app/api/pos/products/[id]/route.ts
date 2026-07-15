@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server"
+import { revalidatePath } from "next/cache"
 import { auth } from "@/lib/auth"
 import { prisma } from "@/lib/prisma"
 import { canUsePos } from "@/lib/permissions"
@@ -58,6 +59,7 @@ export async function PATCH(req: NextRequest, { params }: ProductRouteContext) {
       price: true,
       quantity: true,
       status: true,
+      slug: true,
     },
   })
 
@@ -186,6 +188,9 @@ export async function PATCH(req: NextRequest, { params }: ProductRouteContext) {
       data: updateData,
     })
 
+    revalidatePath("/wall-of-cups")
+    revalidatePath(`/shop/${currentProduct.slug}`)
+
     return NextResponse.json(product)
   } catch (error) {
     console.error("Could not update POS product", { error, id })
@@ -206,6 +211,9 @@ export async function DELETE(_req: NextRequest, { params }: ProductRouteContext)
       where: { id },
       data: { status: "ARCHIVED", showInShop: false, featured: false },
     })
+
+    revalidatePath("/wall-of-cups")
+    revalidatePath(`/shop/${product.slug}`)
 
     return NextResponse.json(product)
   } catch (error) {

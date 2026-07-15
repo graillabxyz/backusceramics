@@ -7,7 +7,7 @@ import { WallOfCupsGrid } from "@/components/shop/wall-of-cups-grid"
 import { prisma } from "@/lib/prisma"
 import { parseProductImageUrls } from "@/lib/pos-catalog"
 
-export const dynamic = "force-dynamic"
+export const revalidate = 60
 
 function firstImage(imageUrls: string | null) {
   return parseProductImageUrls(imageUrls)[0] || ""

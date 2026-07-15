@@ -1,4 +1,5 @@
 import Link from "next/link"
+import Image from "next/image"
 import { ArrowRight, Coffee, Instagram, MapPin, MessageCircle, ShoppingBag, Video } from "lucide-react"
 import { Navigation } from "@/components/navigation"
 import { Footer } from "@/components/footer"
@@ -47,9 +48,10 @@ export default function ShopPage() {
               muted
               loop
               playsInline
+              preload="metadata"
               poster="/wallofcups.jpeg"
             >
-              <source src="/herovideo01.mp4" type="video/mp4" />
+              <source src="/herovideo-web.mp4" type="video/mp4" media="(min-width: 768px)" />
             </video>
             <div className="absolute inset-0 bg-gradient-to-t from-black/85 via-black/35 to-transparent" />
             <div className="absolute inset-x-0 bottom-0 p-6 text-white sm:p-10">
@@ -99,10 +101,12 @@ export default function ShopPage() {
       <section className="px-4 pb-20 sm:px-6 lg:px-8">
         <div className="mx-auto grid max-w-7xl gap-4 md:grid-cols-2">
           <Link href="/wall-of-cups" className="group relative min-h-[420px] overflow-hidden rounded-sm bg-muted">
-            <img
+            <Image
               src="/wallofcups.jpeg"
               alt="Backus Ceramics Wall of Cups"
-              className="absolute inset-0 h-full w-full object-cover transition duration-500 group-hover:scale-[1.03]"
+              fill
+              sizes="(min-width: 768px) 50vw, 100vw"
+              className="object-cover transition duration-500 group-hover:scale-[1.03]"
             />
             <div className="absolute inset-0 bg-gradient-to-t from-black/85 via-black/35 to-transparent" />
             <div className="absolute inset-x-0 bottom-0 p-6 text-white sm:p-8">
@@ -183,11 +187,13 @@ export default function ShopPage() {
                 rel="noopener noreferrer"
                 className="group relative overflow-hidden rounded-sm bg-muted"
               >
-                <div className="aspect-[4/5]">
-                  <img
+                <div className="relative aspect-[4/5]">
+                  <Image
                     src={item.image}
                     alt={item.label}
-                    className="h-full w-full object-cover transition duration-500 group-hover:scale-[1.03]"
+                    fill
+                    sizes="(min-width: 1024px) 18vw, (min-width: 640px) 33vw, 100vw"
+                    className="object-cover transition duration-500 group-hover:scale-[1.03]"
                   />
                 </div>
                 <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/80 via-black/25 to-transparent p-4 pt-16 text-white">

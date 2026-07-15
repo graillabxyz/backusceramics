@@ -12,9 +12,11 @@ export function HeroSection() {
           muted
           loop
           playsInline
+          preload="metadata"
+          poster="/wallofcups.jpeg"
           className="absolute inset-0 w-full h-full object-cover"
         >
-          <source src="/herovideo01.mp4" type="video/mp4" />
+          <source src="/herovideo-web.mp4" type="video/mp4" media="(min-width: 768px)" />
         </video>
         <div className="absolute inset-0 bg-background/40" />
       </div>

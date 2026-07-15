@@ -1,6 +1,6 @@
 "use client"
 
-import React, { createContext, useContext, useEffect, useMemo, useState } from "react"
+import React, { createContext, useContext, useEffect, useMemo, useRef, useState } from "react"
 import { createClient } from "@/lib/supabase/client"
 import { consumeAuthReturnToCookie } from "@/lib/auth-redirect"
 import type { AppRole } from "@/lib/permissions"
@@ -86,6 +86,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [isAuthModalOpen, setIsAuthModalOpen] = useState(false)
   const [authRedirectPath, setAuthRedirectPath] = useState<string | null>(null)
   const supabase = useMemo(() => createClient(), [])
+  const appUserRequestRef = useRef<{ userId: string; promise: Promise<void> } | null>(null)
 
   const redirectToStoredAuthReturn = () => {
     const returnTo = consumeAuthReturnToCookie(null)
@@ -108,38 +109,49 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     role: "USER",
   })
 
-  const fetchAppUser = async (supabaseUser: SupabaseUser) => {
-    const email = supabaseUser.email ?? ""
-    const cachedUser = readCachedAppUser(supabaseUser)
+  const fetchAppUser = (supabaseUser: SupabaseUser) => {
+    const activeRequest = appUserRequestRef.current
+    if (activeRequest?.userId === supabaseUser.id) return activeRequest.promise
 
-    if (cachedUser) {
-      setAppUser(cachedUser)
-    }
+    const request = (async () => {
+      const email = supabaseUser.email ?? ""
+      const cachedUser = readCachedAppUser(supabaseUser)
 
-    if (email) {
-      setAppUser((current) => current?.id === supabaseUser.id ? current : cachedUser || getFallbackUser(supabaseUser))
-    }
-
-    try {
-      const controller = new AbortController()
-      const timeout = window.setTimeout(() => controller.abort(), AUTH_REQUEST_TIMEOUT_MS)
-      const res = await fetch("/api/me", { signal: controller.signal }).finally(() => {
-        window.clearTimeout(timeout)
-      })
-
-      if (res.ok) {
-        const data = await res.json()
-        setAppUser(data.user)
-        writeCachedAppUser(data.user)
-        return
+      if (cachedUser) {
+        setAppUser(cachedUser)
       }
-    } catch (error) {
-      console.error("Failed to load app user", error)
-    }
 
-    if (email && !cachedUser) {
-      setAppUser(getFallbackUser(supabaseUser))
-    }
+      if (email) {
+        setAppUser((current) => current?.id === supabaseUser.id ? current : cachedUser || getFallbackUser(supabaseUser))
+      }
+
+      try {
+        const controller = new AbortController()
+        const timeout = window.setTimeout(() => controller.abort(), AUTH_REQUEST_TIMEOUT_MS)
+        const res = await fetch("/api/me", { signal: controller.signal }).finally(() => {
+          window.clearTimeout(timeout)
+        })
+
+        if (res.ok) {
+          const data = await res.json()
+          setAppUser(data.user)
+          writeCachedAppUser(data.user)
+          return
+        }
+      } catch (error) {
+        console.error("Failed to load app user", error)
+      }
+
+      if (email && !cachedUser) {
+        setAppUser(getFallbackUser(supabaseUser))
+      }
+    })()
+
+    appUserRequestRef.current = { userId: supabaseUser.id, promise: request }
+    void request.finally(() => {
+      if (appUserRequestRef.current?.promise === request) appUserRequestRef.current = null
+    })
+    return request
   }
 
   useEffect(() => {
@@ -157,7 +169,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         if (quickUser) {
           setSupabaseUser(quickUser)
           setAppUser(readCachedAppUser(quickUser) || getFallbackUser(quickUser))
+        } else {
+          setSupabaseUser(null)
+          setAppUser(null)
         }
+        setIsLoading(false)
       } catch (error) {
         console.warn("Fast auth session check did not complete", error)
       }
@@ -169,8 +185,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         setSupabaseUser(user)
 
         if (user) {
-          await fetchAppUser(user)
-          redirectToStoredAuthReturn()
+          if (!redirectToStoredAuthReturn()) {
+            await fetchAppUser(user)
+          }
         } else {
           setAppUser(null)
         }
@@ -197,8 +214,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       if (user) {
         setAppUser(readCachedAppUser(user) || getFallbackUser(user))
         setIsAuthModalOpen(false)
-        await fetchAppUser(user)
-        redirectToStoredAuthReturn()
+        setIsLoading(false)
+        if (!redirectToStoredAuthReturn()) {
+          await fetchAppUser(user)
+        }
       } else {
         setAppUser(null)
       }

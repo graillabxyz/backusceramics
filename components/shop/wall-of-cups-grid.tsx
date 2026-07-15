@@ -2,6 +2,7 @@
 
 import { useState } from "react"
 import Link from "next/link"
+import Image from "next/image"
 import { Check, ShoppingCart } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { formatPrice } from "@/lib/pos-catalog"
@@ -45,9 +46,15 @@ export function WallOfCupsGrid({ cups }: { cups: WallCup[] }) {
         return (
           <article key={cup.id} className="group relative overflow-hidden rounded-sm bg-muted">
             <Link href={`/shop/${cup.slug}`} className="block" aria-label={`View ${cup.name}`}>
-              <div className="aspect-square">
+              <div className="relative aspect-square">
                 {cup.image ? (
-                  <img src={cup.image} alt={cup.name} className="h-full w-full object-cover transition duration-500 group-hover:scale-[1.03]" />
+                  <Image
+                    src={cup.image}
+                    alt={cup.name}
+                    fill
+                    sizes="(min-width: 1280px) 25vw, (min-width: 1024px) 33vw, (min-width: 640px) 50vw, 100vw"
+                    className="object-cover transition duration-500 group-hover:scale-[1.03]"
+                  />
                 ) : (
                   <div className="flex h-full w-full items-center justify-center text-sm text-muted-foreground">Image coming soon</div>
                 )}

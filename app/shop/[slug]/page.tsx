@@ -1,4 +1,5 @@
 import Link from "next/link"
+import Image from "next/image"
 import { notFound } from "next/navigation"
 import { ArrowLeft, ArrowRight } from "lucide-react"
 import { Navigation } from "@/components/navigation"
@@ -9,7 +10,7 @@ import { ProductPurchaseActions } from "@/components/shop/product-purchase-actio
 import { prisma } from "@/lib/prisma"
 import { formatPrice, parseProductImageUrls } from "@/lib/pos-catalog"
 
-export const dynamic = "force-dynamic"
+export const revalidate = 60
 
 interface ProductPageProps {
   params: Promise<{
@@ -90,9 +91,16 @@ export default async function ProductPage({ params }: ProductPageProps) {
                 className="block overflow-hidden rounded-sm bg-muted"
                 aria-label={mainImage ? `Open larger image of ${product.name}` : undefined}
               >
-                <div className="aspect-[4/5]">
+                <div className="relative aspect-[4/5]">
                   {mainImage ? (
-                    <img src={mainImage} alt={product.name} className="h-full w-full object-cover" />
+                    <Image
+                      src={mainImage}
+                      alt={product.name}
+                      fill
+                      priority
+                      sizes="(min-width: 1024px) 58vw, 100vw"
+                      className="object-cover"
+                    />
                   ) : (
                     <div className="flex h-full w-full items-center justify-center text-sm text-muted-foreground">
                       Image coming soon
@@ -104,8 +112,8 @@ export default async function ProductPage({ params }: ProductPageProps) {
               {images.length > 1 && (
                 <div className="grid grid-cols-4 gap-3">
                   {images.slice(1, 5).map((image) => (
-                    <a key={image} href={image} target="_blank" rel="noopener noreferrer" className="overflow-hidden rounded-sm bg-muted">
-                      <img src={image} alt="" className="aspect-square w-full object-cover" />
+                    <a key={image} href={image} target="_blank" rel="noopener noreferrer" className="relative aspect-square overflow-hidden rounded-sm bg-muted">
+                      <Image src={image} alt="" fill sizes="15vw" className="object-cover" />
                     </a>
                   ))}
                 </div>
@@ -168,12 +176,14 @@ export default async function ProductPage({ params }: ProductPageProps) {
                     href={`/shop/${relatedProduct.slug}`}
                     className="group relative block overflow-hidden rounded-sm bg-muted"
                   >
-                    <div className="aspect-[3/4]">
+                    <div className="relative aspect-[3/4]">
                       {relatedImage ? (
-                        <img
+                        <Image
                           src={relatedImage}
                           alt={relatedProduct.name}
-                          className="h-full w-full object-cover transition duration-500 group-hover:scale-[1.03]"
+                          fill
+                          sizes="(min-width: 1024px) 25vw, (min-width: 640px) 50vw, 100vw"
+                          className="object-cover transition duration-500 group-hover:scale-[1.03]"
                         />
                       ) : (
                         <div className="flex h-full w-full items-center justify-center text-sm text-muted-foreground">
