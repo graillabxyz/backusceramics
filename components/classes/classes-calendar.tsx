@@ -363,6 +363,7 @@ export function ClassesCalendar({ initialClass }: ClassesCalendarProps) {
     let ignore = false
 
     async function loadAvailability() {
+      const requestedClass = initialClass || new URLSearchParams(window.location.search).get("class") || undefined
       setAvailabilityLoading(true)
       setAvailabilityError("")
       try {
@@ -428,7 +429,7 @@ export function ClassesCalendar({ initialClass }: ClassesCalendarProps) {
 
         setSelectedSessionId((current) => {
           if (nextWeekSessions.some((session) => session.id === current)) return current
-          return nextWeekSessions.find((session) => session.workshop.slug === initialClass || session.workshop.id === initialClass)?.id || nextWeekSessions[0]?.id || ""
+          return nextWeekSessions.find((session) => session.workshop.slug === requestedClass || session.workshop.id === requestedClass)?.id || nextWeekSessions[0]?.id || ""
         })
       } catch (error) {
         console.error("Failed to load weekly class availability", error)

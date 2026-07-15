@@ -3,17 +3,11 @@ import { Navigation } from "@/components/navigation"
 import { BrandClosingSection } from "@/components/brand-closing-section"
 import { ClassesCalendar } from "@/components/classes/classes-calendar"
 
-interface ClassesCalendarPageProps {
-  searchParams: Promise<{ class?: string }>
-}
-
-export default async function ClassesCalendarPage({ searchParams }: ClassesCalendarPageProps) {
-  const params = await searchParams
-
+export default function ClassesCalendarPage() {
   return (
     <>
       <Navigation />
-      <ClassesCalendar initialClass={params.class} />
+      <ClassesCalendar />
       <BrandClosingSection
         eyebrow="Choosing a class"
         title="Find a time that gives the clay room to work."
