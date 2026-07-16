@@ -1,6 +1,6 @@
 "use client"
 
-import { Suspense, useMemo, useState } from "react"
+import { Suspense, useEffect, useMemo, useState } from "react"
 import Link from "next/link"
 import { useSearchParams } from "next/navigation"
 import { ArrowLeft, CalendarDays, Clock, Loader2, MessageCircle } from "lucide-react"
@@ -23,7 +23,12 @@ import {
   SelectValue,
 } from "@/components/ui/select"
 import { useAuth } from "@/lib/auth-context"
-import { formatPrice } from "@/lib/classes-data"
+import { formatPrice, workshops } from "@/lib/classes-data"
+import {
+  type ClassBookingOption,
+  getClassBookingPricing,
+  normalizeClassBookingOption,
+} from "@/lib/class-booking-pricing"
 import { markCheckoutPaymentStarted, trackAnalyticsEvent } from "@/lib/client-analytics"
 import { PAYMENT_SESSION_DURATION_MINUTES } from "@/lib/payment-session"
 
@@ -86,9 +91,19 @@ function ClassCheckoutContent() {
   const dateKey = searchParams.get("dateKey") || ""
   const dateLabel = searchParams.get("dateLabel") || "Selected date"
   const timeLabel = searchParams.get("timeLabel") || "Selected time"
-  const price = Number(searchParams.get("price") || 0)
+  const workshop = workshops.find((item) => item.id === workshopId)
+  const fallbackPrice = Number(searchParams.get("price") || 0)
   const maxSeats = Math.max(Number(searchParams.get("maxSeats") || 1), 0)
   const initialSeats = Math.min(Math.max(Number(searchParams.get("seats") || 1), 1), Math.max(maxSeats, 1))
+  const initialBookingOption = workshop
+    ? normalizeClassBookingOption(workshop, searchParams.get("bookingOption"))
+    : "standard"
+  const initialSeatsPerBooking = initialBookingOption === "parent-child" ? 2 : 1
+  const initialMaxBookingUnits = Math.max(Math.floor(maxSeats / initialSeatsPerBooking), 0)
+  const initialBookingUnits = Math.min(
+    Math.max(Number(searchParams.get("bookingUnits") || Math.ceil(initialSeats / initialSeatsPerBooking)), 1),
+    Math.max(initialMaxBookingUnits, 1)
+  )
   const prepaid = searchParams.get("prepaid") === "true"
   const requiredMeetings = Math.max(Number(searchParams.get("requiredMeetings") || 0), 0)
   const meetings = useMemo(() => parseMeetings(searchParams.get("meetings")), [searchParams])
@@ -117,18 +132,24 @@ function ClassCheckoutContent() {
     }]
   }, [dateKey, meetings, prepaid, timeLabel, title])
 
-  const [people, setPeople] = useState(initialSeats.toString())
+  const [bookingOption, setBookingOption] = useState<ClassBookingOption>(initialBookingOption)
+  const [people, setPeople] = useState(initialBookingUnits.toString())
   const [whatsappPhone, setWhatsappPhone] = useState("")
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [error, setError] = useState("")
   const [success, setSuccess] = useState("")
 
-  const selectedSeatCount = Number(people || 1)
-  const total = price * selectedSeatCount
+  const bookingUnits = Number(people || 1)
+  const seatsPerBooking = bookingOption === "parent-child" ? 2 : 1
+  const maxBookingUnits = Math.max(Math.floor(maxSeats / seatsPerBooking), 0)
+  const pricing = workshop ? getClassBookingPricing(workshop, bookingOption, bookingUnits) : null
+  const selectedSeatCount = pricing?.participants ?? bookingUnits
+  const unitPrice = pricing?.unitPrice ?? fallbackPrice
+  const total = pricing?.total ?? fallbackPrice * bookingUnits
   const onsitePaymentWhatsAppUrl = `https://wa.me/6282145890402?text=${encodeURIComponent(
     `Hi! I'd like to arrange onsite payment for ${title} on ${dateLabel} at ${timeLabel}.`
   )}`
-  const participantOptions = Array.from({ length: maxSeats }, (_, index) => index + 1)
+  const participantOptions = Array.from({ length: maxBookingUnits }, (_, index) => index + 1)
   const paymentMeetings = prepaid
     ? meetings
     : dateKey && timeLabel
@@ -144,6 +165,13 @@ function ClassCheckoutContent() {
   const uniqueMeetingTimes = useMemo(() => Array.from(new Set(meetings.map((meeting) => meeting.timeLabel))), [meetings])
   const hasMixedMeetingTimes = prepaid && uniqueMeetingTimes.length > 1
   const isCheckingSignIn = authLoading && !isAuthenticated
+
+  useEffect(() => {
+    if (maxBookingUnits > 0 && bookingUnits > maxBookingUnits) {
+      setPeople(maxBookingUnits.toString())
+    }
+  }, [bookingUnits, maxBookingUnits])
+
   const analyticsContext = () => ({
     path: typeof window !== "undefined" ? `${window.location.pathname}${window.location.search}` : `/classes/checkout?${searchParams.toString()}`,
     source: bookingSource || undefined,
@@ -153,6 +181,8 @@ function ClassCheckoutContent() {
     value: total,
     metadata: {
       participants: selectedSeatCount,
+      bookingOption,
+      bookingUnits,
       meetingCount: paymentMeetings.length,
       requiredMeetings: paymentRequiredMeetings,
       prepaid,
@@ -234,6 +264,8 @@ function ClassCheckoutContent() {
           workshopId,
           scheduleId: scheduleId || null,
           participants: selectedSeatCount,
+          bookingOption,
+          bookingUnits,
           contactPhone: whatsappPhone.trim(),
           meetings: paymentMeetings,
           requiredMeetings: paymentRequiredMeetings,
@@ -403,17 +435,56 @@ function ClassCheckoutContent() {
 
           <Card className="border-border">
             <CardContent className="space-y-5 p-6">
+              {workshop?.id === "kids-workshop" && workshop.priceAlt && (
+                <div className="space-y-2">
+                  <Label>Who is joining?</Label>
+                  <div className="grid gap-2 sm:grid-cols-2">
+                    <Button
+                      type="button"
+                      variant={bookingOption === "standard" ? "default" : "outline"}
+                      className="h-auto min-h-14 justify-between px-4 py-3"
+                      onClick={() => {
+                        setBookingOption("standard")
+                        setPeople("1")
+                        setError("")
+                      }}
+                    >
+                      <span>Kids only</span>
+                      <span>{formatPrice(workshop.price)}</span>
+                    </Button>
+                    <Button
+                      type="button"
+                      variant={bookingOption === "parent-child" ? "default" : "outline"}
+                      className="h-auto min-h-14 justify-between px-4 py-3"
+                      disabled={maxSeats < 2}
+                      onClick={() => {
+                        setBookingOption("parent-child")
+                        setPeople("1")
+                        setError("")
+                      }}
+                    >
+                      <span>{workshop.priceAlt.label}</span>
+                      <span>{formatPrice(workshop.priceAlt.price)}</span>
+                    </Button>
+                  </div>
+                  <p className="text-xs leading-relaxed text-muted-foreground">
+                    Parent & Child reserves two studio seats and is charged as one pair.
+                  </p>
+                </div>
+              )}
               <div className="grid gap-4 sm:grid-cols-2">
                 <div className="space-y-2">
-                  <Label htmlFor="checkout-seats">Seats</Label>
-                  <Select value={people} onValueChange={setPeople} disabled={maxSeats <= 0}>
+                  <Label htmlFor="checkout-seats">{bookingOption === "parent-child" ? "Parent & child bookings" : "Seats"}</Label>
+                  <Select value={people} onValueChange={setPeople} disabled={maxBookingUnits <= 0}>
                     <SelectTrigger id="checkout-seats">
-                      <SelectValue placeholder={maxSeats <= 0 ? "No seats available" : "Select seats"} />
+                      <SelectValue placeholder={maxBookingUnits <= 0 ? "No seats available" : "Select seats"} />
                     </SelectTrigger>
                     <SelectContent>
                       {participantOptions.map((num) => (
                         <SelectItem key={num} value={num.toString()}>
-                          {num} {num === 1 ? "Person" : "People"}
+                          {bookingOption === "parent-child"
+                            ? `${num} ${num === 1 ? "pair" : "pairs"} (${num * 2} seats)`
+                            : `${num} ${num === 1 ? "Person" : "People"}`}
                         </SelectItem>
                       ))}
                     </SelectContent>
@@ -485,8 +556,14 @@ function ClassCheckoutContent() {
                 <div className="mt-3 space-y-2 text-sm">
                   <div className="flex items-center justify-between gap-4 text-muted-foreground">
                     <span>{title}</span>
-                    <span>{formatPrice(price)}</span>
+                    <span>{formatPrice(unitPrice)}</span>
                   </div>
+                  {workshop?.id === "kids-workshop" && (
+                    <div className="flex items-center justify-between gap-4 text-muted-foreground">
+                      <span>Booking type</span>
+                      <span>{pricing?.label || "Kids only"}</span>
+                    </div>
+                  )}
                   <div className="flex items-center justify-between gap-4 text-muted-foreground">
                     <span>Seats</span>
                     <span>x {selectedSeatCount}</span>
@@ -536,7 +613,7 @@ function ClassCheckoutContent() {
               <Button
                 onClick={handleSubmit}
                 className="hidden h-12 w-full gap-2 text-base lg:inline-flex"
-                disabled={isSubmitting || isCheckingSignIn || maxSeats <= 0}
+                disabled={isSubmitting || isCheckingSignIn || maxBookingUnits <= 0}
               >
                 {isSubmitting || isCheckingSignIn ? <Loader2 className="h-4 w-4 animate-spin" /> : <CalendarDays className="h-4 w-4" />}
                 {isSubmitting ? "Starting Payment..." : isCheckingSignIn ? "Checking sign-in..." : "Continue to Payment"}
@@ -552,7 +629,7 @@ function ClassCheckoutContent() {
         <Button
           onClick={handleSubmit}
           className="h-11 px-4 text-sm"
-          disabled={isSubmitting || isCheckingSignIn || maxSeats <= 0}
+          disabled={isSubmitting || isCheckingSignIn || maxBookingUnits <= 0}
         >
           {isSubmitting || isCheckingSignIn ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
           {isSubmitting ? "Starting" : isCheckingSignIn ? "Checking" : !isAuthenticated ? "Sign in" : "Pay"}

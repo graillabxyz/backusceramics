@@ -17,6 +17,7 @@ import { formatPrice, workshops } from "@/lib/classes-data"
 import { addDays, CalendarAvailability, CalendarSession, formatDateKey, getScheduleOffering, hasSessionStartPassed, parseDateKey } from "@/lib/class-schedule"
 import { cn } from "@/lib/utils"
 import { trackAnalyticsEvent } from "@/lib/client-analytics"
+import { isResidencySelectionComplete } from "@/lib/residency-selection"
 
 type ResidencyFocus = "wheel" | "handbuilding" | "mix"
 
@@ -125,7 +126,8 @@ export default function ResidencyBookingPage() {
   const [loading, setLoading] = useState(true)
 
   const durationWeeks = program ? residencyWeeks[program.id] || 3 : 3
-  const requiredDays = durationWeeks * 5
+  const minimumDays = durationWeeks * 5
+  const maximumDays = durationWeeks * 6
   const bookingWindowEnd = useMemo(() => {
     const date = addMonths(today, 6)
     date.setHours(23, 59, 59, 999)
@@ -147,6 +149,7 @@ export default function ResidencyBookingPage() {
     }
     return counts
   }, [selectedEntries])
+  const selectedWeekCount = selectedWeekCounts.size
   const sessionsByKey = useMemo(() => {
     const map = new Map<string, CalendarSession>()
     for (const session of sessions) map.set(`${session.workshop.id}|${session.dateKey}|${session.timeLabel}`, session)
@@ -161,11 +164,10 @@ export default function ResidencyBookingPage() {
 
   function orderedSlotsForDate(dateKey: string, nextFocus = focus) {
     const date = parseDateKey(dateKey)
-    const slots = orderedSlotsForFocus(nextFocus)
+    const slots = date.getDay() === 6
+      ? residencySlots.filter((slot) => slot.workshopId === "beginner-wheel" && slot.timeLabel === "12:00 - 14:00 PM")
+      : orderedSlotsForFocus(nextFocus)
     const upcomingSlots = slots.filter((slot) => !hasSessionStartPassed(dateKey, slot.timeLabel))
-    if (date.getDay() === 6) {
-      return upcomingSlots.filter((slot) => slot.workshopId === "beginner-wheel" && slot.timeLabel === "12:00 - 14:00 PM")
-    }
     return upcomingSlots
   }
 
@@ -192,8 +194,11 @@ export default function ResidencyBookingPage() {
       })
       return
     }
-    if (selectedCount >= requiredDays) return
-    if ((selectedWeekCounts.get(weekKey(date)) || 0) >= 5) return
+    const selectedWeek = weekKey(date)
+    const weekCount = selectedWeekCounts.get(selectedWeek) || 0
+    if (selectedCount >= maximumDays) return
+    if (weekCount >= 6) return
+    if (weekCount === 0 && selectedWeekCount >= durationWeeks) return
     const suggested = suggestedSlotForDate(dateKey)
     if (!suggested) return
     setSelectedDays((current) => ({ ...current, [dateKey]: { dateKey, timeLabel: suggested.timeLabel } }))
@@ -289,7 +294,7 @@ export default function ResidencyBookingPage() {
     )
   }
 
-  const canContinue = selectedCount === requiredDays
+  const canContinue = isResidencySelectionComplete(selectedWeekCounts.values(), durationWeeks)
   const checkoutHref = (() => {
     if (!canContinue) return "/residency"
     const meetings = selectedEntries.map((day) => {
@@ -315,7 +320,7 @@ export default function ResidencyBookingPage() {
       maxSeats: "1",
       seats: "1",
       prepaid: "true",
-      requiredMeetings: String(requiredDays),
+      requiredMeetings: String(selectedCount),
       meetings: JSON.stringify(meetings),
       focus: focusLabel(focus),
       returnTo: `/residency/book/${slug}`,
@@ -344,7 +349,7 @@ export default function ResidencyBookingPage() {
             <Card className="border-border bg-background/70">
               <CardContent className="space-y-3 p-4 text-sm text-muted-foreground">
                 <p className="font-semibold text-foreground">{program.title}</p>
-                <p>{durationWeeks} weeks · 5 days each week · {requiredDays} studio days total</p>
+                <p>{durationWeeks} weeks · 5 or 6 days each week · {minimumDays}–{maximumDays} studio days total</p>
                 <p>Book through {bookingWindowEnd.toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" })}</p>
               </CardContent>
             </Card>
@@ -441,7 +446,8 @@ export default function ResidencyBookingPage() {
                   const selected = selectedDays[dateKey]
                   const suggested = suggestedSlotForDate(dateKey)
                   const weekCount = selectedWeekCounts.get(weekKey(date)) || 0
-                  const disabled = !inCurrentMonth || !inWindow || !suggested || (!selected && (selectedCount >= requiredDays || weekCount >= 5))
+                  const newWeekBlocked = weekCount === 0 && selectedWeekCount >= durationWeeks
+                  const disabled = !inCurrentMonth || !inWindow || !suggested || (!selected && (selectedCount >= maximumDays || weekCount >= 6 || newWeekBlocked))
                   const isToday = dateKey === formatDateKey(today)
                   const isLastRow = index >= gridDays.length - 6
                   return (
@@ -470,7 +476,8 @@ export default function ResidencyBookingPage() {
                   const selected = selectedDays[dateKey]
                   const suggested = suggestedSlotForDate(dateKey)
                   const weekCount = selectedWeekCounts.get(weekKey(date)) || 0
-                  const disabled = !suggested || (!selected && (selectedCount >= requiredDays || weekCount >= 5))
+                  const newWeekBlocked = weekCount === 0 && selectedWeekCount >= durationWeeks
+                  const disabled = !suggested || (!selected && (selectedCount >= maximumDays || weekCount >= 6 || newWeekBlocked))
                   return (
                     <button key={dateKey} type="button" onClick={() => selectDay(date)} disabled={disabled && !selected} className={cn("grid w-full grid-cols-[76px_1fr] gap-3 rounded-lg border border-border bg-background p-3 text-left", selected && "border-primary bg-primary/10", disabled && !selected && "opacity-45")}>
                       <div>
@@ -502,7 +509,9 @@ export default function ResidencyBookingPage() {
               <div>
                 <p className="text-sm font-semibold text-foreground">Residency summary</p>
                 <h2 className="mt-2 font-heading text-2xl font-bold text-foreground">{program.title}</h2>
-                <p className="mt-1 text-sm text-muted-foreground">{focusLabel(focus)} · {selectedCount}/{requiredDays} days selected</p>
+                <p className="mt-1 text-sm text-muted-foreground">
+                  {focusLabel(focus)} · {selectedCount} days across {selectedWeekCount}/{durationWeeks} weeks
+                </p>
               </div>
               <div className="rounded-lg border border-border bg-muted/35 p-4">
                 <p className="flex items-center gap-2 text-sm font-semibold text-foreground"><Sparkles className="h-4 w-4" />Resident priority</p>
@@ -533,7 +542,11 @@ export default function ResidencyBookingPage() {
                 <div className="flex items-center justify-between text-muted-foreground"><span>{program.title}</span><span>{formatPrice(program.price)}</span></div>
                 <div className="mt-2 flex items-center justify-between border-t border-border pt-2 font-semibold text-foreground"><span>Total due today</span><span>{formatPrice(program.price)}</span></div>
               </div>
-              {!canContinue && <p className="text-sm text-muted-foreground">Select exactly {requiredDays} days, with up to 5 days in each week, to continue to payment.</p>}
+              {!canContinue && (
+                <p className="text-sm text-muted-foreground">
+                  Select 5 or 6 available days in each of exactly {durationWeeks} residency weeks to continue to payment.
+                </p>
+              )}
               <Button asChild className="h-12 w-full gap-2 text-base" disabled={!canContinue || loading}>
                 <Link
                   href={checkoutHref}
@@ -549,7 +562,8 @@ export default function ResidencyBookingPage() {
                       value: program.price,
                       metadata: {
                         selectedDays: selectedCount,
-                        requiredDays,
+                        minimumDays,
+                        maximumDays,
                         focus: focusLabel(focus),
                         manualTimes,
                       },

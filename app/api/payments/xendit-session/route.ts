@@ -11,6 +11,7 @@ import {
   XenditConfigurationError,
 } from "@/lib/xendit"
 import { getPaymentSessionExpiresAt } from "@/lib/payment-session"
+import { getClassBookingPricing, normalizeClassBookingOption } from "@/lib/class-booking-pricing"
 import { checkRateLimit, isRequestBodyTooLarge, rateLimitHeaders } from "@/lib/server-security"
 import {
   classSeatPoolKey,
@@ -353,11 +354,22 @@ async function handlePaymentSessionPost(req: NextRequest, trace?: PaymentTrace) 
     )
   }
 
-  const participants = Number(data.participants || 1)
+  const requestedParticipants = Number(data.participants ?? 1)
+  const bookingOption = normalizeClassBookingOption(workshop, data.bookingOption)
+  const bookingUnits = Number(
+    data.bookingUnits ?? (bookingOption === "standard" ? requestedParticipants : 1)
+  )
+  const pricing = getClassBookingPricing(workshop, bookingOption, bookingUnits)
   const maxParticipants = workshop.maxParticipants ?? 8
-  if (!Number.isInteger(participants) || participants < 1 || participants > maxParticipants) {
+  if (
+    !pricing ||
+    !Number.isInteger(requestedParticipants) ||
+    requestedParticipants !== pricing.participants ||
+    pricing.participants > maxParticipants
+  ) {
     return NextResponse.json({ error: "Participant count is invalid" }, { status: 400 })
   }
+  const participants = pricing.participants
 
   const meetings = parseMeetings(data.meetings)
   const requiredMeetings = Number(data.requiredMeetings || meetings.length)
@@ -453,7 +465,7 @@ async function handlePaymentSessionPost(req: NextRequest, trace?: PaymentTrace) 
     )
   }
 
-  const total = workshop.price * participants
+  const total = pricing.total
   const referenceId = sanitizeReference(`bc_${Date.now()}_${workshop.id}`)
   const holdExpiresAt = getPaymentSessionExpiresAt()
   const origin = getPaymentOrigin(req)
@@ -465,6 +477,7 @@ async function handlePaymentSessionPost(req: NextRequest, trace?: PaymentTrace) 
     `Payment required via Xendit.`,
     `Payment reference: ${referenceId}.`,
     `Program: ${workshop.title}.`,
+    workshop.id === "kids-workshop" ? `Booking type: ${pricing.label}.` : "",
     data.focus ? `Focus: ${data.focus}.` : "",
     `Covers ${meetings.length} studio ${meetings.length === 1 ? "day" : "days"}.`,
     `Total due today: ${formatPrice(total)}.`,
@@ -556,7 +569,7 @@ async function handlePaymentSessionPost(req: NextRequest, trace?: PaymentTrace) 
       amount: total,
       currency: "IDR",
       country: "ID",
-      description: `${workshop.title} - ${participants} ${participants === 1 ? "seat" : "seats"}`,
+      description: `${workshop.title}${workshop.id === "kids-workshop" ? ` - ${pricing.label}` : ""} - ${participants} ${participants === 1 ? "seat" : "seats"}`,
       allow_save_payment_method: "DISABLED",
       locale: "en",
       expires_at: holdExpiresAt.toISOString(),
@@ -571,11 +584,11 @@ async function handlePaymentSessionPost(req: NextRequest, trace?: PaymentTrace) 
       },
       items: [
         {
-          reference_id: workshop.id,
+          reference_id: `${workshop.id}-${pricing.option}`,
           type: "PHYSICAL_SERVICE",
-          name: workshop.title,
-          net_unit_amount: workshop.price,
-          quantity: participants,
+          name: workshop.id === "kids-workshop" ? `${workshop.title} - ${pricing.label}` : workshop.title,
+          net_unit_amount: pricing.unitPrice,
+          quantity: pricing.bookingUnits,
           category: "Ceramics class",
         },
       ],
@@ -590,6 +603,8 @@ async function handlePaymentSessionPost(req: NextRequest, trace?: PaymentTrace) 
         schedule_id: scheduleId || undefined,
         focus: typeof data.focus === "string" ? data.focus : undefined,
         participants,
+        booking_option: pricing.option,
+        booking_units: pricing.bookingUnits,
         customer_email: session.user.email || undefined,
         customer_phone: contactPhone || undefined,
       },
@@ -630,6 +645,8 @@ async function handlePaymentSessionPost(req: NextRequest, trace?: PaymentTrace) 
         paymentSessionId: paymentSession.payment_session_id,
         bookingIds: createdBookings.map((booking) => booking.id),
         participants,
+        bookingOption: pricing.option,
+        bookingUnits: pricing.bookingUnits,
         meetingCount: meetings.length,
         requiredMeetings,
         holdExpiresAt: holdExpiresAt.toISOString(),
@@ -681,6 +698,8 @@ async function handlePaymentSessionPost(req: NextRequest, trace?: PaymentTrace) 
         referenceId,
         bookingIds: createdBookings.map((booking) => booking.id),
         participants,
+        bookingOption: pricing.option,
+        bookingUnits: pricing.bookingUnits,
         meetingCount: meetings.length,
         xenditStatus: isXenditError ? error.status : undefined,
         xenditCode: isXenditError ? error.xenditCode : undefined,

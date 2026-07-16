@@ -17,6 +17,9 @@ import {
   getPaymentSessionExpiresAt,
   PAYMENT_SESSION_DURATION_MINUTES,
 } from "../lib/payment-session"
+import { getClassBookingPricing, normalizeClassBookingOption } from "../lib/class-booking-pricing"
+import { workshops } from "../lib/classes-data"
+import { isResidencySelectionComplete } from "../lib/residency-selection"
 import type { Prisma } from "@prisma/client"
 
 const monday = parseDateKey("2026-07-13")
@@ -253,8 +256,41 @@ test("payment session expiry and local seat hold use the same provider-safe dura
   const now = new Date("2026-07-16T04:00:00.000Z")
   const expiresAt = getPaymentSessionExpiresAt(now)
 
-  assert.equal(PAYMENT_SESSION_DURATION_MINUTES, 10)
-  assert.equal(expiresAt.getTime() - now.getTime(), 10 * 60 * 1000)
+  assert.equal(PAYMENT_SESSION_DURATION_MINUTES, 15)
+  assert.equal(expiresAt.getTime() - now.getTime(), 15 * 60 * 1000)
+})
+
+test("kids pricing reserves two seats for each parent and child booking", () => {
+  const workshop = workshops.find((item) => item.id === "kids-workshop")
+  assert.ok(workshop)
+  const option = normalizeClassBookingOption(workshop, "parent-child")
+  const pricing = getClassBookingPricing(workshop, option, 2)
+  assert.deepEqual(pricing, {
+    option: "parent-child",
+    label: "Parent & Child",
+    bookingUnits: 2,
+    participants: 4,
+    unitPrice: 500000,
+    total: 1000000,
+  })
+})
+
+test("unsupported class pricing options use server-controlled standard pricing", () => {
+  const workshop = workshops.find((item) => item.id === "beginner-wheel")
+  assert.ok(workshop)
+  const option = normalizeClassBookingOption(workshop, "parent-child")
+  const pricing = getClassBookingPricing(workshop, option, 2)
+  assert.equal(option, "standard")
+  assert.equal(pricing?.participants, 2)
+  assert.equal(pricing?.total, workshop.price * 2)
+})
+
+test("residencies accept five or six days in each selected week", () => {
+  assert.equal(isResidencySelectionComplete([5, 5, 5], 3), true)
+  assert.equal(isResidencySelectionComplete([6, 5, 6], 3), true)
+  assert.equal(isResidencySelectionComplete([5, 5], 3), false)
+  assert.equal(isResidencySelectionComplete([4, 5, 6], 3), false)
+  assert.equal(isResidencySelectionComplete([5, 5, 5, 5], 3), false)
 })
 
 test("a scheduled multi-day run disappears after its first meeting starts", () => {
