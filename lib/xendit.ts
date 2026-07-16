@@ -65,6 +65,7 @@ export interface CreateXenditPaymentSessionInput {
   customer: XenditPaymentSessionCustomer
   success_return_url?: string
   cancel_return_url?: string
+  expires_at?: string
   description?: string
   items?: XenditPaymentSessionItem[]
   metadata?: Record<string, MetadataValue | null | undefined>

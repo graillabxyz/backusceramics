@@ -25,6 +25,7 @@ import {
 import { useAuth } from "@/lib/auth-context"
 import { formatPrice } from "@/lib/classes-data"
 import { markCheckoutPaymentStarted, trackAnalyticsEvent } from "@/lib/client-analytics"
+import { PAYMENT_SESSION_DURATION_MINUTES } from "@/lib/payment-session"
 
 interface CheckoutMeeting {
   key: string
@@ -498,7 +499,7 @@ function ClassCheckoutContent() {
               </div>
 
               <p className="rounded-md bg-muted/50 p-3 text-sm leading-relaxed text-muted-foreground">
-                Online payment confirms your seat immediately. We will hold the selected {paymentMeetings.length === 1 ? "class time" : "program days"} for 5 minutes while you complete secure payment through Xendit.
+                Online payment confirms your seat immediately. We will hold the selected {paymentMeetings.length === 1 ? "class time" : "program days"} for {PAYMENT_SESSION_DURATION_MINUTES} minutes while you complete secure payment through Xendit.
               </p>
 
               <div className="rounded-md border border-border bg-background p-3 text-sm leading-relaxed text-muted-foreground">

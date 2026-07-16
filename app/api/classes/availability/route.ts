@@ -10,6 +10,7 @@ import {
   classSeatPoolKey,
   type CalendarSession,
   formatDateKey,
+  hasScheduledProgramStarted,
   hasSessionStartPassed,
   parseDateKey,
   startOfWeek,
@@ -42,7 +43,10 @@ function endOfMonth(date: Date) {
 }
 
 function removeStartedSessions(sessions: CalendarSession[]) {
-  return sessions.filter((session) => !hasSessionStartPassed(session.dateKey, session.timeLabel))
+  return sessions.filter((session) => (
+    !hasSessionStartPassed(session.dateKey, session.timeLabel) &&
+    !hasScheduledProgramStarted(session)
+  ))
 }
 
 function buildAvailabilityResponse(rangeStart: Date, sessions: CalendarSession[], bookedSeats = new Map<string, number>(), heldSeats = new Map<string, number>(), holdDetails = new Map<string, { id: string; studentName: string; seats: number }[]>()) {

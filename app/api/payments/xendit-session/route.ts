@@ -10,6 +10,7 @@ import {
   XenditApiError,
   XenditConfigurationError,
 } from "@/lib/xendit"
+import { getPaymentSessionExpiresAt } from "@/lib/payment-session"
 import { checkRateLimit, isRequestBodyTooLarge, rateLimitHeaders } from "@/lib/server-security"
 import {
   classSeatPoolKey,
@@ -123,10 +124,6 @@ function markPaymentStep(trace: PaymentTrace | undefined, step: string) {
 function tagPaymentResponse(response: NextResponse) {
   response.headers.set("Cache-Control", "no-store")
   return response
-}
-
-function getPaymentHoldExpiresAt() {
-  return new Date(Date.now() + 5 * 60 * 1000)
 }
 
 function sanitizeReference(value: string) {
@@ -458,7 +455,7 @@ async function handlePaymentSessionPost(req: NextRequest, trace?: PaymentTrace) 
 
   const total = workshop.price * participants
   const referenceId = sanitizeReference(`bc_${Date.now()}_${workshop.id}`)
-  const holdExpiresAt = getPaymentHoldExpiresAt()
+  const holdExpiresAt = getPaymentSessionExpiresAt()
   const origin = getPaymentOrigin(req)
   const hasHttpsOrigin = isHttpsUrl(origin)
   const returnPath = safeInternalPath(data.returnPath, "/classes/calendar")
@@ -562,6 +559,7 @@ async function handlePaymentSessionPost(req: NextRequest, trace?: PaymentTrace) 
       description: `${workshop.title} - ${participants} ${participants === 1 ? "seat" : "seats"}`,
       allow_save_payment_method: "DISABLED",
       locale: "en",
+      expires_at: holdExpiresAt.toISOString(),
       customer: {
         reference_id: createXenditCustomerReference(session.user.id || session.user.email, referenceId),
         type: "INDIVIDUAL",

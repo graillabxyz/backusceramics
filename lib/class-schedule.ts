@@ -145,6 +145,20 @@ export function hasSessionStartPassed(dateKey: string, timeLabel: string, now = 
   return getSessionStartDateTime(dateKey, timeLabel).getTime() <= now.getTime()
 }
 
+export function isScheduledProgramSession(session: CalendarSession) {
+  return Boolean(
+    session.scheduleId &&
+    (session.scheduleCategory === "multi-day" ||
+      session.scheduleCategory === "multi-week" ||
+      session.scheduleCategory === "multi_week")
+  )
+}
+
+export function hasScheduledProgramStarted(session: CalendarSession, now = new Date()) {
+  if (!isScheduledProgramSession(session) || !session.scheduleStartDate) return false
+  return hasSessionStartPassed(formatDateKey(session.scheduleStartDate), session.timeLabel, now)
+}
+
 export function parseScheduleDays(schedule: string) {
   const [dayPart = ""] = schedule.split(":")
   const normalized = dayPart.trim()

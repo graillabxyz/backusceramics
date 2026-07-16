@@ -8,7 +8,15 @@ import {
   lockClassSeatPools,
 } from "../lib/class-seat-accounting"
 import { validateClassHoldCapacity } from "../lib/class-hold-capacity"
-import { classSeatPoolKey, parseDateKey } from "../lib/class-schedule"
+import {
+  classSeatPoolKey,
+  hasScheduledProgramStarted,
+  parseDateKey,
+} from "../lib/class-schedule"
+import {
+  getPaymentSessionExpiresAt,
+  PAYMENT_SESSION_DURATION_MINUTES,
+} from "../lib/payment-session"
 import type { Prisma } from "@prisma/client"
 
 const monday = parseDateKey("2026-07-13")
@@ -239,4 +247,44 @@ test("customer payment locks deduplicate and sort shared seat pools", async () =
 
   assert.equal(lockQueries.length, 2)
   assert.ok(lockQueries.every((query) => query.includes("pg_advisory_xact_lock") && query.includes("::text")))
+})
+
+test("payment session expiry and local seat hold use the same provider-safe duration", () => {
+  const now = new Date("2026-07-16T04:00:00.000Z")
+  const expiresAt = getPaymentSessionExpiresAt(now)
+
+  assert.equal(PAYMENT_SESSION_DURATION_MINUTES, 10)
+  assert.equal(expiresAt.getTime() - now.getTime(), 10 * 60 * 1000)
+})
+
+test("a scheduled multi-day run disappears after its first meeting starts", () => {
+  const session = {
+    id: "schedule-1-2026-07-17-10:00",
+    scheduleId: "schedule-1",
+    workshop: { id: "3-day-workshop" },
+    date: parseDateKey("2026-07-17"),
+    dateKey: "2026-07-17",
+    timeLabel: "10:00 - 12:00 PM",
+    scheduleLabel: "Scheduled run",
+    sortHour: 10,
+    scheduleCategory: "multi-day",
+    scheduleStartDate: parseDateKey("2026-07-16"),
+  } as Parameters<typeof hasScheduledProgramStarted>[0]
+
+  assert.equal(hasScheduledProgramStarted(session, new Date("2026-07-16T01:59:59.000Z")), false)
+  assert.equal(hasScheduledProgramStarted(session, new Date("2026-07-16T02:00:00.000Z")), true)
+})
+
+test("default workshop sequences remain bookable from any valid future start date", () => {
+  const session = {
+    id: "3-day-workshop-2026-07-17-10:00",
+    workshop: { id: "3-day-workshop" },
+    date: parseDateKey("2026-07-17"),
+    dateKey: "2026-07-17",
+    timeLabel: "10:00 - 12:00 PM",
+    scheduleLabel: "Friday: 10:00 - 12:00 PM",
+    sortHour: 10,
+  } as Parameters<typeof hasScheduledProgramStarted>[0]
+
+  assert.equal(hasScheduledProgramStarted(session, new Date("2026-07-17T02:00:00.000Z")), false)
 })
