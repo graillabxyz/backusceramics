@@ -9,8 +9,9 @@ import {
   type CalendarSession,
 } from "@/lib/class-schedule"
 import {
-  activeSeatBookingWhere,
+  activeSeatBookingsForDateKeysWhere,
   calculateSeatUsage,
+  lockClassSeatPools,
   mergeCalendarSessions,
 } from "@/lib/class-seat-accounting"
 
@@ -99,21 +100,13 @@ export async function validateClassHoldCapacity(
 
 
   if (options.lockSeatPools) {
-    const seatPoolKeys = Array.from(requestedSeatPools.keys()).sort()
-    for (const seatPoolKey of seatPoolKeys) {
-      await db.$queryRaw`SELECT pg_advisory_xact_lock(hashtext(${seatPoolKey}))::text AS "lock"`
-    }
+    await lockClassSeatPools(db, requestedSeatPools.keys())
   }
 
   const dateKeys = Array.from(new Set(Array.from(requestedSeatPools.values()).map((item) => item.dateKey)))
   const [bookings, holds] = await Promise.all([
     db.classBooking.findMany({
-      where: {
-        ...activeSeatBookingWhere(),
-        OR: dateKeys.map((dateKey) => ({
-          preferredDate: { startsWith: dateKey },
-        })),
-      },
+      where: activeSeatBookingsForDateKeysWhere(dateKeys),
       select: {
         preferredDate: true,
         participants: true,

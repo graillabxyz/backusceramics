@@ -16,7 +16,7 @@ import {
 } from "@/lib/class-schedule"
 import { isFullAdminRole } from "@/lib/permissions"
 import {
-  activeSeatBookingWhere,
+  activeSeatBookingsForDateKeysWhere,
   calculateSeatUsage,
   mergeCalendarSessions,
 } from "@/lib/class-seat-accounting"
@@ -139,12 +139,7 @@ export async function GET(req: NextRequest) {
   try {
     ;[bookings, holds] = await Promise.all([
       prisma.classBooking.findMany({
-        where: {
-          ...activeSeatBookingWhere(),
-          OR: dateKeys.map((dateKey) => ({
-            preferredDate: { startsWith: dateKey },
-          })),
-        },
+        where: activeSeatBookingsForDateKeysWhere(dateKeys),
         select: {
           workshopId: true,
           scheduleId: true,

@@ -33,6 +33,18 @@ export interface SeatHoldDetail {
   seats: number
 }
 
+type SeatLockDb = Pick<Prisma.TransactionClient, "$queryRaw">
+
+export async function lockClassSeatPools(db: SeatLockDb, seatPoolKeys: Iterable<string>) {
+  const sortedKeys = Array.from(new Set(seatPoolKeys)).sort()
+
+  for (const seatPoolKey of sortedKeys) {
+    // PostgreSQL returns void here. Prisma's pg driver adapter needs a
+    // supported scalar result even though we only care that the lock completed.
+    await db.$queryRaw`SELECT pg_advisory_xact_lock(hashtext(${seatPoolKey}))::text AS "lock"`
+  }
+}
+
 export function activeSeatBookingWhere(now = new Date()): Prisma.ClassBookingWhereInput {
   return {
     OR: [
@@ -40,6 +52,19 @@ export function activeSeatBookingWhere(now = new Date()): Prisma.ClassBookingWhe
       {
         status: "PENDING",
         holdExpiresAt: { gt: now },
+      },
+    ],
+  }
+}
+
+export function activeSeatBookingsForDateKeysWhere(dateKeys: string[], now = new Date()): Prisma.ClassBookingWhereInput {
+  return {
+    AND: [
+      activeSeatBookingWhere(now),
+      {
+        OR: dateKeys.map((dateKey) => ({
+          preferredDate: { startsWith: dateKey },
+        })),
       },
     ],
   }

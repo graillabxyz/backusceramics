@@ -24,7 +24,7 @@ import {
 import { recordAnalyticsEvent } from "@/lib/analytics-server"
 import type { Prisma } from "@prisma/client"
 import { getTrustedRequestOrigin } from "@/lib/request-origin"
-import { activeSeatBookingWhere, calculateSeatUsage } from "@/lib/class-seat-accounting"
+import { activeSeatBookingWhere, calculateSeatUsage, lockClassSeatPools } from "@/lib/class-seat-accounting"
 
 export const runtime = "nodejs"
 const MAX_PAYMENT_SESSION_BODY_BYTES = 64 * 1024
@@ -283,7 +283,6 @@ async function resolveScheduleIdForBooking(scheduleId: string | null) {
 
 async function handlePaymentSessionPost(req: NextRequest, trace?: PaymentTrace) {
   let session: PaymentSession | null
-  let attachLocalUserToBooking = true
   try {
     markPaymentStep(trace, "auth")
     session = await auth()
@@ -305,7 +304,6 @@ async function handlePaymentSessionPost(req: NextRequest, trace?: PaymentTrace) 
       )
     }
 
-    attachLocalUserToBooking = false
     session = {
       user: {
         id: null,
@@ -479,10 +477,17 @@ async function handlePaymentSessionPost(req: NextRequest, trace?: PaymentTrace) 
   try {
     markPaymentStep(trace, "reservation-prisma")
     createdBookings = await prisma.$transaction(async (tx) => {
-      const seatPoolKeys = Array.from(new Set(meetings.map((meeting) => classSeatPoolKey(meeting.dateKey, meeting.timeLabel)))).sort()
-      for (const seatPoolKey of seatPoolKeys) {
-        await tx.$queryRaw`SELECT pg_advisory_xact_lock(hashtext(${seatPoolKey}))`
-      }
+      const bookingUser = session.user.email
+        ? await tx.user.findUnique({
+            where: { email: session.user.email },
+            select: { id: true },
+          })
+        : null
+
+      await lockClassSeatPools(
+        tx,
+        meetings.map((meeting) => classSeatPoolKey(meeting.dateKey, meeting.timeLabel))
+      )
 
       for (const meeting of meetings) {
         const slotWorkshopId = resolveSlotWorkshopId(workshop, meeting.slotWorkshopId)
@@ -510,7 +515,7 @@ async function handlePaymentSessionPost(req: NextRequest, trace?: PaymentTrace) 
           data: {
             workshopId: resolveSlotWorkshopId(workshop, meeting.slotWorkshopId) || workshopId,
             ...(bookingScheduleId ? { scheduleId: bookingScheduleId } : {}),
-            userId: attachLocalUserToBooking ? session.user.id : null,
+            userId: bookingUser?.id ?? null,
             preferredDate: `${meeting.dateKey} · ${meeting.timeLabel}`,
             participants,
             notes: meeting.slotTitle ? `${paymentNote} Reserved slot: ${meeting.slotTitle}.` : paymentNote,

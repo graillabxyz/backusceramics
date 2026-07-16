@@ -2,8 +2,10 @@ import assert from "node:assert/strict"
 import test from "node:test"
 import {
   activeSeatBookingWhere,
+  activeSeatBookingsForDateKeysWhere,
   calculateSeatUsage,
   holdAppliesToSession,
+  lockClassSeatPools,
 } from "../lib/class-seat-accounting"
 import { validateClassHoldCapacity } from "../lib/class-hold-capacity"
 import { classSeatPoolKey, parseDateKey } from "../lib/class-schedule"
@@ -25,6 +27,22 @@ test("only confirmed bookings and unexpired payment holds consume seats", () => 
     OR: [
       { status: "CONFIRMED" },
       { status: "PENDING", holdExpiresAt: { gt: now } },
+    ],
+  })
+})
+
+test("date filtering preserves active booking status conditions", () => {
+  const now = new Date("2026-07-12T04:00:00.000Z")
+
+  assert.deepEqual(activeSeatBookingsForDateKeysWhere(["2026-07-13", "2026-07-14"], now), {
+    AND: [
+      activeSeatBookingWhere(now),
+      {
+        OR: [
+          { preferredDate: { startsWith: "2026-07-13" } },
+          { preferredDate: { startsWith: "2026-07-14" } },
+        ],
+      },
     ],
   })
 })
@@ -205,5 +223,20 @@ test("transaction seat locks cast PostgreSQL void results for Prisma driver adap
 
   assert.equal(result, null)
   assert.ok(lockQueries.length > 0)
+  assert.ok(lockQueries.every((query) => query.includes("pg_advisory_xact_lock") && query.includes("::text")))
+})
+
+test("customer payment locks deduplicate and sort shared seat pools", async () => {
+  const lockQueries: string[] = []
+  const db = {
+    $queryRaw: async (query: TemplateStringsArray) => {
+      lockQueries.push(query.join("?"))
+      return [{ lock: "" }]
+    },
+  } as unknown as Pick<Prisma.TransactionClient, "$queryRaw">
+
+  await lockClassSeatPools(db, ["2026-07-14|10:00", "2026-07-13|10:00", "2026-07-14|10:00"])
+
+  assert.equal(lockQueries.length, 2)
   assert.ok(lockQueries.every((query) => query.includes("pg_advisory_xact_lock") && query.includes("::text")))
 })
