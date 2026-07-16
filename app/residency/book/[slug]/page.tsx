@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from "react"
 import Link from "next/link"
 import { useParams } from "next/navigation"
-import { ArrowLeft, CalendarDays, ChevronLeft, ChevronRight, Sparkles } from "lucide-react"
+import { AlertCircle, ArrowLeft, CalendarDays, ChevronLeft, ChevronRight, RefreshCw, Sparkles } from "lucide-react"
 import { Navigation } from "@/components/navigation"
 import { Footer } from "@/components/footer"
 import { BrandClosingSection } from "@/components/brand-closing-section"
@@ -17,7 +17,7 @@ import { formatPrice, workshops } from "@/lib/classes-data"
 import { addDays, CalendarAvailability, CalendarSession, formatDateKey, getScheduleOffering, hasSessionStartPassed, parseDateKey } from "@/lib/class-schedule"
 import { cn } from "@/lib/utils"
 import { trackAnalyticsEvent } from "@/lib/client-analytics"
-import { isResidencySelectionComplete } from "@/lib/residency-selection"
+import { isResidencySelectionComplete, replaceResidencyMonthRecords } from "@/lib/residency-selection"
 
 type ResidencyFocus = "wheel" | "handbuilding" | "mix"
 
@@ -124,6 +124,8 @@ export default function ResidencyBookingPage() {
   const [focus, setFocus] = useState<ResidencyFocus>("wheel")
   const [manualTimes, setManualTimes] = useState(false)
   const [loading, setLoading] = useState(true)
+  const [availabilityError, setAvailabilityError] = useState("")
+  const [availabilityReload, setAvailabilityReload] = useState(0)
 
   const durationWeeks = program ? residencyWeeks[program.id] || 3 : 3
   const minimumDays = durationWeeks * 5
@@ -219,6 +221,7 @@ export default function ResidencyBookingPage() {
     let ignore = false
     async function loadAvailability() {
       setLoading(true)
+      setAvailabilityError("")
       try {
         const response = await fetch(`/api/classes/availability?monthStart=${formatDateKey(monthStart)}`)
         if (!response.ok) throw new Error("Could not load residency availability")
@@ -247,12 +250,11 @@ export default function ResidencyBookingPage() {
             }
           })
           .filter(Boolean) as CalendarSession[]
-        setAvailability(nextAvailability)
-        setSessions(mappedSessions)
+        setAvailability((current) => ({ ...current, ...nextAvailability }))
+        setSessions((current) => replaceResidencyMonthRecords(current, mappedSessions, formatDateKey(monthStart)))
       } catch {
         if (!ignore) {
-          setAvailability({})
-          setSessions([])
+          setAvailabilityError("We could not check residency availability for this month. Please try again.")
         }
       } finally {
         if (!ignore) setLoading(false)
@@ -262,7 +264,7 @@ export default function ResidencyBookingPage() {
     return () => {
       ignore = true
     }
-  }, [bookingWindowEnd, monthStart, today])
+  }, [availabilityReload, bookingWindowEnd, monthStart, today])
 
   useEffect(() => {
     setSelectedDays((current) => {
@@ -434,6 +436,20 @@ export default function ResidencyBookingPage() {
                 </div>
                 <Button variant="secondary" onClick={() => setMonthStart(startOfMonth(today))}>This Month</Button>
               </div>
+
+              {availabilityError ? (
+                <div className="border-b border-destructive/30 bg-destructive/10 px-4 py-4 sm:px-6">
+                  <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                    <p className="flex items-start gap-2 text-sm font-medium text-destructive">
+                      <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
+                      <span>{availabilityError}</span>
+                    </p>
+                    <Button type="button" variant="outline" size="sm" className="gap-2" onClick={() => setAvailabilityReload((value) => value + 1)}>
+                      <RefreshCw className="h-4 w-4" />Try again
+                    </Button>
+                  </div>
+                </div>
+              ) : null}
 
               <div className="hidden grid-cols-6 border-b border-border bg-secondary/20 md:grid">
                 {weekdayLabels.map((label) => <div key={label} className="px-4 py-3 text-center text-xs font-semibold uppercase tracking-wide text-muted-foreground">{label}</div>)}

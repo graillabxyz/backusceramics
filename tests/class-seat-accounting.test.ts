@@ -19,7 +19,7 @@ import {
 } from "../lib/payment-session"
 import { getClassBookingPricing, normalizeClassBookingOption } from "../lib/class-booking-pricing"
 import { workshops } from "../lib/classes-data"
-import { isResidencySelectionComplete } from "../lib/residency-selection"
+import { isResidencySelectionComplete, replaceResidencyMonthRecords } from "../lib/residency-selection"
 import type { Prisma } from "@prisma/client"
 
 const monday = parseDateKey("2026-07-13")
@@ -258,6 +258,19 @@ test("payment session expiry and local seat hold use the same provider-safe dura
 
   assert.equal(PAYMENT_SESSION_DURATION_MINUTES, 15)
   assert.equal(expiresAt.getTime() - now.getTime(), 15 * 60 * 1000)
+})
+
+test("residency availability keeps other loaded months while refreshing the active month", () => {
+  const current = [
+    { id: "old-july", dateKey: "2026-07-20" },
+    { id: "august", dateKey: "2026-08-03" },
+  ]
+  const next = [{ id: "new-july", dateKey: "2026-07-21" }]
+
+  assert.deepEqual(replaceResidencyMonthRecords(current, next, "2026-07-01"), [
+    { id: "august", dateKey: "2026-08-03" },
+    { id: "new-july", dateKey: "2026-07-21" },
+  ])
 })
 
 test("kids pricing reserves two seats for each parent and child booking", () => {
