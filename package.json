@@ -8,6 +8,8 @@
     "db:migrate": "prisma migrate deploy",
     "dev": "next dev",
     "lint": "eslint . --quiet",
+    "test": "npm run test:seats && npm run test:commerce",
+    "test:commerce": "tsx --test tests/commerce-payment.test.ts",
     "test:seats": "tsx --test tests/class-seat-accounting.test.ts",
     "typecheck": "tsc --noEmit --incremental false",
     "start": "next start"

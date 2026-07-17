@@ -28,6 +28,7 @@ export default async function ProductPage({ params }: ProductPageProps) {
         status: "AVAILABLE",
         showInShop: true,
         cafeOnly: false,
+        price: { gt: 0 },
         quantity: { gt: 0 },
       },
     })
@@ -50,6 +51,7 @@ export default async function ProductPage({ params }: ProductPageProps) {
         status: "AVAILABLE",
         showInShop: true,
         cafeOnly: false,
+        price: { gt: 0 },
         quantity: { gt: 0 },
       },
       orderBy: [

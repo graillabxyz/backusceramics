@@ -1,5 +1,3 @@
-import "server-only"
-
 import { getShippingDestination } from "@/lib/shipping-destinations"
 
 export interface ShippableProduct {
@@ -77,7 +75,9 @@ export function calculateCeramicShipping(products: ShippableProduct[], countryCo
   let usedProductDefaults = false
   let actualWeightGrams = 350
   let packedVolumeCm3 = 0
-  let longestPackedSide = 0
+  let minimumLengthCm = 0
+  let minimumWidthCm = 0
+  let minimumHeightCm = 0
 
   for (const product of products) {
     const defaults = DEFAULTS_BY_CATEGORY[product.category] || DEFAULTS_BY_CATEGORY.OTHER
@@ -90,17 +90,20 @@ export function calculateCeramicShipping(products: ShippableProduct[], countryCo
     const packedWidth = positiveNumber(product.widthCm, defaults.widthCm) + 10
     const packedHeight = positiveNumber(product.heightCm, defaults.heightCm) + 10
 
+    const [unitLength, unitWidth, unitHeight] = [packedLength, packedWidth, packedHeight].sort((a, b) => b - a)
     actualWeightGrams += quantity * (weightGrams + 180)
-    packedVolumeCm3 += quantity * packedLength * packedWidth * packedHeight
-    longestPackedSide = Math.max(longestPackedSide, packedLength, packedWidth, packedHeight)
+    packedVolumeCm3 += quantity * unitLength * unitWidth * unitHeight
+    minimumLengthCm = Math.max(minimumLengthCm, unitLength)
+    minimumWidthCm = Math.max(minimumWidthCm, unitWidth)
+    minimumHeightCm = Math.max(minimumHeightCm, unitHeight)
   }
 
   // Combine individually cushioned pieces in one carton with a conservative 12% void allowance.
   const cartonVolume = packedVolumeCm3 * 1.12
-  const packageLengthCm = Math.ceil(Math.max(longestPackedSide, Math.cbrt(cartonVolume) * 1.2))
+  const packageLengthCm = Math.ceil(Math.max(minimumLengthCm, Math.cbrt(cartonVolume) * 1.2))
   const remainingFace = cartonVolume / packageLengthCm
-  const packageWidthCm = Math.ceil(Math.sqrt(remainingFace))
-  const packageHeightCm = Math.ceil(remainingFace / packageWidthCm)
+  const packageWidthCm = Math.ceil(Math.max(minimumWidthCm, Math.sqrt(remainingFace)))
+  const packageHeightCm = Math.ceil(Math.max(minimumHeightCm, remainingFace / packageWidthCm))
   const actualWeightKg = Math.round((actualWeightGrams / 1000) * 100) / 100
   const volumetricDivisor = destination.code === "ID" ? 6000 : 5000
   const volumetricWeightKg = Math.round(((packageLengthCm * packageWidthCm * packageHeightCm) / volumetricDivisor) * 100) / 100

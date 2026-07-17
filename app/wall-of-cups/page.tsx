@@ -21,6 +21,7 @@ export default async function WallOfCupsPage() {
         status: "AVAILABLE",
         showInShop: true,
         cafeOnly: false,
+        price: { gt: 0 },
         quantity: { gt: 0 },
       },
       orderBy: [

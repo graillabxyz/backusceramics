@@ -14,6 +14,7 @@ import { checkRateLimit, cleanString, isRequestBodyTooLarge, isValidEmailAddress
 import { getTrustedRequestOrigin } from "@/lib/request-origin"
 import { calculateCeramicShipping, type ShippingQuote } from "@/lib/shop-shipping"
 import { getShippingDestination } from "@/lib/shipping-destinations"
+import { getPaymentSessionExpiresAt } from "@/lib/payment-session"
 
 const MAX_SHOP_CHECKOUT_BODY_BYTES = 64 * 1024
 const PUBLIC_CATEGORY_IDS = PUBLIC_WARES_CATEGORIES.map((category) => category.id)
@@ -242,6 +243,7 @@ export async function POST(req: NextRequest) {
     createdSaleId = sale.id
     revalidatePath("/wall-of-cups")
     const origin = getTrustedRequestOrigin(req)
+    const paymentExpiresAt = getPaymentSessionExpiresAt()
     const paymentSession = await createXenditPaymentSession({
       reference_id: paymentReference,
       session_type: "PAY",
@@ -289,6 +291,7 @@ export async function POST(req: NextRequest) {
       },
       success_return_url: `${origin}/shop/checkout?payment=success&sale=${sale.id}`,
       cancel_return_url: `${origin}/shop/checkout?payment=cancelled&sale=${sale.id}`,
+      expires_at: paymentExpiresAt.toISOString(),
     })
 
     const updatedSale = await prisma.posSale.update({
