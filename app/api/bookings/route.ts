@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server"
 import { auth } from "@/lib/auth"
 import { prisma } from "@/lib/prisma"
 import { isFullAdminRole } from "@/lib/permissions"
+import { reconcileRecentXenditClassBookings } from "@/lib/xendit-booking-reconciliation"
 
 const CANCELLED_BOOKING_VISIBLE_DAYS = 5
 
@@ -34,6 +35,11 @@ export async function GET(req: NextRequest) {
   }
 
   if (isFullAdminRole(session.user.role)) {
+    await reconcileRecentXenditClassBookings({
+      isAdmin: true,
+      paymentReference: req.nextUrl.searchParams.get("paymentReference"),
+      maxSessions: 8,
+    })
     await archiveOldCancelledBookings()
     const view = req.nextUrl.searchParams.get("view")
     const bookings = await prisma.classBooking.findMany({
@@ -44,6 +50,14 @@ export async function GET(req: NextRequest) {
     })
     return NextResponse.json(bookings)
   }
+
+  await reconcileRecentXenditClassBookings({
+    isAdmin: false,
+    userId: session.user.id,
+    email: session.user.email,
+    paymentReference: req.nextUrl.searchParams.get("paymentReference"),
+    maxSessions: 4,
+  })
 
   const bookings = await prisma.classBooking.findMany({
     where: {

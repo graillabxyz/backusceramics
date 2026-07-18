@@ -80,6 +80,14 @@ export interface XenditPaymentSessionResponse {
   status?: string
 }
 
+export interface XenditPaymentSessionStatusResponse extends XenditPaymentSessionResponse {
+  amount?: number
+  currency?: string
+  session_type?: string
+  payment_id?: string | null
+  payment_request_id?: string | null
+}
+
 export class XenditConfigurationError extends Error {
   public readonly code = "XENDIT_CONFIGURATION_ERROR"
 
@@ -263,6 +271,38 @@ async function postToXendit(endpoint: string, payload: unknown) {
   }
 }
 
+async function getFromXendit(endpoint: string) {
+  const secretKey = getXenditSecretKey()
+  const controller = new AbortController()
+  const timeout = setTimeout(() => controller.abort(), getXenditTimeoutMs())
+
+  try {
+    return await fetch(endpoint, {
+      method: "GET",
+      headers: {
+        Authorization: `Basic ${Buffer.from(`${secretKey}:`).toString("base64")}`,
+        Accept: "application/json",
+      },
+      cache: "no-store",
+      signal: controller.signal,
+    })
+  } catch (error) {
+    if (error instanceof Error && error.name === "AbortError") {
+      throw new XenditApiError({
+        status: 504,
+        message: "Xendit payment status request timed out.",
+      })
+    }
+
+    throw new XenditApiError({
+      status: 502,
+      message: error instanceof Error ? error.message : "Could not reach Xendit payment status API.",
+    })
+  } finally {
+    clearTimeout(timeout)
+  }
+}
+
 export async function createXenditInvoice(payload: CreateXenditInvoiceInput) {
   const endpoint = (process.env.XENDIT_INVOICE_ENDPOINT || "https://api.xendit.co/v2/invoices").trim()
   const response = await postToXendit(endpoint, compactInvoicePayload(payload))
@@ -315,4 +355,44 @@ export async function createXenditPaymentSession(payload: CreateXenditPaymentSes
   }
 
   return session as XenditPaymentSessionResponse
+}
+
+export async function getXenditPaymentSession(paymentSessionId: string) {
+  const normalizedId = paymentSessionId.trim()
+  if (!/^ps-[a-zA-Z0-9_-]{8,80}$/.test(normalizedId)) {
+    throw new XenditConfigurationError("Invalid Xendit payment session id.")
+  }
+
+  const sessionEndpoint = (
+    process.env.XENDIT_SESSION_STATUS_ENDPOINT ||
+    process.env.XENDIT_SESSION_ENDPOINT ||
+    "https://api.xendit.co/sessions"
+  ).trim().replace(/\/+$/, "")
+  const response = await getFromXendit(`${sessionEndpoint}/${encodeURIComponent(normalizedId)}`)
+  const { body, bodyText } = await parseXenditResponse(response)
+
+  if (!response.ok) {
+    throw new XenditApiError({
+      status: response.status,
+      message: extractXenditMessage(body, bodyText || "Could not read Xendit payment session"),
+      xenditCode: extractXenditCode(body),
+      responseBody: bodyText.slice(0, 1000),
+    })
+  }
+
+  const session = body as Partial<XenditPaymentSessionStatusResponse> | null
+  if (
+    !session ||
+    session.payment_session_id !== normalizedId ||
+    typeof session.reference_id !== "string" ||
+    typeof session.status !== "string"
+  ) {
+    throw new XenditApiError({
+      status: response.status,
+      message: "Xendit returned an invalid payment session status response.",
+      responseBody: bodyText.slice(0, 1000),
+    })
+  }
+
+  return session as XenditPaymentSessionStatusResponse
 }

@@ -114,6 +114,15 @@ export async function POST(req: NextRequest) {
   const paymentSessionId = getWebhookPaymentSessionId(payload)
   const explicitPosIdentity = hasExplicitPosIdentity(payload)
 
+  console.info("Received verified Xendit webhook", {
+    event: payload.event || payload.type || null,
+    status: webhookStatus || null,
+    paymentSessionId: paymentSessionId || null,
+    reference: posReference || null,
+    hasBookingIds: extractBookingIds(payload).length > 0,
+    explicitPosIdentity,
+  })
+
   if (posSaleStatus && (explicitPosIdentity || paymentSessionId)) {
     const sale = await findPosSaleForWebhook({ posSaleId, paymentSessionId, posReference })
 
@@ -227,6 +236,15 @@ export async function POST(req: NextRequest) {
       ...(bookingStatus === "CONFIRMED" ? { confirmedAt: new Date() } : { cancelledAt: new Date() }),
     },
   })
+
+  if (result.count === 0) {
+    console.warn("Verified Xendit class webhook matched no pending bookings", {
+      bookingIds,
+      externalId,
+      paymentSessionId,
+      webhookStatus,
+    })
+  }
 
   await recordAnalyticsEvent({
     type: bookingStatus === "CONFIRMED" ? "payment_completed" : "payment_cancelled",

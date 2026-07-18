@@ -111,7 +111,10 @@ export default function MyBookingsPage() {
 
     async function loadBookings() {
       try {
-        const res = await fetch("/api/bookings")
+        const reconciliationQuery = paymentSucceeded && reference
+          ? `?paymentReference=${encodeURIComponent(reference)}`
+          : ""
+        const res = await fetch(`/api/bookings${reconciliationQuery}`, { cache: "no-store" })
         if (res.ok) setBookings(await res.json())
       } catch (error) {
         console.error("Failed to load bookings", error)
