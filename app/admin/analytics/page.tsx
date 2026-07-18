@@ -322,9 +322,11 @@ const classChartConfig = {
   },
 } satisfies ChartConfig
 
+const OVERVIEW_PAGE_VIEW_SCALE = 100
+
 const overviewChartConfig = {
-  pageViews: {
-    label: "Page views",
+  pageViewsScaled: {
+    label: "Page views ÷ 100",
     color: "var(--chart-1)",
   },
   sales: {
@@ -711,6 +713,14 @@ export default function AdminAnalyticsPage() {
   const classChart = useAnalyticsChart("classes", defaultClassPoints, selectedClassCategory)
   const conversionChart = useAnalyticsChart("conversion", defaultConversionPoints)
   const eventChart = useAnalyticsChart("events", defaultEventPoints)
+  const overviewDisplayPoints = useMemo<AnalyticsChartPoint[]>(() => (
+    overviewChart.points.map((point) => ({
+      ...point,
+      pageViewsScaled: typeof point.pageViews === "number"
+        ? point.pageViews / OVERVIEW_PAGE_VIEW_SCALE
+        : 0,
+    }))
+  ), [overviewChart.points])
 
   const fetchAnalytics = async () => {
     try {
@@ -807,18 +817,18 @@ export default function AdminAnalyticsPage() {
 
           <PrimaryChart
             title="Business Activity"
-            description={`${analyticsRangeDescription(overviewChart.range)}. Compare traffic, paid sales, and confirmed class bookings.`}
+            description={`${analyticsRangeDescription(overviewChart.range)}. Page views are shown in hundreds (÷ 100) so paid sales and class bookings remain readable.`}
             controls={<ChartRangeControls value={overviewChart.range} onChange={overviewChart.setRange} />}
             loading={overviewChart.loading}
             error={overviewChart.error}
           >
-            {overviewChart.points.length === 0 ? (
+            {overviewDisplayPoints.length === 0 ? (
               <EmptyState>No activity recorded in this range</EmptyState>
             ) : (
               <ChartContainer config={overviewChartConfig} className="h-[320px] w-full">
                 <LineChart
                   accessibilityLayer
-                  data={overviewChart.points}
+                  data={overviewDisplayPoints}
                   margin={{ top: 8, right: 8, left: 0, bottom: 0 }}
                 >
                   <CartesianGrid vertical={false} />
@@ -834,14 +844,42 @@ export default function AdminAnalyticsPage() {
                     content={
                       <ChartTooltipContent
                         labelFormatter={(label) => formatChartBucket(String(label), overviewChart.range)}
+                        formatter={(value, name, item) => {
+                          const numericValue = Number(value)
+                          const isPageViews = name === "pageViewsScaled"
+                          const rawPageViews = isPageViews && typeof item.payload?.pageViews === "number"
+                            ? item.payload.pageViews
+                            : null
+                          const label = isPageViews
+                            ? "Page views"
+                            : overviewChartConfig[name as keyof typeof overviewChartConfig]?.label || name
+                          const displayValue = rawPageViews !== null
+                            ? `${rawPageViews.toLocaleString()} (${numericValue.toLocaleString(undefined, { maximumFractionDigits: 2 })} hundreds)`
+                            : numericValue.toLocaleString()
+
+                          return (
+                            <>
+                              <div
+                                className="h-2.5 w-2.5 shrink-0 rounded-[2px]"
+                                style={{ backgroundColor: item.color }}
+                              />
+                              <div className="flex flex-1 items-center justify-between gap-4">
+                                <span className="text-muted-foreground">{label}</span>
+                                <span className="font-mono font-medium tabular-nums text-foreground">
+                                  {displayValue}
+                                </span>
+                              </div>
+                            </>
+                          )
+                        }}
                       />
                     }
                   />
                   <ChartLegend content={<ChartLegendContent />} />
                   <Line
                     type="monotone"
-                    dataKey="pageViews"
-                    stroke="var(--color-pageViews)"
+                    dataKey="pageViewsScaled"
+                    stroke="var(--color-pageViewsScaled)"
                     strokeWidth={2.5}
                     dot={false}
                     activeDot={{ r: 4 }}
