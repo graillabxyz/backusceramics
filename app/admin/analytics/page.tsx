@@ -5,7 +5,16 @@ import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
+import {
+  ChartContainer,
+  ChartLegend,
+  ChartLegendContent,
+  ChartTooltip,
+  ChartTooltipContent,
+  type ChartConfig,
+} from "@/components/ui/chart"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
+import { CartesianGrid, Line, LineChart, XAxis, YAxis } from "recharts"
 import {
   AlertTriangle,
   Calendar,
@@ -79,6 +88,38 @@ interface AnalyticsData {
     revenue: number
   }>
   dailySales: Array<{ date: string; sales: number; revenue: number; tax: number; discount: number }>
+  salesCategorySeries: Array<{
+    category: string
+    label: string
+    sales: number
+    revenue: number
+    data: Array<{ date: string; sales: number; revenue: number; tax: number; discount: number }>
+  }>
+  confirmedClassBookings30d: number
+  confirmedClassSeats30d: number
+  pendingClassBookings30d: number
+  pendingClassSeats30d: number
+  dailyClassBookings: Array<{
+    date: string
+    bookings: number
+    seats: number
+    pendingBookings: number
+    pendingSeats: number
+  }>
+  classCategorySeries: Array<{
+    category: string
+    label: string
+    bookings: number
+    seats: number
+    pendingBookings: number
+    data: Array<{
+      date: string
+      bookings: number
+      seats: number
+      pendingBookings: number
+      pendingSeats: number
+    }>
+  }>
   recentSales: Array<{
     id: string
     status: string
@@ -205,6 +246,41 @@ function formatCurrency(value: number, currency = "IDR") {
   }).format(value || 0)
 }
 
+function formatCompactCurrency(value: number, currency = "IDR") {
+  return new Intl.NumberFormat("id-ID", {
+    style: "currency",
+    currency,
+    notation: "compact",
+    maximumFractionDigits: 1,
+  }).format(value || 0)
+}
+
+const salesChartConfig = {
+  revenue: {
+    label: "Revenue",
+    color: "var(--chart-1)",
+  },
+  sales: {
+    label: "Transactions",
+    color: "var(--chart-2)",
+  },
+} satisfies ChartConfig
+
+const classChartConfig = {
+  seats: {
+    label: "Confirmed seats",
+    color: "var(--chart-1)",
+  },
+  bookings: {
+    label: "Confirmed bookings",
+    color: "var(--chart-2)",
+  },
+  pendingBookings: {
+    label: "Pending bookings",
+    color: "var(--chart-4)",
+  },
+} satisfies ChartConfig
+
 function formatPaymentMethod(method: string) {
   return method.replace(/_/g, " ").replace(/\b\w/g, (letter) => letter.toUpperCase())
 }
@@ -319,6 +395,8 @@ export default function AdminAnalyticsPage() {
   const [data, setData] = useState<AnalyticsData | null>(null)
   const [loading, setLoading] = useState(true)
   const [selectedLocationKey, setSelectedLocationKey] = useState("ALL")
+  const [selectedSalesCategory, setSelectedSalesCategory] = useState("ALL")
+  const [selectedClassCategory, setSelectedClassCategory] = useState("ALL")
 
   useEffect(() => {
     fetchAnalytics()
@@ -377,6 +455,12 @@ export default function AdminAnalyticsPage() {
     .sort(([, a], [, b]) => b - a)
     .slice(0, 18)
   const salesVoidRate = rate(data.voidedSales30d, data.paidSales30d + data.voidedSales30d)
+  const selectedSalesSeries = data.salesCategorySeries.find(
+    (series) => series.category === selectedSalesCategory
+  ) || data.salesCategorySeries[0]
+  const selectedClassSeries = data.classCategorySeries.find(
+    (series) => series.category === selectedClassCategory
+  ) || data.classCategorySeries[0]
 
   return (
     <div className="space-y-8">
@@ -397,12 +481,13 @@ export default function AdminAnalyticsPage() {
       </div>
 
       <Tabs defaultValue="overview" className="space-y-6">
-        <TabsList className="grid h-auto w-full grid-cols-2 gap-1 bg-muted p-1 md:grid-cols-4 xl:grid-cols-7">
+        <TabsList className="grid h-auto w-full grid-cols-2 gap-1 bg-muted p-1 md:grid-cols-4 xl:grid-cols-8">
           <TabsTrigger value="overview">Overview</TabsTrigger>
           <TabsTrigger value="locations">Locations</TabsTrigger>
           <TabsTrigger value="visitors">Visitors</TabsTrigger>
           <TabsTrigger value="pages">Pages</TabsTrigger>
           <TabsTrigger value="sales">Sales</TabsTrigger>
+          <TabsTrigger value="classes">Classes</TabsTrigger>
           <TabsTrigger value="conversion">Conversion</TabsTrigger>
           <TabsTrigger value="events">Events</TabsTrigger>
         </TabsList>
@@ -784,6 +869,85 @@ export default function AdminAnalyticsPage() {
             />
           </div>
 
+          <Card>
+            <CardHeader className="gap-4">
+              <div className="flex flex-col gap-1">
+                <CardTitle className="text-lg">Sales Trend</CardTitle>
+                <p className="text-sm text-muted-foreground">
+                  Daily paid revenue and transaction count for {selectedSalesSeries?.label.toLowerCase() || "all sales"}.
+                </p>
+              </div>
+              <div className="flex flex-wrap gap-2" aria-label="Sales chart category">
+                {data.salesCategorySeries.map((series) => (
+                  <Button
+                    key={series.category}
+                    type="button"
+                    size="sm"
+                    variant={selectedSalesSeries?.category === series.category ? "default" : "outline"}
+                    onClick={() => setSelectedSalesCategory(series.category)}
+                  >
+                    {series.label}
+                  </Button>
+                ))}
+              </div>
+            </CardHeader>
+            <CardContent>
+              <ChartContainer config={salesChartConfig} className="h-[300px] w-full">
+                <LineChart
+                  accessibilityLayer
+                  data={selectedSalesSeries?.data || []}
+                  margin={{ top: 8, right: 8, left: 4, bottom: 0 }}
+                >
+                  <CartesianGrid vertical={false} />
+                  <XAxis
+                    dataKey="date"
+                    tickLine={false}
+                    axisLine={false}
+                    minTickGap={28}
+                    tickFormatter={formatDateKey}
+                  />
+                  <YAxis
+                    yAxisId="revenue"
+                    tickLine={false}
+                    axisLine={false}
+                    width={72}
+                    tickFormatter={(value) => formatCompactCurrency(Number(value), data.salesCurrency)}
+                  />
+                  <YAxis
+                    yAxisId="sales"
+                    orientation="right"
+                    allowDecimals={false}
+                    tickLine={false}
+                    axisLine={false}
+                    width={28}
+                  />
+                  <ChartTooltip
+                    content={<ChartTooltipContent labelFormatter={(label) => formatDateKey(String(label))} />}
+                  />
+                  <ChartLegend content={<ChartLegendContent />} />
+                  <Line
+                    yAxisId="revenue"
+                    type="monotone"
+                    dataKey="revenue"
+                    stroke="var(--color-revenue)"
+                    strokeWidth={2.5}
+                    dot={false}
+                    activeDot={{ r: 4 }}
+                  />
+                  <Line
+                    yAxisId="sales"
+                    type="monotone"
+                    dataKey="sales"
+                    stroke="var(--color-sales)"
+                    strokeWidth={2}
+                    dot={false}
+                    activeDot={{ r: 4 }}
+                  />
+                </LineChart>
+              </ChartContainer>
+            </CardContent>
+          </Card>
+
           <Accordion type="multiple" defaultValue={["payment", "category", "daily"]} className="rounded-md border border-border bg-background px-4">
             <AccordionItem value="totals">
               <AccordionTrigger>Sales Totals</AccordionTrigger>
@@ -917,6 +1081,114 @@ export default function AdminAnalyticsPage() {
               </AccordionContent>
             </AccordionItem>
           </Accordion>
+        </TabsContent>
+
+        <TabsContent value="classes" className="space-y-6">
+          <SectionIntro title="Class Booking Metrics">
+            Confirmed bookings, seats reserved, and pending requests by booking date and class category.
+          </SectionIntro>
+
+          <div className="grid gap-6 sm:grid-cols-2 xl:grid-cols-4">
+            <MetricCard
+              title="Confirmed Bookings"
+              value={data.confirmedClassBookings30d}
+              description={`Last ${data.analyticsWindowDays} days`}
+              icon={GraduationCap}
+            />
+            <MetricCard
+              title="Confirmed Seats"
+              value={data.confirmedClassSeats30d}
+              description="Seats attached to confirmed bookings"
+              icon={Users}
+            />
+            <MetricCard
+              title="Pending Bookings"
+              value={data.pendingClassBookings30d}
+              description={`${data.pendingClassSeats30d} seats awaiting confirmation`}
+              icon={Calendar}
+            />
+            <MetricCard
+              title="Completion Share"
+              value={rate(
+                data.confirmedClassBookings30d,
+                data.confirmedClassBookings30d + data.pendingClassBookings30d
+              )}
+              description="Confirmed share of active booking requests"
+              icon={TrendingUp}
+            />
+          </div>
+
+          <Card>
+            <CardHeader className="gap-4">
+              <div className="flex flex-col gap-1">
+                <CardTitle className="text-lg">Class Booking Trend</CardTitle>
+                <p className="text-sm text-muted-foreground">
+                  Daily bookings and seats for {selectedClassSeries?.label.toLowerCase() || "all classes"}.
+                </p>
+              </div>
+              <div className="flex flex-wrap gap-2" aria-label="Class chart category">
+                {data.classCategorySeries.map((series) => (
+                  <Button
+                    key={series.category}
+                    type="button"
+                    size="sm"
+                    variant={selectedClassSeries?.category === series.category ? "default" : "outline"}
+                    onClick={() => setSelectedClassCategory(series.category)}
+                  >
+                    {series.label}
+                  </Button>
+                ))}
+              </div>
+            </CardHeader>
+            <CardContent>
+              <ChartContainer config={classChartConfig} className="h-[300px] w-full">
+                <LineChart
+                  accessibilityLayer
+                  data={selectedClassSeries?.data || []}
+                  margin={{ top: 8, right: 8, left: 0, bottom: 0 }}
+                >
+                  <CartesianGrid vertical={false} />
+                  <XAxis
+                    dataKey="date"
+                    tickLine={false}
+                    axisLine={false}
+                    minTickGap={28}
+                    tickFormatter={formatDateKey}
+                  />
+                  <YAxis allowDecimals={false} tickLine={false} axisLine={false} width={28} />
+                  <ChartTooltip
+                    content={<ChartTooltipContent labelFormatter={(label) => formatDateKey(String(label))} />}
+                  />
+                  <ChartLegend content={<ChartLegendContent />} />
+                  <Line
+                    type="monotone"
+                    dataKey="seats"
+                    stroke="var(--color-seats)"
+                    strokeWidth={2.5}
+                    dot={false}
+                    activeDot={{ r: 4 }}
+                  />
+                  <Line
+                    type="monotone"
+                    dataKey="bookings"
+                    stroke="var(--color-bookings)"
+                    strokeWidth={2}
+                    dot={false}
+                    activeDot={{ r: 4 }}
+                  />
+                  <Line
+                    type="monotone"
+                    dataKey="pendingBookings"
+                    stroke="var(--color-pendingBookings)"
+                    strokeWidth={2}
+                    strokeDasharray="5 4"
+                    dot={false}
+                    activeDot={{ r: 4 }}
+                  />
+                </LineChart>
+              </ChartContainer>
+            </CardContent>
+          </Card>
         </TabsContent>
 
         <TabsContent value="conversion" className="space-y-6">

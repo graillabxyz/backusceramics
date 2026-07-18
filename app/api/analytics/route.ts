@@ -2,7 +2,11 @@ import { NextResponse } from "next/server"
 import { auth } from "@/lib/auth"
 import { prisma } from "@/lib/prisma"
 import { canViewAnalytics } from "@/lib/permissions"
-import { getProductCategoryLabel } from "@/lib/pos-catalog"
+import {
+  getProductCategoryLabel,
+  normalizeProductCategory,
+  POS_PRODUCT_CATEGORIES,
+} from "@/lib/pos-catalog"
 
 type EventTypeCount = { type: string; _count: { type: number } }
 type TopPageCount = { path: string | null; _count: { path: number } }
@@ -40,8 +44,37 @@ type SalesAnalyticsSale = {
     lineTotal: number
   }>
 }
+type ClassAnalyticsBooking = {
+  workshopId: string
+  status: string
+  participants: number
+  createdAt: Date
+}
+type DailySalesPoint = {
+  date: string
+  sales: number
+  revenue: number
+  tax: number
+  discount: number
+}
+type DailyClassPoint = {
+  date: string
+  bookings: number
+  seats: number
+  pendingBookings: number
+  pendingSeats: number
+}
 
 const analyticsTimeZone = "Asia/Makassar"
+const dayMs = 24 * 60 * 60 * 1000
+const classAnalyticsCategories = [
+  "WHEEL",
+  "HANDBUILDING",
+  "MULTI_DAY",
+  "KIDS_FAMILY",
+  "PRIVATE_EVENTS",
+  "OTHER",
+] as const
 const countryDisplayNames = typeof Intl.DisplayNames !== "undefined"
   ? new Intl.DisplayNames(["en"], { type: "region" })
   : null
@@ -142,6 +175,27 @@ function sum(values: number[]) {
   return values.reduce((total, value) => total + (Number.isFinite(value) ? value : 0), 0)
 }
 
+function classAnalyticsCategory(workshopId: string) {
+  if (workshopId === "beginner-wheel") return "WHEEL"
+  if (workshopId === "handbuilding") return "HANDBUILDING"
+  if (workshopId === "3-day-workshop" || workshopId === "6-day-workshop") return "MULTI_DAY"
+  if (workshopId === "kids-workshop" || workshopId === "birthday-event") return "KIDS_FAMILY"
+  if (workshopId === "private-atelier") return "PRIVATE_EVENTS"
+  return "OTHER"
+}
+
+function classAnalyticsCategoryLabel(category: string) {
+  const labels: Record<string, string> = {
+    WHEEL: "Wheel",
+    HANDBUILDING: "Handbuilding",
+    MULTI_DAY: "Multi-day",
+    KIDS_FAMILY: "Kids & Family",
+    PRIVATE_EVENTS: "Private Events",
+    OTHER: "Other",
+  }
+  return labels[category] || category
+}
+
 export async function GET() {
   let session
 
@@ -176,6 +230,15 @@ export async function GET() {
       prisma.user.count(),
       prisma.order.findMany({ select: { status: true } }),
       prisma.classBooking.findMany({ select: { status: true } }),
+      prisma.classBooking.findMany({
+        where: { createdAt: { gte: analyticsSince } },
+        select: {
+          workshopId: true,
+          status: true,
+          participants: true,
+          createdAt: true,
+        },
+      }),
       prisma.residencyApplication.findMany({ select: { status: true } }),
       prisma.order.count({ where: { createdAt: { gte: thisMonthStart } } }),
       prisma.order.count({
@@ -204,6 +267,7 @@ export async function GET() {
     totalUsers,
     orders,
     bookings,
+    recentClassBookings,
     applications,
     ordersThisMonth,
     ordersLastMonth,
@@ -445,6 +509,7 @@ export async function GET() {
     revenue: number
   }>()
   const dailySalesMap = new Map<string, { date: string; sales: number; revenue: number; tax: number; discount: number }>()
+  const dailySalesByCategoryMap = new Map<string, Map<string, DailySalesPoint & { saleIds: Set<string> }>>()
 
   paidSales.forEach((sale) => {
     const method = sale.paymentMethod || "OTHER"
@@ -462,7 +527,7 @@ export async function GET() {
     dailySalesMap.set(day, dailyRow)
 
     sale.items.forEach((item) => {
-      const category = item.categorySnapshot || "OTHER"
+      const category = normalizeProductCategory(item.categorySnapshot)
       const categoryRow = salesByCategoryMap.get(category) || {
         category,
         label: getProductCategoryLabel(category),
@@ -478,8 +543,154 @@ export async function GET() {
       categoryRow.tax += item.taxAmount
       categoryRow.revenue += item.lineTotal
       salesByCategoryMap.set(category, categoryRow)
+
+      const categoryDays = dailySalesByCategoryMap.get(category) || new Map()
+      const categoryDay = categoryDays.get(day) || {
+        date: day,
+        sales: 0,
+        revenue: 0,
+        tax: 0,
+        discount: 0,
+        saleIds: new Set<string>(),
+      }
+      categoryDay.saleIds.add(sale.id)
+      categoryDay.sales = categoryDay.saleIds.size
+      categoryDay.revenue += item.lineTotal
+      categoryDay.tax += item.taxAmount
+      categoryDay.discount += item.discountAmount
+      categoryDays.set(day, categoryDay)
+      dailySalesByCategoryMap.set(category, categoryDays)
     })
   })
+
+  const chartDayKeys = Array.from({ length: analyticsWindowDays }, (_, index) => {
+    const daysAgo = analyticsWindowDays - 1 - index
+    return localDayKey(new Date(now.getTime() - daysAgo * dayMs))
+  })
+  const dailySales = chartDayKeys.map<DailySalesPoint>((date) => (
+    dailySalesMap.get(date) || { date, sales: 0, revenue: 0, tax: 0, discount: 0 }
+  ))
+  const salesCategorySeries = [
+    {
+      category: "ALL",
+      label: "All sales",
+      sales: paidSales.length,
+      revenue: salesRevenue30d,
+      data: dailySales,
+    },
+    ...POS_PRODUCT_CATEGORIES.map((categoryDefinition) => {
+        const category = salesByCategoryMap.get(categoryDefinition.id)
+        const categoryDays = dailySalesByCategoryMap.get(categoryDefinition.id) || new Map()
+        return {
+          category: categoryDefinition.id,
+          label: categoryDefinition.label,
+          sales: Array.from(categoryDays.values()).reduce((total, day) => total + day.sales, 0),
+          revenue: category?.revenue || 0,
+          data: chartDayKeys.map<DailySalesPoint>((date) => {
+            const row = categoryDays.get(date)
+            return row
+              ? {
+                  date,
+                  sales: row.sales,
+                  revenue: row.revenue,
+                  tax: row.tax,
+                  discount: row.discount,
+                }
+              : { date, sales: 0, revenue: 0, tax: 0, discount: 0 }
+          }),
+        }
+      }),
+  ]
+
+  const dailyClassMap = new Map<string, DailyClassPoint>()
+  const dailyClassByCategoryMap = new Map<string, Map<string, DailyClassPoint>>()
+  const paidClassStatuses = new Set(["CONFIRMED", "COMPLETED"])
+
+  ;(recentClassBookings as ClassAnalyticsBooking[]).forEach((booking) => {
+    const isConfirmed = paidClassStatuses.has(booking.status)
+    const isPending = booking.status === "PENDING"
+    if (!isConfirmed && !isPending) return
+
+    const date = localDayKey(booking.createdAt)
+    const category = classAnalyticsCategory(booking.workshopId)
+    const allDay = dailyClassMap.get(date) || {
+      date,
+      bookings: 0,
+      seats: 0,
+      pendingBookings: 0,
+      pendingSeats: 0,
+    }
+    const categoryDays = dailyClassByCategoryMap.get(category) || new Map()
+    const categoryDay = categoryDays.get(date) || {
+      date,
+      bookings: 0,
+      seats: 0,
+      pendingBookings: 0,
+      pendingSeats: 0,
+    }
+
+    if (isConfirmed) {
+      allDay.bookings += 1
+      allDay.seats += booking.participants
+      categoryDay.bookings += 1
+      categoryDay.seats += booking.participants
+    } else {
+      allDay.pendingBookings += 1
+      allDay.pendingSeats += booking.participants
+      categoryDay.pendingBookings += 1
+      categoryDay.pendingSeats += booking.participants
+    }
+
+    dailyClassMap.set(date, allDay)
+    categoryDays.set(date, categoryDay)
+    dailyClassByCategoryMap.set(category, categoryDays)
+  })
+
+  const dailyClassBookings = chartDayKeys.map<DailyClassPoint>((date) => (
+    dailyClassMap.get(date) || {
+      date,
+      bookings: 0,
+      seats: 0,
+      pendingBookings: 0,
+      pendingSeats: 0,
+    }
+  ))
+  const confirmedClassBookings30d = sum(dailyClassBookings.map((day) => day.bookings))
+  const confirmedClassSeats30d = sum(dailyClassBookings.map((day) => day.seats))
+  const pendingClassBookings30d = sum(dailyClassBookings.map((day) => day.pendingBookings))
+  const pendingClassSeats30d = sum(dailyClassBookings.map((day) => day.pendingSeats))
+  const classCategorySeries = [
+    {
+      category: "ALL",
+      label: "All classes",
+      bookings: confirmedClassBookings30d,
+      seats: confirmedClassSeats30d,
+      pendingBookings: pendingClassBookings30d,
+      data: dailyClassBookings,
+    },
+    ...classAnalyticsCategories
+      .map((category) => {
+        const categoryDays = dailyClassByCategoryMap.get(category) || new Map()
+        const data = chartDayKeys.map<DailyClassPoint>((date) => (
+          categoryDays.get(date) || {
+            date,
+            bookings: 0,
+            seats: 0,
+            pendingBookings: 0,
+            pendingSeats: 0,
+          }
+        ))
+        return {
+          category,
+          label: classAnalyticsCategoryLabel(category),
+          bookings: sum(data.map((day) => day.bookings)),
+          seats: sum(data.map((day) => day.seats)),
+          pendingBookings: sum(data.map((day) => day.pendingBookings)),
+          data,
+        }
+      })
+      .sort((a, b) => b.bookings - a.bookings || b.pendingBookings - a.pendingBookings),
+  ]
   const locationMap = new Map<string, {
     key: string
     label: string
@@ -688,7 +899,14 @@ export async function GET() {
     voidedSalesTotal30d: sum(voidedSales.map((sale) => sale.total)),
     salesByPaymentMethod: Array.from(salesByPaymentMethodMap.values()).sort((a, b) => b.revenue - a.revenue),
     salesByCategory: Array.from(salesByCategoryMap.values()).sort((a, b) => b.revenue - a.revenue),
-    dailySales: Array.from(dailySalesMap.values()).sort((a, b) => b.date.localeCompare(a.date)),
+    dailySales,
+    salesCategorySeries,
+    confirmedClassBookings30d,
+    confirmedClassSeats30d,
+    pendingClassBookings30d,
+    pendingClassSeats30d,
+    dailyClassBookings,
+    classCategorySeries,
     recentSales: posSales.slice(0, 12).map((sale) => ({
       id: sale.id,
       status: sale.status,
