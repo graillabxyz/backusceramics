@@ -211,9 +211,15 @@ export function ClassesCalendar({ initialClass }: ClassesCalendarProps) {
   const { isAuthenticated, isLoading: authLoading, openAuthModal } = useAuth()
 
   const currentWeekStart = useMemo(() => activeWeekStart(today), [today])
-  const studioDays = useMemo(() => Array.from({ length: 6 }, (_, index) => addDays(weekStart, index)), [weekStart])
+  const displayedWeekStarts = useMemo(() => [weekStart, addDays(weekStart, 7)], [weekStart])
+  const studioDays = useMemo(
+    () => displayedWeekStarts.flatMap((displayedWeekStart) =>
+      Array.from({ length: 6 }, (_, index) => addDays(displayedWeekStart, index))
+    ),
+    [displayedWeekStarts]
+  )
   const visibleStudioDays = useMemo(() => studioDays.filter((date) => isSameOrAfter(date, today)), [studioDays, today])
-  const weekLabel = `${weekStart.toLocaleDateString("en-US", { month: "short", day: "numeric" })} - ${addDays(weekStart, 6).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}`
+  const weekLabel = `${weekStart.toLocaleDateString("en-US", { month: "short", day: "numeric" })} - ${addDays(weekStart, 13).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}`
   const weekSessions = useMemo(() => {
     const weekKeys = new Set(visibleStudioDays.map(formatDateKey))
     return sessions.filter((session) => weekKeys.has(session.dateKey))
@@ -243,15 +249,35 @@ export function ClassesCalendar({ initialClass }: ClassesCalendarProps) {
   const requiredProgramDays = isMultiDaySelection ? requiredMultiDaySelections[selectedMultiDayWorkshopId] || 0 : 0
   const prepaidProgram = isMultiDaySelection || isPrepaidProgram(activeSession)
   const filterCounts = useMemo(() => {
-    return weekSessions.reduce<Record<CalendarFilter, number>>(
-      (counts, session) => {
-        counts.all += 1
-        counts[getSessionFilter(session)] += 1
-        return counts
-      },
-      { all: 0, wheel: 0, handbuilding: 0, kids: 0, "multi-day": 0, events: 0 }
-    )
-  }, [weekSessions])
+    const counts: Record<CalendarFilter, number> = {
+      all: 0,
+      wheel: 0,
+      handbuilding: 0,
+      kids: 0,
+      "multi-day": 0,
+      events: 0,
+    }
+    const countedTimes = new Set<string>()
+
+    weekSessions.forEach((session) => {
+      const seatsAvailable = availability[session.id]?.availableSeats
+        ?? session.maxParticipants
+        ?? session.workshop.maxParticipants
+        ?? 0
+      if (seatsAvailable <= 0) return
+
+      const sessionKey = isMultiDayWorkshop(session)
+        ? `multi-day|${session.dateKey}|${session.timeLabel}`
+        : session.id
+      if (countedTimes.has(sessionKey)) return
+
+      countedTimes.add(sessionKey)
+      counts.all += 1
+      counts[getSessionFilter(session)] += 1
+    })
+
+    return counts
+  }, [availability, weekSessions])
   const buildSequenceForSession = (startSession: CalendarSession, workshopId: string): WorkshopSequence => {
     const requiredDays = requiredMultiDaySelections[workshopId] || 0
     const sequenceDays: WorkshopSequenceDay[] = []
@@ -370,6 +396,7 @@ export function ClassesCalendar({ initialClass }: ClassesCalendarProps) {
         const responses = await Promise.all([
           fetch(`/api/classes/availability?weekStart=${formatDateKey(weekStart)}`),
           fetch(`/api/classes/availability?weekStart=${formatDateKey(addDays(weekStart, 7))}`),
+          fetch(`/api/classes/availability?weekStart=${formatDateKey(addDays(weekStart, 14))}`),
         ])
         const failedResponse = responses.find((res) => !res.ok)
         if (failedResponse) {
@@ -421,7 +448,7 @@ export function ClassesCalendar({ initialClass }: ClassesCalendarProps) {
         setSessions(nextSessions)
         setAvailability(nextAvailability)
         const currentWeekKeys = new Set(
-          Array.from({ length: 6 }, (_, index) => addDays(weekStart, index))
+          Array.from({ length: 13 }, (_, index) => addDays(weekStart, index))
             .filter((date) => isSameOrAfter(date, today))
             .map(formatDateKey)
         )
@@ -593,7 +620,7 @@ export function ClassesCalendar({ initialClass }: ClassesCalendarProps) {
     )
 
     return (
-      <div key={date.toISOString()} className="rounded-lg border border-border bg-background p-3 shadow-sm sm:p-4 lg:min-h-[320px]">
+      <div key={date.toISOString()} className="min-h-[180px] rounded-lg border border-border bg-background p-3 shadow-sm sm:p-4">
         <div className="flex items-center justify-between border-b border-border pb-3">
           <div>
             <p className="text-xs font-medium uppercase text-muted-foreground">{shortDayNames[date.getDay()]}</p>
@@ -626,28 +653,14 @@ export function ClassesCalendar({ initialClass }: ClassesCalendarProps) {
               Class guide
             </Link>
           </Button>
-          <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
-            <div className="max-w-2xl">
-              <Badge variant="secondary" className="mb-3">Class Calendar</Badge>
-              <h1 className="font-heading text-3xl font-bold tracking-tight text-foreground sm:text-4xl">
-                Book by week.
-              </h1>
-              <p className="mt-3 max-w-xl text-sm leading-relaxed text-muted-foreground sm:text-base">
-                Pick the kind of session, choose a time on the week view, then book it.
-              </p>
-            </div>
-            <div className="flex flex-wrap items-center gap-2 rounded-md border border-border bg-background p-1">
-              <Button variant="ghost" size="icon" onClick={() => moveWeek(-1)} disabled={weekStart <= currentWeekStart} aria-label="Previous week">
-                <ChevronLeft className="h-4 w-4" />
-              </Button>
-              <div className="min-w-48 px-3 text-center text-sm font-medium text-foreground">{weekLabel}</div>
-              <Button variant="ghost" size="icon" onClick={() => moveWeek(1)} aria-label="Next week">
-                <ChevronRight className="h-4 w-4" />
-              </Button>
-              <Button variant="outline" size="sm" onClick={goToThisWeek}>
-                This Week
-              </Button>
-            </div>
+          <div className="max-w-2xl">
+            <Badge variant="secondary" className="mb-3">Class Calendar</Badge>
+            <h1 className="font-heading text-3xl font-bold tracking-tight text-foreground sm:text-4xl">
+              Find your class.
+            </h1>
+            <p className="mt-3 max-w-xl text-sm leading-relaxed text-muted-foreground sm:text-base">
+              Browse two weeks at a glance, choose a class type, then pick the date and time that suits you.
+            </p>
           </div>
         </div>
       </section>
@@ -683,7 +696,7 @@ export function ClassesCalendar({ initialClass }: ClassesCalendarProps) {
                     >
                       <span className="block leading-tight">{option.title}</span>
                       <span className={cn("mt-0.5 block text-[11px] font-medium", isActive ? "text-primary-foreground/80" : hasAvailability ? "text-primary" : "text-muted-foreground")}>
-                        {hasAvailability ? "Available" : "No times"}
+                        {hasAvailability ? `${filterCounts[option.filter]} ${filterCounts[option.filter] === 1 ? "time" : "times"}` : "No times"}
                       </span>
                     </button>
                   )
@@ -707,8 +720,51 @@ export function ClassesCalendar({ initialClass }: ClassesCalendarProps) {
         ) : (
           <>
         <div>
-          <div className="grid gap-4 lg:grid-cols-3">
-            {visibleStudioDays.map(renderDayCard)}
+          <div className="mb-5 flex flex-col gap-3 border-y border-border py-4 sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              <p className="text-xs font-semibold uppercase tracking-wide text-primary">Upcoming availability</p>
+              <h2 className="mt-1 font-heading text-xl font-bold text-foreground">Two weeks at a glance</h2>
+            </div>
+            <div className="flex w-full items-center rounded-md border border-border bg-background p-1 sm:w-auto">
+              <Button variant="ghost" size="icon" onClick={() => moveWeek(-1)} disabled={weekStart <= currentWeekStart} aria-label="Show the previous week">
+                <ChevronLeft className="h-4 w-4" />
+              </Button>
+              <div className="min-w-0 flex-1 px-2 text-center text-sm font-medium text-foreground sm:min-w-52 sm:px-3">{weekLabel}</div>
+              <Button variant="ghost" size="icon" onClick={() => moveWeek(1)} aria-label="Show the next week">
+                <ChevronRight className="h-4 w-4" />
+              </Button>
+              <Button variant="outline" size="sm" onClick={goToThisWeek}>
+                Today
+              </Button>
+            </div>
+          </div>
+
+          <div className="space-y-8">
+            {displayedWeekStarts.map((displayedWeekStart, weekIndex) => {
+              const displayedDays = Array.from({ length: 6 }, (_, index) => addDays(displayedWeekStart, index))
+                .filter((date) => isSameOrAfter(date, today))
+              if (displayedDays.length === 0) return null
+
+              return (
+                <section key={formatDateKey(displayedWeekStart)} aria-labelledby={`calendar-week-${formatDateKey(displayedWeekStart)}`}>
+                  <div className="mb-3 flex items-baseline justify-between gap-3">
+                    <h3 id={`calendar-week-${formatDateKey(displayedWeekStart)}`} className="font-heading text-lg font-bold text-foreground">
+                      {weekIndex === 0 && displayedWeekStart.getTime() === currentWeekStart.getTime()
+                        ? "This week"
+                        : weekIndex === 1 && weekStart.getTime() === currentWeekStart.getTime()
+                          ? "Next week"
+                          : `Week of ${displayedWeekStart.toLocaleDateString("en-US", { month: "long", day: "numeric" })}`}
+                    </h3>
+                    <p className="text-sm text-muted-foreground">
+                      {displayedWeekStart.toLocaleDateString("en-US", { month: "short", day: "numeric" })} - {addDays(displayedWeekStart, 5).toLocaleDateString("en-US", { month: "short", day: "numeric" })}
+                    </p>
+                  </div>
+                  <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+                    {displayedDays.map(renderDayCard)}
+                  </div>
+                </section>
+              )
+            })}
           </div>
         </div>
 
@@ -860,13 +916,13 @@ export function ClassesCalendar({ initialClass }: ClassesCalendarProps) {
               <CardContent className="p-6">
                 <Badge variant="outline">No sessions</Badge>
                 <h2 className="mt-3 font-heading text-2xl font-bold text-foreground">
-                  {activeFilter === "all" ? "Nothing scheduled this week" : `No ${filterLabels[activeFilter].toLowerCase()} sessions this week`}
+                  {activeFilter === "all" ? "No sessions in these two weeks" : `No ${filterLabels[activeFilter].toLowerCase()} sessions in these two weeks`}
                 </h2>
                 <p className="mt-3 text-sm leading-relaxed text-muted-foreground">
-                  Try another session type or move to the next week to see more availability.
+                  Try another class type or show later dates to see more availability.
                 </p>
                 <Button type="button" variant="outline" className="mt-5 w-full" onClick={() => moveWeek(1)}>
-                  See next week
+                  Show later dates
                   <ChevronRight className="h-4 w-4" />
                 </Button>
               </CardContent>
