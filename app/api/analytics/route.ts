@@ -811,6 +811,7 @@ export async function GET() {
     .map((day) => ({
       date: day.date,
       totalViews: day.totalViews,
+      visitorCount: day.users.size,
       users: Array.from(day.users.values())
         .sort((a, b) => b.views - a.views)
         .slice(0, 10),

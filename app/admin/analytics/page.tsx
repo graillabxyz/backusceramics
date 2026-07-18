@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useState, type ReactNode } from "react"
+import { useEffect, useMemo, useState, type ReactNode } from "react"
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -14,7 +14,7 @@ import {
   type ChartConfig,
 } from "@/components/ui/chart"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
-import { CartesianGrid, Line, LineChart, XAxis, YAxis } from "recharts"
+import { Bar, BarChart, CartesianGrid, Line, LineChart, XAxis, YAxis } from "recharts"
 import {
   AlertTriangle,
   Calendar,
@@ -49,6 +49,22 @@ type AnalyticsViewer = {
   visitorId: string | null
   sessionId: string | null
   signedIn: boolean
+}
+
+type AnalyticsRange = "day" | "week" | "month" | "year" | "2y" | "5y"
+type AnalyticsChartMetric =
+  | "overview"
+  | "locations"
+  | "visitors"
+  | "pages"
+  | "sales"
+  | "classes"
+  | "conversion"
+  | "events"
+type AnalyticsChartPoint = {
+  bucket?: string
+  label?: string
+  [key: string]: string | number | undefined
 }
 
 interface AnalyticsData {
@@ -163,6 +179,7 @@ interface AnalyticsData {
   dailyUserPageViewRankings: Array<{
     date: string
     totalViews: number
+    visitorCount: number
     users: Array<{
       key: string
       name: string
@@ -238,6 +255,30 @@ function formatDateKey(dateKey: string) {
   })
 }
 
+function formatChartBucket(value: string, range: AnalyticsRange) {
+  if (range === "day") {
+    const [date, time] = value.split(" ")
+    const formattedDate = date ? formatDateKey(date) : value
+    return `${formattedDate} ${time || ""}`.trim()
+  }
+
+  if (range === "year" || range === "2y" || range === "5y") {
+    const [year, month] = value.split("-").map(Number)
+    if (!year || !month) return value
+    return new Date(year, month - 1, 1).toLocaleDateString(undefined, {
+      month: "short",
+      year: "numeric",
+    })
+  }
+
+  return formatDateKey(value)
+}
+
+function formatChartLabel(value: string, maxLength = 24) {
+  if (value.length <= maxLength) return value
+  return `${value.slice(0, maxLength - 1)}…`
+}
+
 function formatCurrency(value: number, currency = "IDR") {
   return new Intl.NumberFormat("id-ID", {
     style: "currency",
@@ -281,6 +322,64 @@ const classChartConfig = {
   },
 } satisfies ChartConfig
 
+const overviewChartConfig = {
+  pageViews: {
+    label: "Page views",
+    color: "var(--chart-1)",
+  },
+  sales: {
+    label: "Paid sales",
+    color: "var(--chart-2)",
+  },
+  bookings: {
+    label: "Class bookings",
+    color: "var(--chart-3)",
+  },
+} satisfies ChartConfig
+
+const visitorChartConfig = {
+  views: {
+    label: "Page views",
+    color: "var(--chart-1)",
+  },
+  visitors: {
+    label: "Distinct visitors",
+    color: "var(--chart-3)",
+  },
+} satisfies ChartConfig
+
+const locationChartConfig = {
+  views: {
+    label: "Page views",
+    color: "var(--chart-1)",
+  },
+  visitors: {
+    label: "Visitors",
+    color: "var(--chart-3)",
+  },
+} satisfies ChartConfig
+
+const pageChartConfig = {
+  views: {
+    label: "Page views",
+    color: "var(--chart-1)",
+  },
+} satisfies ChartConfig
+
+const conversionChartConfig = {
+  value: {
+    label: "People / sessions",
+    color: "var(--chart-2)",
+  },
+} satisfies ChartConfig
+
+const eventChartConfig = {
+  count: {
+    label: "Events",
+    color: "var(--chart-3)",
+  },
+} satisfies ChartConfig
+
 function formatPaymentMethod(method: string) {
   return method.replace(/_/g, " ").replace(/\b\w/g, (letter) => letter.toUpperCase())
 }
@@ -292,6 +391,138 @@ function SectionIntro({ title, children }: { title: string; children: ReactNode 
       <p className="text-sm text-muted-foreground">{children}</p>
     </div>
   )
+}
+
+function PrimaryChart({
+  title,
+  description,
+  controls,
+  loading = false,
+  error,
+  children,
+}: {
+  title: string
+  description: ReactNode
+  controls?: ReactNode
+  loading?: boolean
+  error?: string | null
+  children: ReactNode
+}) {
+  return (
+    <Card className="overflow-hidden" aria-busy={loading}>
+      <CardHeader className="gap-4 border-b border-border/70 pb-4">
+        <div className="flex flex-col gap-1">
+          <CardTitle className="text-lg">{title}</CardTitle>
+          <p className="text-sm text-muted-foreground">{description}</p>
+        </div>
+        {controls}
+      </CardHeader>
+      <CardContent className="relative pt-5">
+        {loading && (
+          <div className="absolute right-5 top-3 z-10 flex items-center gap-2 rounded-md bg-background/90 px-2 py-1 text-xs text-muted-foreground shadow-sm">
+            <Loader2 className="h-3.5 w-3.5 animate-spin" />
+            Updating
+          </div>
+        )}
+        {error && (
+          <div className="mb-4 rounded-md border border-destructive/30 bg-destructive/10 p-3 text-sm text-destructive">
+            {error}
+          </div>
+        )}
+        {children}
+      </CardContent>
+    </Card>
+  )
+}
+
+const analyticsRangeOptions: Array<{ value: AnalyticsRange; label: string; description: string }> = [
+  { value: "day", label: "Day", description: "Last 24 hours, hourly" },
+  { value: "week", label: "Week", description: "Last 7 days, daily" },
+  { value: "month", label: "Month", description: "Last 30 days, daily" },
+  { value: "year", label: "1Y", description: "Last 12 months, monthly" },
+  { value: "2y", label: "2Y", description: "Last 2 years, monthly" },
+  { value: "5y", label: "5Y", description: "Last 5 years, monthly" },
+]
+
+function analyticsRangeDescription(range: AnalyticsRange) {
+  return analyticsRangeOptions.find((option) => option.value === range)?.description || "Selected range"
+}
+
+function ChartRangeControls({
+  value,
+  onChange,
+}: {
+  value: AnalyticsRange
+  onChange: (range: AnalyticsRange) => void
+}) {
+  return (
+    <div className="flex flex-wrap gap-1" aria-label="Chart time range">
+      {analyticsRangeOptions.map((option) => (
+        <Button
+          key={option.value}
+          type="button"
+          size="sm"
+          variant={value === option.value ? "default" : "outline"}
+          className="h-8 px-2.5 text-xs"
+          aria-label={option.description}
+          title={option.description}
+          onClick={() => onChange(option.value)}
+        >
+          {option.label}
+        </Button>
+      ))}
+    </div>
+  )
+}
+
+function useAnalyticsChart(
+  metric: AnalyticsChartMetric,
+  defaultPoints: AnalyticsChartPoint[],
+  category = "ALL"
+) {
+  const [range, setRange] = useState<AnalyticsRange>("month")
+  const [points, setPoints] = useState<AnalyticsChartPoint[]>(defaultPoints)
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+
+  useEffect(() => {
+    if (range === "month") {
+      setPoints(defaultPoints)
+      setError(null)
+      setLoading(false)
+      return
+    }
+
+    const controller = new AbortController()
+    const params = new URLSearchParams({ metric, range, category })
+
+    setLoading(true)
+    setError(null)
+    fetch(`/api/analytics/timeseries?${params.toString()}`, {
+      signal: controller.signal,
+      credentials: "same-origin",
+    })
+      .then(async (response) => {
+        const payload = await response.json().catch(() => null)
+        if (!response.ok) {
+          throw new Error(payload?.error || "Could not load this chart.")
+        }
+        setPoints(Array.isArray(payload?.points) ? payload.points : [])
+      })
+      .catch((chartError) => {
+        if (chartError instanceof DOMException && chartError.name === "AbortError") return
+        console.error("Failed to load analytics chart", { metric, range, category, chartError })
+        setPoints([])
+        setError(chartError instanceof Error ? chartError.message : "Could not load this chart.")
+      })
+      .finally(() => {
+        if (!controller.signal.aborted) setLoading(false)
+      })
+
+    return () => controller.abort()
+  }, [category, defaultPoints, metric, range])
+
+  return { range, setRange, points, loading, error }
 }
 
 function MetricCard({
@@ -402,6 +633,85 @@ export default function AdminAnalyticsPage() {
     fetchAnalytics()
   }, [])
 
+  const defaultOverviewPoints = useMemo<AnalyticsChartPoint[]>(() => {
+    if (!data) return []
+    const trafficByDate = new Map(
+      data.dailyHourlyPageViews.map((day) => [day.date, day.totalViews])
+    )
+    const classesByDate = new Map(
+      data.dailyClassBookings.map((day) => [day.date, day.bookings])
+    )
+    return data.dailySales.map((day) => ({
+      bucket: day.date,
+      pageViews: trafficByDate.get(day.date) || 0,
+      sales: day.sales,
+      bookings: classesByDate.get(day.date) || 0,
+    }))
+  }, [data])
+  const defaultLocationPoints = useMemo<AnalyticsChartPoint[]>(() => (
+    (data?.topCountries || []).slice(0, 10).map((country) => ({
+      label: country.label,
+      views: country.views,
+      visitors: country.visitors,
+    }))
+  ), [data])
+  const defaultVisitorPoints = useMemo<AnalyticsChartPoint[]>(() => {
+    if (!data) return []
+    const trafficByDate = new Map(
+      data.dailyHourlyPageViews.map((day) => [day.date, day.totalViews])
+    )
+    const visitorsByDate = new Map(
+      data.dailyUserPageViewRankings.map((day) => [day.date, day.visitorCount])
+    )
+    return data.dailySales.map((day) => ({
+      bucket: day.date,
+      views: trafficByDate.get(day.date) || 0,
+      visitors: visitorsByDate.get(day.date) || 0,
+    }))
+  }, [data])
+  const defaultPagePoints = useMemo<AnalyticsChartPoint[]>(() => (
+    (data?.topPages || []).slice(0, 10).map((page) => ({
+      label: page.path,
+      views: page.views,
+    }))
+  ), [data])
+  const defaultSalesPoints = useMemo<AnalyticsChartPoint[]>(() => {
+    const series = data?.salesCategorySeries.find(
+      (item) => item.category === selectedSalesCategory
+    ) || data?.salesCategorySeries[0]
+    return (series?.data || []).map((point) => ({ ...point, bucket: point.date }))
+  }, [data, selectedSalesCategory])
+  const defaultClassPoints = useMemo<AnalyticsChartPoint[]>(() => {
+    const series = data?.classCategorySeries.find(
+      (item) => item.category === selectedClassCategory
+    ) || data?.classCategorySeries[0]
+    return (series?.data || []).map((point) => ({ ...point, bucket: point.date }))
+  }, [data, selectedClassCategory])
+  const defaultConversionPoints = useMemo<AnalyticsChartPoint[]>(() => {
+    if (!data) return []
+    return [
+      { label: "Checkout views", value: data.checkoutViews30d },
+      { label: "Clicked pay", value: data.paymentIntentClicks30d },
+      { label: "Payment sessions", value: data.paymentSessionsCreated30d },
+      { label: "Completed", value: data.paymentsCompleted30d },
+    ]
+  }, [data])
+  const defaultEventPoints = useMemo<AnalyticsChartPoint[]>(() => (
+    Object.entries(data?.eventCounts || {})
+      .sort(([, a], [, b]) => b - a)
+      .slice(0, 10)
+      .map(([type, count]) => ({ label: type, count }))
+  ), [data])
+
+  const overviewChart = useAnalyticsChart("overview", defaultOverviewPoints)
+  const locationChart = useAnalyticsChart("locations", defaultLocationPoints)
+  const visitorChart = useAnalyticsChart("visitors", defaultVisitorPoints)
+  const pageChart = useAnalyticsChart("pages", defaultPagePoints)
+  const salesChart = useAnalyticsChart("sales", defaultSalesPoints, selectedSalesCategory)
+  const classChart = useAnalyticsChart("classes", defaultClassPoints, selectedClassCategory)
+  const conversionChart = useAnalyticsChart("conversion", defaultConversionPoints)
+  const eventChart = useAnalyticsChart("events", defaultEventPoints)
+
   const fetchAnalytics = async () => {
     try {
       const res = await fetch("/api/analytics")
@@ -451,9 +761,6 @@ export default function AdminAnalyticsPage() {
   const unknownLocationViews = topLocations
     .filter((location) => location.key === "unknown")
     .reduce((total, location) => total + location.views, 0)
-  const sortedEventCounts = Object.entries(data.eventCounts)
-    .sort(([, a], [, b]) => b - a)
-    .slice(0, 18)
   const salesVoidRate = rate(data.voidedSales30d, data.paidSales30d + data.voidedSales30d)
   const selectedSalesSeries = data.salesCategorySeries.find(
     (series) => series.category === selectedSalesCategory
@@ -472,7 +779,8 @@ export default function AdminAnalyticsPage() {
           </p>
         </div>
         <div className="flex flex-wrap gap-2">
-          <Badge variant="secondary">Last {data.analyticsWindowDays} days</Badge>
+          <Badge variant="secondary">Detail window: {data.analyticsWindowDays} days</Badge>
+          <Badge variant="outline">Charts: independent ranges</Badge>
           <Badge variant="outline">{data.analyticsTimeZone}</Badge>
           <Badge variant={selectedLocation ? "default" : "secondary"}>
             {selectedLocation ? `Focused: ${selectedLocation.label}` : "All locations"}
@@ -497,11 +805,73 @@ export default function AdminAnalyticsPage() {
             Fast read on site traffic, sales intent, and operational volume.
           </SectionIntro>
 
+          <PrimaryChart
+            title="Business Activity"
+            description={`${analyticsRangeDescription(overviewChart.range)}. Compare traffic, paid sales, and confirmed class bookings.`}
+            controls={<ChartRangeControls value={overviewChart.range} onChange={overviewChart.setRange} />}
+            loading={overviewChart.loading}
+            error={overviewChart.error}
+          >
+            {overviewChart.points.length === 0 ? (
+              <EmptyState>No activity recorded in this range</EmptyState>
+            ) : (
+              <ChartContainer config={overviewChartConfig} className="h-[320px] w-full">
+                <LineChart
+                  accessibilityLayer
+                  data={overviewChart.points}
+                  margin={{ top: 8, right: 8, left: 0, bottom: 0 }}
+                >
+                  <CartesianGrid vertical={false} />
+                  <XAxis
+                    dataKey="bucket"
+                    tickLine={false}
+                    axisLine={false}
+                    minTickGap={28}
+                    tickFormatter={(value) => formatChartBucket(String(value), overviewChart.range)}
+                  />
+                  <YAxis allowDecimals={false} tickLine={false} axisLine={false} width={32} />
+                  <ChartTooltip
+                    content={
+                      <ChartTooltipContent
+                        labelFormatter={(label) => formatChartBucket(String(label), overviewChart.range)}
+                      />
+                    }
+                  />
+                  <ChartLegend content={<ChartLegendContent />} />
+                  <Line
+                    type="monotone"
+                    dataKey="pageViews"
+                    stroke="var(--color-pageViews)"
+                    strokeWidth={2.5}
+                    dot={false}
+                    activeDot={{ r: 4 }}
+                  />
+                  <Line
+                    type="monotone"
+                    dataKey="sales"
+                    stroke="var(--color-sales)"
+                    strokeWidth={2}
+                    dot={false}
+                    activeDot={{ r: 4 }}
+                  />
+                  <Line
+                    type="monotone"
+                    dataKey="bookings"
+                    stroke="var(--color-bookings)"
+                    strokeWidth={2}
+                    dot={false}
+                    activeDot={{ r: 4 }}
+                  />
+                </LineChart>
+              </ChartContainer>
+            )}
+          </PrimaryChart>
+
           <div className="grid gap-6 sm:grid-cols-2 xl:grid-cols-4">
-            <MetricCard title="Page Views" value={data.pageViews30d} description={`${data.uniqueVisitors30d} unique visitors`} icon={Eye} />
-            <MetricCard title="Product Views" value={data.productViews30d} description="Shop detail page interest" icon={ShoppingBag} />
-            <MetricCard title="Sales Revenue" value={formatCurrency(data.salesRevenue30d, data.salesCurrency)} description={`${data.paidSales30d} paid sales`} icon={CreditCard} />
-            <MetricCard title="Payment Starts" value={data.paymentSessionsCreated30d} description={`${paymentCompletionRate} completed by webhook`} icon={CreditCard} />
+            <MetricCard title="Page Views" value={data.pageViews30d} description={`${data.uniqueVisitors30d} unique visitors · last 30 days`} icon={Eye} />
+            <MetricCard title="Product Views" value={data.productViews30d} description="Shop detail interest · last 30 days" icon={ShoppingBag} />
+            <MetricCard title="Sales Revenue" value={formatCurrency(data.salesRevenue30d, data.salesCurrency)} description={`${data.paidSales30d} paid sales · last 30 days`} icon={CreditCard} />
+            <MetricCard title="Payment Starts" value={data.paymentSessionsCreated30d} description={`${paymentCompletionRate} completed · last 30 days`} icon={CreditCard} />
           </div>
 
           <Accordion type="multiple" defaultValue={["traffic", "studio"]} className="rounded-md border border-border bg-background px-4">
@@ -541,10 +911,46 @@ export default function AdminAnalyticsPage() {
             Visitor location is captured from hosting/CDN geo headers when available. Click a place to focus page views and events.
           </SectionIntro>
 
+          <PrimaryChart
+            title="Top Visitor Countries"
+            description={`${analyticsRangeDescription(locationChart.range)}. Ranked by page views with distinct visitors alongside.`}
+            controls={<ChartRangeControls value={locationChart.range} onChange={locationChart.setRange} />}
+            loading={locationChart.loading}
+            error={locationChart.error}
+          >
+            {locationChart.points.length === 0 ? (
+              <EmptyState>No location data recorded in this range</EmptyState>
+            ) : (
+              <ChartContainer config={locationChartConfig} className="h-[360px] w-full">
+                <BarChart
+                  accessibilityLayer
+                  data={locationChart.points}
+                  layout="vertical"
+                  margin={{ top: 0, right: 12, left: 0, bottom: 0 }}
+                >
+                  <CartesianGrid horizontal={false} />
+                  <XAxis type="number" allowDecimals={false} tickLine={false} axisLine={false} />
+                  <YAxis
+                    type="category"
+                    dataKey="label"
+                    tickLine={false}
+                    axisLine={false}
+                    width={132}
+                    tickFormatter={(value) => formatChartLabel(String(value), 20)}
+                  />
+                  <ChartTooltip content={<ChartTooltipContent />} />
+                  <ChartLegend content={<ChartLegendContent />} />
+                  <Bar dataKey="views" fill="var(--color-views)" radius={[0, 4, 4, 0]} />
+                  <Bar dataKey="visitors" fill="var(--color-visitors)" radius={[0, 4, 4, 0]} />
+                </BarChart>
+              </ChartContainer>
+            )}
+          </PrimaryChart>
+
           <div className="grid gap-6 sm:grid-cols-2 xl:grid-cols-4">
-            <MetricCard title="Known-location Views" value={knownLocationViews} description={`${unknownLocationViews} views still unknown`} icon={MapPin} />
-            <MetricCard title="Top Country" value={topCountries[0]?.label || "No data"} description={topCountries[0] ? `${topCountries[0].views} views · ${topCountries[0].visitors} visitors` : "Waiting for traffic"} icon={Globe2} />
-            <MetricCard title="Top Place" value={topLocations[0]?.label || "No data"} description={topLocations[0] ? `${topLocations[0].views} views · ${topLocations[0].signedInUsers} users` : "Waiting for traffic"} />
+            <MetricCard title="Known-location Views" value={knownLocationViews} description={`${unknownLocationViews} unknown · last 30 days`} icon={MapPin} />
+            <MetricCard title="Top Country" value={topCountries[0]?.label || "No data"} description={topCountries[0] ? `${topCountries[0].views} views · ${topCountries[0].visitors} visitors · last 30 days` : "Waiting for traffic"} icon={Globe2} />
+            <MetricCard title="Top Place" value={topLocations[0]?.label || "No data"} description={topLocations[0] ? `${topLocations[0].views} views · ${topLocations[0].signedInUsers} users · last 30 days` : "Waiting for traffic"} />
             <MetricCard title="Current Focus" value={selectedLocation?.label || "All locations"} description={selectedLocation ? `${filteredPageViews.length} recent views in focus` : "Showing all analytics"} />
           </div>
 
@@ -652,6 +1058,60 @@ export default function AdminAnalyticsPage() {
             Individual page views, daily user rankings, and hour-by-hour traffic patterns.
           </SectionIntro>
 
+          <PrimaryChart
+            title="Traffic Trend"
+            description={`${analyticsRangeDescription(visitorChart.range)}. Page views and distinct visitors show both volume and reach.`}
+            controls={<ChartRangeControls value={visitorChart.range} onChange={visitorChart.setRange} />}
+            loading={visitorChart.loading}
+            error={visitorChart.error}
+          >
+            {visitorChart.points.length === 0 ? (
+              <EmptyState>No visitor activity recorded in this range</EmptyState>
+            ) : (
+              <ChartContainer config={visitorChartConfig} className="h-[320px] w-full">
+                <LineChart
+                  accessibilityLayer
+                  data={visitorChart.points}
+                  margin={{ top: 8, right: 8, left: 0, bottom: 0 }}
+                >
+                  <CartesianGrid vertical={false} />
+                  <XAxis
+                    dataKey="bucket"
+                    tickLine={false}
+                    axisLine={false}
+                    minTickGap={28}
+                    tickFormatter={(value) => formatChartBucket(String(value), visitorChart.range)}
+                  />
+                  <YAxis allowDecimals={false} tickLine={false} axisLine={false} width={32} />
+                  <ChartTooltip
+                    content={
+                      <ChartTooltipContent
+                        labelFormatter={(label) => formatChartBucket(String(label), visitorChart.range)}
+                      />
+                    }
+                  />
+                  <ChartLegend content={<ChartLegendContent />} />
+                  <Line
+                    type="monotone"
+                    dataKey="views"
+                    stroke="var(--color-views)"
+                    strokeWidth={2.5}
+                    dot={false}
+                    activeDot={{ r: 4 }}
+                  />
+                  <Line
+                    type="monotone"
+                    dataKey="visitors"
+                    stroke="var(--color-visitors)"
+                    strokeWidth={2}
+                    dot={false}
+                    activeDot={{ r: 4 }}
+                  />
+                </LineChart>
+              </ChartContainer>
+            )}
+          </PrimaryChart>
+
           <Accordion type="multiple" defaultValue={["latest", "rankings", "hourly"]} className="rounded-md border border-border bg-background px-4">
             <AccordionItem value="latest">
               <AccordionTrigger>Latest Page Views{selectedLocation ? ` · ${selectedLocation.label}` : ""}</AccordionTrigger>
@@ -756,6 +1216,40 @@ export default function AdminAnalyticsPage() {
             See what people are viewing, then compare where that attention comes from.
           </SectionIntro>
 
+          <PrimaryChart
+            title="Most Viewed Pages"
+            description={`${analyticsRangeDescription(pageChart.range)}. Ranked by recorded page views.`}
+            controls={<ChartRangeControls value={pageChart.range} onChange={pageChart.setRange} />}
+            loading={pageChart.loading}
+            error={pageChart.error}
+          >
+            {pageChart.points.length === 0 ? (
+              <EmptyState>No page views recorded in this range</EmptyState>
+            ) : (
+              <ChartContainer config={pageChartConfig} className="h-[380px] w-full">
+                <BarChart
+                  accessibilityLayer
+                  data={pageChart.points}
+                  layout="vertical"
+                  margin={{ top: 0, right: 12, left: 0, bottom: 0 }}
+                >
+                  <CartesianGrid horizontal={false} />
+                  <XAxis type="number" allowDecimals={false} tickLine={false} axisLine={false} />
+                  <YAxis
+                    type="category"
+                    dataKey="label"
+                    tickLine={false}
+                    axisLine={false}
+                    width={150}
+                    tickFormatter={(value) => formatChartLabel(String(value), 24)}
+                  />
+                  <ChartTooltip content={<ChartTooltipContent />} />
+                  <Bar dataKey="views" fill="var(--color-views)" radius={[0, 4, 4, 0]} />
+                </BarChart>
+              </ChartContainer>
+            )}
+          </PrimaryChart>
+
           <Accordion type="multiple" defaultValue={["top-pages", "products", "page-location"]} className="rounded-md border border-border bg-background px-4">
             <AccordionItem value="top-pages">
               <AccordionTrigger>Top Pages</AccordionTrigger>
@@ -842,69 +1336,46 @@ export default function AdminAnalyticsPage() {
             </div>
           )}
 
-          <div className="grid gap-6 sm:grid-cols-2 xl:grid-cols-4">
-            <MetricCard
-              title="Paid Sales"
-              value={formatCurrency(data.salesRevenue30d, data.salesCurrency)}
-              description={`${data.paidSales30d} paid sales in ${data.analyticsWindowDays} days`}
-              icon={CreditCard}
-            />
-            <MetricCard
-              title="Today"
-              value={formatCurrency(data.salesRevenueToday, data.salesCurrency)}
-              description={`${data.paidSalesToday} paid sales today`}
-              icon={ShoppingBag}
-            />
-            <MetricCard
-              title="Average Sale"
-              value={formatCurrency(data.averageSaleValue30d, data.salesCurrency)}
-              description={`${formatCurrency(data.salesTax30d, data.salesCurrency)} tax collected`}
-              icon={TrendingUp}
-            />
-            <MetricCard
-              title="Voids"
-              value={data.voidedSales30d}
-              description={`${salesVoidRate} of finalized/voided sales · ${formatCurrency(data.voidedSalesTotal30d, data.salesCurrency)}`}
-              icon={AlertTriangle}
-            />
-          </div>
-
-          <Card>
-            <CardHeader className="gap-4">
-              <div className="flex flex-col gap-1">
-                <CardTitle className="text-lg">Sales Trend</CardTitle>
-                <p className="text-sm text-muted-foreground">
-                  Daily paid revenue and transaction count for {selectedSalesSeries?.label.toLowerCase() || "all sales"}.
-                </p>
+          <PrimaryChart
+            title="Sales Trend"
+            description={`${analyticsRangeDescription(salesChart.range)}. Paid revenue and transactions for ${selectedSalesSeries?.label.toLowerCase() || "all sales"}.`}
+            controls={
+              <div className="flex flex-col gap-3">
+                <div className="flex flex-wrap gap-2" aria-label="Sales chart category">
+                  {data.salesCategorySeries.map((series) => (
+                    <Button
+                      key={series.category}
+                      type="button"
+                      size="sm"
+                      variant={selectedSalesSeries?.category === series.category ? "default" : "outline"}
+                      onClick={() => setSelectedSalesCategory(series.category)}
+                    >
+                      {series.label}
+                    </Button>
+                  ))}
+                </div>
+                <ChartRangeControls value={salesChart.range} onChange={salesChart.setRange} />
               </div>
-              <div className="flex flex-wrap gap-2" aria-label="Sales chart category">
-                {data.salesCategorySeries.map((series) => (
-                  <Button
-                    key={series.category}
-                    type="button"
-                    size="sm"
-                    variant={selectedSalesSeries?.category === series.category ? "default" : "outline"}
-                    onClick={() => setSelectedSalesCategory(series.category)}
-                  >
-                    {series.label}
-                  </Button>
-                ))}
-              </div>
-            </CardHeader>
-            <CardContent>
+            }
+            loading={salesChart.loading}
+            error={salesChart.error}
+          >
+            {salesChart.points.length === 0 ? (
+              <EmptyState>No paid sales recorded in this range</EmptyState>
+            ) : (
               <ChartContainer config={salesChartConfig} className="h-[300px] w-full">
                 <LineChart
                   accessibilityLayer
-                  data={selectedSalesSeries?.data || []}
+                  data={salesChart.points}
                   margin={{ top: 8, right: 8, left: 4, bottom: 0 }}
                 >
                   <CartesianGrid vertical={false} />
                   <XAxis
-                    dataKey="date"
+                    dataKey="bucket"
                     tickLine={false}
                     axisLine={false}
                     minTickGap={28}
-                    tickFormatter={formatDateKey}
+                    tickFormatter={(value) => formatChartBucket(String(value), salesChart.range)}
                   />
                   <YAxis
                     yAxisId="revenue"
@@ -922,7 +1393,11 @@ export default function AdminAnalyticsPage() {
                     width={28}
                   />
                   <ChartTooltip
-                    content={<ChartTooltipContent labelFormatter={(label) => formatDateKey(String(label))} />}
+                    content={
+                      <ChartTooltipContent
+                        labelFormatter={(label) => formatChartBucket(String(label), salesChart.range)}
+                      />
+                    }
                   />
                   <ChartLegend content={<ChartLegendContent />} />
                   <Line
@@ -945,8 +1420,35 @@ export default function AdminAnalyticsPage() {
                   />
                 </LineChart>
               </ChartContainer>
-            </CardContent>
-          </Card>
+            )}
+          </PrimaryChart>
+
+          <div className="grid gap-6 sm:grid-cols-2 xl:grid-cols-4">
+            <MetricCard
+              title="Paid Sales"
+              value={formatCurrency(data.salesRevenue30d, data.salesCurrency)}
+              description={`${data.paidSales30d} paid sales · last 30 days`}
+              icon={CreditCard}
+            />
+            <MetricCard
+              title="Today"
+              value={formatCurrency(data.salesRevenueToday, data.salesCurrency)}
+              description={`${data.paidSalesToday} paid sales today`}
+              icon={ShoppingBag}
+            />
+            <MetricCard
+              title="Average Sale"
+              value={formatCurrency(data.averageSaleValue30d, data.salesCurrency)}
+              description={`${formatCurrency(data.salesTax30d, data.salesCurrency)} tax · last 30 days`}
+              icon={TrendingUp}
+            />
+            <MetricCard
+              title="Voids"
+              value={data.voidedSales30d}
+              description={`${salesVoidRate} finalized/voided · ${formatCurrency(data.voidedSalesTotal30d, data.salesCurrency)} · last 30 days`}
+              icon={AlertTriangle}
+            />
+          </div>
 
           <Accordion type="multiple" defaultValue={["payment", "category", "daily"]} className="rounded-md border border-border bg-background px-4">
             <AccordionItem value="totals">
@@ -1088,76 +1590,54 @@ export default function AdminAnalyticsPage() {
             Confirmed bookings, seats reserved, and pending requests by booking date and class category.
           </SectionIntro>
 
-          <div className="grid gap-6 sm:grid-cols-2 xl:grid-cols-4">
-            <MetricCard
-              title="Confirmed Bookings"
-              value={data.confirmedClassBookings30d}
-              description={`Last ${data.analyticsWindowDays} days`}
-              icon={GraduationCap}
-            />
-            <MetricCard
-              title="Confirmed Seats"
-              value={data.confirmedClassSeats30d}
-              description="Seats attached to confirmed bookings"
-              icon={Users}
-            />
-            <MetricCard
-              title="Pending Bookings"
-              value={data.pendingClassBookings30d}
-              description={`${data.pendingClassSeats30d} seats awaiting confirmation`}
-              icon={Calendar}
-            />
-            <MetricCard
-              title="Completion Share"
-              value={rate(
-                data.confirmedClassBookings30d,
-                data.confirmedClassBookings30d + data.pendingClassBookings30d
-              )}
-              description="Confirmed share of active booking requests"
-              icon={TrendingUp}
-            />
-          </div>
-
-          <Card>
-            <CardHeader className="gap-4">
-              <div className="flex flex-col gap-1">
-                <CardTitle className="text-lg">Class Booking Trend</CardTitle>
-                <p className="text-sm text-muted-foreground">
-                  Daily bookings and seats for {selectedClassSeries?.label.toLowerCase() || "all classes"}.
-                </p>
+          <PrimaryChart
+            title="Class Booking Trend"
+            description={`${analyticsRangeDescription(classChart.range)}. Confirmed bookings, seats, and pending requests for ${selectedClassSeries?.label.toLowerCase() || "all classes"}.`}
+            controls={
+              <div className="flex flex-col gap-3">
+                <div className="flex flex-wrap gap-2" aria-label="Class chart category">
+                  {data.classCategorySeries.map((series) => (
+                    <Button
+                      key={series.category}
+                      type="button"
+                      size="sm"
+                      variant={selectedClassSeries?.category === series.category ? "default" : "outline"}
+                      onClick={() => setSelectedClassCategory(series.category)}
+                    >
+                      {series.label}
+                    </Button>
+                  ))}
+                </div>
+                <ChartRangeControls value={classChart.range} onChange={classChart.setRange} />
               </div>
-              <div className="flex flex-wrap gap-2" aria-label="Class chart category">
-                {data.classCategorySeries.map((series) => (
-                  <Button
-                    key={series.category}
-                    type="button"
-                    size="sm"
-                    variant={selectedClassSeries?.category === series.category ? "default" : "outline"}
-                    onClick={() => setSelectedClassCategory(series.category)}
-                  >
-                    {series.label}
-                  </Button>
-                ))}
-              </div>
-            </CardHeader>
-            <CardContent>
+            }
+            loading={classChart.loading}
+            error={classChart.error}
+          >
+            {classChart.points.length === 0 ? (
+              <EmptyState>No class bookings recorded in this range</EmptyState>
+            ) : (
               <ChartContainer config={classChartConfig} className="h-[300px] w-full">
                 <LineChart
                   accessibilityLayer
-                  data={selectedClassSeries?.data || []}
+                  data={classChart.points}
                   margin={{ top: 8, right: 8, left: 0, bottom: 0 }}
                 >
                   <CartesianGrid vertical={false} />
                   <XAxis
-                    dataKey="date"
+                    dataKey="bucket"
                     tickLine={false}
                     axisLine={false}
                     minTickGap={28}
-                    tickFormatter={formatDateKey}
+                    tickFormatter={(value) => formatChartBucket(String(value), classChart.range)}
                   />
                   <YAxis allowDecimals={false} tickLine={false} axisLine={false} width={28} />
                   <ChartTooltip
-                    content={<ChartTooltipContent labelFormatter={(label) => formatDateKey(String(label))} />}
+                    content={
+                      <ChartTooltipContent
+                        labelFormatter={(label) => formatChartBucket(String(label), classChart.range)}
+                      />
+                    }
                   />
                   <ChartLegend content={<ChartLegendContent />} />
                   <Line
@@ -1187,8 +1667,38 @@ export default function AdminAnalyticsPage() {
                   />
                 </LineChart>
               </ChartContainer>
-            </CardContent>
-          </Card>
+            )}
+          </PrimaryChart>
+
+          <div className="grid gap-6 sm:grid-cols-2 xl:grid-cols-4">
+            <MetricCard
+              title="Confirmed Bookings"
+              value={data.confirmedClassBookings30d}
+              description="Last 30 days"
+              icon={GraduationCap}
+            />
+            <MetricCard
+              title="Confirmed Seats"
+              value={data.confirmedClassSeats30d}
+              description="Confirmed seats · last 30 days"
+              icon={Users}
+            />
+            <MetricCard
+              title="Pending Bookings"
+              value={data.pendingClassBookings30d}
+              description={`${data.pendingClassSeats30d} seats · last 30 days`}
+              icon={Calendar}
+            />
+            <MetricCard
+              title="Completion Share"
+              value={rate(
+                data.confirmedClassBookings30d,
+                data.confirmedClassBookings30d + data.pendingClassBookings30d
+              )}
+              description="Confirmed share · last 30 days"
+              icon={TrendingUp}
+            />
+          </div>
         </TabsContent>
 
         <TabsContent value="conversion" className="space-y-6">
@@ -1196,38 +1706,85 @@ export default function AdminAnalyticsPage() {
             Track intent to buy, payment starts, failures, and completed payment sessions.
           </SectionIntro>
 
-          <div className="grid gap-6 sm:grid-cols-2 xl:grid-cols-4">
-            <MetricCard title="Checkout Views" value={data.checkoutViews30d} description="People who reached checkout" icon={Eye} />
-            <MetricCard title="Clicked Pay" value={data.paymentIntentClicks30d} description={`${checkoutClickRate} of checkout views`} icon={MousePointerClick} />
-            <MetricCard title="Payment Sessions" value={data.paymentSessionsCreated30d} description={`${paymentCompletionRate} completed`} icon={CreditCard} />
-            <MetricCard title="Payment Errors" value={data.paymentStartFailed30d} description="Failed before payment handoff" icon={AlertTriangle} />
-          </div>
+          <PrimaryChart
+            title="Payment Funnel"
+            description={`${analyticsRangeDescription(conversionChart.range)}. Compare checkout reach with payment intent and completed sessions.`}
+            controls={<ChartRangeControls value={conversionChart.range} onChange={conversionChart.setRange} />}
+            loading={conversionChart.loading}
+            error={conversionChart.error}
+          >
+            {conversionChart.points.length === 0 ? (
+              <EmptyState>No checkout activity recorded in this range</EmptyState>
+            ) : (
+              <ChartContainer config={conversionChartConfig} className="h-[260px] w-full">
+                <BarChart
+                  accessibilityLayer
+                  data={conversionChart.points}
+                  layout="vertical"
+                  margin={{ top: 0, right: 12, left: 0, bottom: 0 }}
+                >
+                  <CartesianGrid horizontal={false} />
+                  <XAxis type="number" allowDecimals={false} tickLine={false} axisLine={false} />
+                  <YAxis
+                    type="category"
+                    dataKey="label"
+                    tickLine={false}
+                    axisLine={false}
+                    width={128}
+                  />
+                  <ChartTooltip content={<ChartTooltipContent />} />
+                  <Bar dataKey="value" fill="var(--color-value)" radius={[0, 4, 4, 0]} />
+                </BarChart>
+              </ChartContainer>
+            )}
+          </PrimaryChart>
 
-          <Accordion type="multiple" defaultValue={["events"]} className="rounded-md border border-border bg-background px-4">
-            <AccordionItem value="events">
-              <AccordionTrigger>Event Type Mix</AccordionTrigger>
-              <AccordionContent>
-                {sortedEventCounts.length === 0 ? (
-                  <EmptyState>No analytics events recorded yet</EmptyState>
-                ) : (
-                  <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
-                    {sortedEventCounts.map(([type, count]) => (
-                      <div key={type} className="flex items-center justify-between gap-3 rounded-md bg-muted/40 px-3 py-2">
-                        <span className="truncate text-sm text-muted-foreground">{formatEventType(type)}</span>
-                        <span className="text-sm font-semibold text-foreground">{count}</span>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </AccordionContent>
-            </AccordionItem>
-          </Accordion>
+          <div className="grid gap-6 sm:grid-cols-2 xl:grid-cols-4">
+            <MetricCard title="Checkout Views" value={data.checkoutViews30d} description="Reached checkout · last 30 days" icon={Eye} />
+            <MetricCard title="Clicked Pay" value={data.paymentIntentClicks30d} description={`${checkoutClickRate} of checkout views · last 30 days`} icon={MousePointerClick} />
+            <MetricCard title="Payment Sessions" value={data.paymentSessionsCreated30d} description={`${paymentCompletionRate} completed · last 30 days`} icon={CreditCard} />
+            <MetricCard title="Payment Errors" value={data.paymentStartFailed30d} description="Before payment handoff · last 30 days" icon={AlertTriangle} />
+          </div>
         </TabsContent>
 
         <TabsContent value="events" className="space-y-6">
           <SectionIntro title="Event Feed">
             Recent analytics events with connected users, visitor identities, timestamps, and locations.
           </SectionIntro>
+
+          <PrimaryChart
+            title="Event Type Mix"
+            description={`${analyticsRangeDescription(eventChart.range)}. The most frequent tracked actions across the site.`}
+            controls={<ChartRangeControls value={eventChart.range} onChange={eventChart.setRange} />}
+            loading={eventChart.loading}
+            error={eventChart.error}
+          >
+            {eventChart.points.length === 0 ? (
+              <EmptyState>No analytics events recorded in this range</EmptyState>
+            ) : (
+              <ChartContainer config={eventChartConfig} className="h-[380px] w-full">
+                <BarChart
+                  accessibilityLayer
+                  data={eventChart.points}
+                  layout="vertical"
+                  margin={{ top: 0, right: 12, left: 0, bottom: 0 }}
+                >
+                  <CartesianGrid horizontal={false} />
+                  <XAxis type="number" allowDecimals={false} tickLine={false} axisLine={false} />
+                  <YAxis
+                    type="category"
+                    dataKey="label"
+                    tickLine={false}
+                    axisLine={false}
+                    width={150}
+                    tickFormatter={(value) => formatChartLabel(formatEventType(String(value)), 24)}
+                  />
+                  <ChartTooltip content={<ChartTooltipContent />} />
+                  <Bar dataKey="count" fill="var(--color-count)" radius={[0, 4, 4, 0]} />
+                </BarChart>
+              </ChartContainer>
+            )}
+          </PrimaryChart>
 
           <Accordion type="multiple" defaultValue={["recent", "orders"]} className="rounded-md border border-border bg-background px-4">
             <AccordionItem value="recent">
