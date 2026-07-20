@@ -1,6 +1,7 @@
 "use client"
 
 import React, { useEffect, useMemo, useState } from "react"
+import { createPortal } from "react-dom"
 import Link from "next/link"
 import { usePathname } from "next/navigation"
 import {
@@ -119,13 +120,31 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
   }, [pathname])
 
   useEffect(() => {
-    if (!sidebarOpen || typeof document === "undefined") return
+    if ((!sidebarOpen && !userMenuOpen) || typeof document === "undefined" || typeof window === "undefined") return
+
+    const mobileQuery = window.matchMedia("(max-width: 1023px)")
+    if (!mobileQuery.matches) return
     const previousOverflow = document.body.style.overflow
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key !== "Escape") return
+      setSidebarOpen(false)
+      setUserMenuOpen(false)
+    }
+    const closeAtDesktop = (event: MediaQueryListEvent) => {
+      if (event.matches) return
+      setSidebarOpen(false)
+      setUserMenuOpen(false)
+    }
+
     document.body.style.overflow = "hidden"
+    window.addEventListener("keydown", closeOnEscape)
+    mobileQuery.addEventListener("change", closeAtDesktop)
     return () => {
       document.body.style.overflow = previousOverflow
+      window.removeEventListener("keydown", closeOnEscape)
+      mobileQuery.removeEventListener("change", closeAtDesktop)
     }
-  }, [sidebarOpen])
+  }, [sidebarOpen, userMenuOpen])
 
   if (isLoading) {
     return (
@@ -170,7 +189,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
               <p className="truncate text-sm font-semibold text-foreground">{currentPageLabel}</p>
             </div>
           </div>
-          <div className="relative flex items-center gap-1.5">
+          <div className="flex items-center gap-1.5">
             <AdminNotifications enabled={isFullAdminRole(user?.role)} />
             {profileButton}
             <Button
@@ -185,25 +204,45 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
             >
               {sidebarOpen ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}
             </Button>
-            {userMenuOpen && (
-              <div className="absolute right-10 top-12 z-[70] w-64 overflow-hidden rounded-lg border border-border bg-background shadow-xl">
-                <div className="border-b border-border px-4 py-3">
-                  <p className="truncate text-sm font-semibold">{displayName}</p>
-                  <p className="truncate text-xs text-muted-foreground">{displayEmail}</p>
-                  <p className="mt-1 text-xs text-muted-foreground">{roleLabels[user?.role || "USER"]}</p>
-                </div>
-                <Link href="/" className="flex items-center gap-3 px-4 py-3 text-sm hover:bg-muted">
-                  <Home className="h-4 w-4 text-muted-foreground" />
-                  View site
-                </Link>
-                <button onClick={() => logout()} className="flex w-full items-center gap-3 px-4 py-3 text-left text-sm text-destructive hover:bg-muted">
-                  <LogOut className="h-4 w-4" />
-                  Sign out
-                </button>
-              </div>
-            )}
           </div>
         </header>
+      )}
+
+      {typeof document !== "undefined" && userMenuOpen && createPortal(
+        <>
+          <button
+            type="button"
+            className="fixed inset-0 z-[80] bg-black/30 backdrop-blur-[1px] lg:hidden"
+            onClick={() => setUserMenuOpen(false)}
+            aria-label="Close profile menu"
+          />
+          <section
+            role="dialog"
+            aria-modal="true"
+            aria-label="Admin profile menu"
+            className="fixed inset-x-3 top-[calc(4rem+env(safe-area-inset-top)+0.5rem)] z-[90] max-h-[calc(100dvh-5rem-env(safe-area-inset-top)-env(safe-area-inset-bottom))] overflow-y-auto overscroll-contain rounded-lg border border-border bg-background shadow-2xl lg:hidden"
+          >
+            <div className="flex items-start justify-between gap-3 border-b border-border px-4 py-3">
+              <div className="min-w-0">
+                <p className="truncate text-sm font-semibold">{displayName}</p>
+                <p className="truncate text-xs text-muted-foreground">{displayEmail}</p>
+                <p className="mt-1 text-xs text-muted-foreground">{roleLabels[user?.role || "USER"]}</p>
+              </div>
+              <button type="button" onClick={() => setUserMenuOpen(false)} className="-mr-1 flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-foreground" aria-label="Close profile menu">
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+            <Link href="/" onClick={() => setUserMenuOpen(false)} className="flex min-h-12 items-center gap-3 px-4 py-3 text-sm hover:bg-muted">
+              <Home className="h-4 w-4 text-muted-foreground" />
+              View site
+            </Link>
+            <button onClick={() => logout()} className="flex min-h-12 w-full items-center gap-3 border-t border-border px-4 py-3 text-left text-sm text-destructive hover:bg-muted">
+              <LogOut className="h-4 w-4" />
+              Sign out
+            </button>
+          </section>
+        </>,
+        document.body
       )}
 
       <aside
