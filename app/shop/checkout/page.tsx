@@ -224,10 +224,12 @@ function ShopCheckoutContent() {
     void trackAnalyticsEvent({
       type: "shop_checkout_payment_click",
       source: "online_shop",
-      value: subtotal,
+      value: total,
       currency: "IDR",
       metadata: {
         itemCount,
+        fulfillmentMethod,
+        shippingAmount,
       },
     })
 

@@ -9,12 +9,15 @@ import { notifyClassBookingsConfirmed, notifyCupSalePaid } from "@/lib/admin-not
 import { isRequestBodyTooLarge } from "@/lib/server-security"
 import {
   extractBookingIds,
+  getWebhookAmount,
+  getWebhookCurrency,
   getWebhookPaymentSessionId,
   getWebhookPosReference,
   getWebhookPosSaleId,
   getWebhookReference,
   getWebhookStatus,
   hasExplicitPosIdentity,
+  isMatchingWebhookPaymentTotal,
   mapInvoiceStatusToBookingStatus,
   mapInvoiceStatusToPosSaleStatus,
   type XenditWebhookPayload,
@@ -155,6 +158,22 @@ export async function POST(req: NextRequest) {
     }
 
     if (sale) {
+      if (posSaleStatus === "PAID" && !isMatchingWebhookPaymentTotal(payload, sale.total, sale.currency)) {
+        console.error("Rejected Xendit payment webhook with mismatched sale total", {
+          saleId: sale.id,
+          expectedAmount: sale.total,
+          expectedCurrency: sale.currency,
+          webhookAmount: getWebhookAmount(payload),
+          webhookCurrency: getWebhookCurrency(payload) || null,
+          paymentSessionId,
+          posReference,
+        })
+        return NextResponse.json(
+          { error: "Payment amount does not match the sale total." },
+          { status: 409 }
+        )
+      }
+
       const claimed = await prisma.posSale.updateMany({
         where: { id: sale.id, status: "PENDING_PAYMENT" },
         data: { status: "PAID" },

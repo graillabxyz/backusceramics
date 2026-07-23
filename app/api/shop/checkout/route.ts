@@ -288,6 +288,8 @@ export async function POST(req: NextRequest) {
         customer_user_id: session.user.id,
         fulfillment_method: sale.fulfillmentMethod,
         shipping_country: sale.shippingCountry || "pickup",
+        shipping_amount: sale.shippingAmount,
+        order_total: sale.total,
       },
       success_return_url: `${origin}/shop/checkout?payment=success&sale=${sale.id}`,
       cancel_return_url: `${origin}/shop/checkout?payment=cancelled&sale=${sale.id}`,
@@ -311,6 +313,8 @@ export async function POST(req: NextRequest) {
         paymentReference,
         paymentSessionId: paymentSession.payment_session_id,
         itemCount: updatedSale.items.length,
+        shippingAmount: updatedSale.shippingAmount,
+        fulfillmentMethod: updatedSale.fulfillmentMethod,
       },
     }, req)
 

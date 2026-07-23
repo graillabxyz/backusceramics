@@ -1,6 +1,8 @@
 export type XenditWebhookPayload = {
   event?: string
   type?: string
+  amount?: number | string
+  currency?: string
   external_id?: string
   reference_id?: string
   id?: string
@@ -17,6 +19,8 @@ export type XenditWebhookPayload = {
   }
   data?: {
     id?: string
+    amount?: number | string
+    currency?: string
     payment_session_id?: string
     payment_request_id?: string
     payment_token_id?: string
@@ -62,6 +66,32 @@ export function getWebhookStatus(payload: XenditWebhookPayload) {
   if (["payment_session_completed", "payment_session_succeeded", "payment_succeeded", "invoice_paid"].includes(eventName)) return "PAID"
   if (["payment_session_expired", "payment_session_cancelled", "payment_session_canceled", "payment_cancelled", "payment_canceled", "invoice_expired"].includes(eventName)) return "EXPIRED"
   return payload.status || payload.data?.status
+}
+
+export function getWebhookAmount(payload: XenditWebhookPayload) {
+  const rawAmount = payload.amount ?? payload.data?.amount
+  if (rawAmount === undefined || rawAmount === null || rawAmount === "") return null
+
+  const amount = Number(rawAmount)
+  return Number.isSafeInteger(amount) && amount >= 0 ? amount : null
+}
+
+export function getWebhookCurrency(payload: XenditWebhookPayload) {
+  const currency = payload.currency || payload.data?.currency || ""
+  return currency.trim().toUpperCase()
+}
+
+export function isMatchingWebhookPaymentTotal(
+  payload: XenditWebhookPayload,
+  expectedAmount: number,
+  expectedCurrency = "IDR"
+) {
+  const webhookAmount = getWebhookAmount(payload)
+  const webhookCurrency = getWebhookCurrency(payload)
+
+  if (webhookAmount !== null && webhookAmount !== expectedAmount) return false
+  if (webhookCurrency && webhookCurrency !== expectedCurrency.trim().toUpperCase()) return false
+  return true
 }
 
 export function getWebhookReference(payload: XenditWebhookPayload) {

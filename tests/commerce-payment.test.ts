@@ -3,10 +3,13 @@ import test from "node:test"
 import { calculateCeramicShipping } from "../lib/shop-shipping"
 import {
   extractBookingIds,
+  getWebhookAmount,
+  getWebhookCurrency,
   getWebhookPaymentSessionId,
   getWebhookReference,
   getWebhookStatus,
   hasExplicitPosIdentity,
+  isMatchingWebhookPaymentTotal,
   mapInvoiceStatusToBookingStatus,
   mapInvoiceStatusToPosSaleStatus,
 } from "../lib/xendit-webhook"
@@ -69,6 +72,27 @@ test("online shop and POS payment callbacks have explicit sale identity", () => 
   assert.equal(hasExplicitPosIdentity({ data: { metadata: { pos_sale_id: "sale-1" } } }), true)
   assert.equal(mapInvoiceStatusToPosSaleStatus(getWebhookStatus({ event: "payment-session.completed" })), "PAID")
   assert.equal(mapInvoiceStatusToPosSaleStatus("expired"), "CANCELLED")
+})
+
+test("paid sale callbacks must match the server-authoritative total when Xendit supplies it", () => {
+  const paidShopPayload = {
+    event: "payment_session.completed",
+    data: {
+      amount: 1_495_000,
+      currency: "IDR",
+      metadata: {
+        pos_sale_id: "sale-1",
+        pos_payment_reference: "shop_123",
+      },
+    },
+  }
+
+  assert.equal(getWebhookAmount(paidShopPayload), 1_495_000)
+  assert.equal(getWebhookCurrency(paidShopPayload), "IDR")
+  assert.equal(isMatchingWebhookPaymentTotal(paidShopPayload, 1_495_000), true)
+  assert.equal(isMatchingWebhookPaymentTotal(paidShopPayload, 1_000_000), false)
+  assert.equal(isMatchingWebhookPaymentTotal({ ...paidShopPayload, data: { ...paidShopPayload.data, currency: "USD" } }, 1_495_000), false)
+  assert.equal(isMatchingWebhookPaymentTotal({ event: "payment_session.completed" }, 1_495_000), true)
 })
 
 test("protected cup carton is never smaller than the cushioned piece", () => {
