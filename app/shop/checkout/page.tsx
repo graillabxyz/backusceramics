@@ -90,13 +90,60 @@ function ShopCheckoutContent() {
       clearShopCart()
       setCart([])
       setItems([])
-      setNotice("Thank you. Your payment return was received, and the order will update automatically after Xendit confirms it.")
+      setNotice("Checking your payment confirmation with Xendit...")
     }
 
     if (paymentStatus === "cancelled") {
       setNotice("Payment was cancelled. If the piece is still available, you can restart checkout.")
     }
   }, [paymentStatus])
+
+  useEffect(() => {
+    if (paymentStatus !== "success" || !saleId) return
+
+    let cancelled = false
+    let timer: ReturnType<typeof setTimeout> | null = null
+    let attempts = 0
+
+    const checkPayment = async () => {
+      attempts += 1
+      try {
+        const res = await fetch(`/api/shop/sales/${encodeURIComponent(saleId)}`, { cache: "no-store" })
+        const data = await res.json().catch(() => ({}))
+        if (!res.ok) throw new Error(typeof data.error === "string" ? data.error : "Could not check payment")
+        if (cancelled) return
+
+        const status = typeof data.sale?.status === "string" ? data.sale.status : ""
+        if (status === "PAID") {
+          setNotice("Payment confirmed. Thank you. Your order is now in our website sales queue.")
+          return
+        }
+        if (status === "CANCELLED" || status === "VOIDED") {
+          setNotice("This payment session did not complete. Your cart inventory has been released.")
+          return
+        }
+
+        if (attempts < 5) {
+          timer = setTimeout(checkPayment, 2_000)
+        } else {
+          setNotice("Your payment return was received. Confirmation is still processing, and the order will update automatically.")
+        }
+      } catch (statusError) {
+        console.error("Could not confirm returned shop payment", statusError)
+        if (!cancelled && attempts < 3) {
+          timer = setTimeout(checkPayment, 2_000)
+        } else if (!cancelled) {
+          setNotice("Your payment return was received. Confirmation is still processing, and the order will update automatically.")
+        }
+      }
+    }
+
+    void checkPayment()
+    return () => {
+      cancelled = true
+      if (timer) clearTimeout(timer)
+    }
+  }, [paymentStatus, saleId])
 
   useEffect(() => {
     if (user?.email && !receiptEmail) setReceiptEmail(user.email)

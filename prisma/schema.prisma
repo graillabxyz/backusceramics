@@ -308,6 +308,22 @@ model PosSaleItem {
   @@index([productId])
 }
 
+model PaymentWebhookEvent {
+  id               String   @id @default(cuid())
+  provider         String   @default("XENDIT")
+  event            String?
+  status           String?
+  paymentSessionId String?
+  paymentReference String?
+  saleId           String?
+  receivedAt       DateTime @default(now())
+
+  @@index([provider, receivedAt])
+  @@index([paymentSessionId])
+  @@index([paymentReference])
+  @@index([saleId])
+}
+
 model PosCloseout {
   id           String @id @default(cuid())
   businessDate String @unique

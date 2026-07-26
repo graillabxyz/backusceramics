@@ -119,6 +119,31 @@ export async function notifyCupSalePaid(sale: PaidSaleSnapshot, source: string) 
   })
 }
 
+export async function notifyWebsiteSalePaid(sale: PaidSaleSnapshot) {
+  const itemCount = sale.items.reduce((sum, item) => sum + item.quantity, 0)
+  const itemList = compactItemList(sale.items)
+
+  await createAdminNotification({
+    type: "WEBSITE_SALE_PAID",
+    title: "Website sale paid",
+    message: `${itemCount} ${itemCount === 1 ? "item" : "items"} sold online: ${itemList}. Total ${formatPrice(sale.total)}.`,
+    path: "/admin/sales",
+    dedupeKey: `website_sale:${sale.id}`,
+    metadata: {
+      saleId: sale.id,
+      currency: sale.currency,
+      paymentMethod: sale.paymentMethod,
+      itemCount,
+      items: sale.items.map((item) => ({
+        name: item.nameSnapshot,
+        category: item.categorySnapshot,
+        quantity: item.quantity,
+        lineTotal: item.lineTotal,
+      })),
+    },
+  })
+}
+
 export async function notifyClassBookingsConfirmed(bookings: ClassBookingSnapshot[]) {
   if (bookings.length === 0) return
 

@@ -1,11 +1,10 @@
 import { NextRequest, NextResponse } from "next/server"
-import { revalidatePath } from "next/cache"
 import { timingSafeEqual } from "crypto"
 import { prisma } from "@/lib/prisma"
 import { getXenditCallbackToken } from "@/lib/xendit"
-import { sendPosReceiptEmail } from "@/lib/pos-receipts"
 import { recordAnalyticsEvent } from "@/lib/analytics-server"
-import { notifyClassBookingsConfirmed, notifyCupSalePaid } from "@/lib/admin-notification-events"
+import { notifyClassBookingsConfirmed } from "@/lib/admin-notification-events"
+import { cancelPendingPosSalePayment, completePendingPosSalePayment } from "@/lib/pos-sale-payment"
 import { isRequestBodyTooLarge } from "@/lib/server-security"
 import {
   extractBookingIds,
@@ -60,33 +59,6 @@ async function findPosSaleForWebhook({
   return sale
 }
 
-async function cancelPendingPosSale(sale: Awaited<ReturnType<typeof findPosSaleForWebhook>>) {
-
-  if (!sale || sale.status !== "PENDING_PAYMENT") return { updated: 0 }
-  const shouldRestoreShopVisibility = Boolean(sale.notes?.includes("[online-shop]"))
-
-  await prisma.$transaction([
-    ...sale.items
-      .filter((item) => item.productId)
-      .map((item) =>
-        prisma.posProduct.update({
-          where: { id: item.productId! },
-          data: {
-            quantity: { increment: item.quantity },
-            status: "AVAILABLE",
-            ...(shouldRestoreShopVisibility ? { showInShop: true } : {}),
-          },
-        })
-      ),
-    prisma.posSale.update({
-      where: { id: sale.id },
-      data: { status: "CANCELLED" },
-    }),
-  ])
-
-  return { updated: 1 }
-}
-
 export async function POST(req: NextRequest) {
   const callbackToken = getXenditCallbackToken()
   if (!callbackToken) {
@@ -117,6 +89,20 @@ export async function POST(req: NextRequest) {
   const paymentSessionId = getWebhookPaymentSessionId(payload)
   const explicitPosIdentity = hasExplicitPosIdentity(payload)
 
+  try {
+    await prisma.paymentWebhookEvent.create({
+      data: {
+        event: payload.event || payload.type || null,
+        status: webhookStatus || null,
+        paymentSessionId: paymentSessionId || null,
+        paymentReference: posReference || getWebhookReference(payload) || null,
+        saleId: posSaleId || null,
+      },
+    })
+  } catch (error) {
+    console.error("Could not record verified Xendit webhook receipt", { error })
+  }
+
   console.info("Received verified Xendit webhook", {
     event: payload.event || payload.type || null,
     status: webhookStatus || null,
@@ -130,8 +116,7 @@ export async function POST(req: NextRequest) {
     const sale = await findPosSaleForWebhook({ posSaleId, paymentSessionId, posReference })
 
     if (sale && posSaleStatus === "CANCELLED") {
-      const result = await cancelPendingPosSale(sale)
-      if (result.updated) revalidatePath("/wall-of-cups")
+      const result = await cancelPendingPosSalePayment(sale.id)
       await recordAnalyticsEvent({
         type: "pos_payment_cancelled",
         source: "xendit_webhook",
@@ -174,50 +159,16 @@ export async function POST(req: NextRequest) {
         )
       }
 
-      const claimed = await prisma.posSale.updateMany({
-        where: { id: sale.id, status: "PENDING_PAYMENT" },
-        data: { status: "PAID" },
-      })
-
-      if (claimed.count === 0) {
+      const result = await completePendingPosSalePayment(sale.id, "xendit_webhook", req)
+      if (result.updated === 0) {
         return NextResponse.json({ ok: true, status: posSaleStatus, posUpdated: 0, ignored: true })
       }
 
-      const updatedSale = await prisma.posSale.findUnique({
-        where: { id: sale.id },
-        include: { items: true },
-      })
-
+      const updatedSale = result.sale
       if (!updatedSale) {
         console.error("POS sale disappeared after payment status update", { saleId: sale.id })
         return NextResponse.json({ ok: true, status: posSaleStatus, posUpdated: 0 })
       }
-
-      if (updatedSale.receiptEmail && !updatedSale.receiptSentAt) {
-        const sent = await sendPosReceiptEmail(updatedSale)
-        if (sent) {
-          await prisma.posSale.update({
-            where: { id: updatedSale.id },
-            data: { receiptSentAt: new Date() },
-          })
-        }
-      }
-
-      await recordAnalyticsEvent({
-        type: "pos_payment_completed",
-        source: "xendit_webhook",
-        value: updatedSale.total,
-        currency: updatedSale.currency,
-        metadata: {
-          posSaleId: updatedSale.id,
-          paymentSessionId,
-          paymentReference: posReference || undefined,
-          itemCount: updatedSale.items.length,
-          webhookStatus,
-        },
-      }, req)
-
-      await notifyCupSalePaid(updatedSale, "online POS payment")
 
       return NextResponse.json({ ok: true, status: posSaleStatus, posUpdated: 1 })
     }

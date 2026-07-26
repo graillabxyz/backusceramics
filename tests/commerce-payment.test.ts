@@ -14,6 +14,7 @@ import {
   mapInvoiceStatusToPosSaleStatus,
 } from "../lib/xendit-webhook"
 import { isMatchingXenditClassPayment } from "../lib/xendit-booking-reconciliation"
+import { isMatchingXenditSalePayment } from "../lib/xendit-sale-reconciliation"
 
 test("class payment callbacks are not mistaken for POS callbacks", () => {
   const payload = {
@@ -93,6 +94,27 @@ test("paid sale callbacks must match the server-authoritative total when Xendit 
   assert.equal(isMatchingWebhookPaymentTotal(paidShopPayload, 1_000_000), false)
   assert.equal(isMatchingWebhookPaymentTotal({ ...paidShopPayload, data: { ...paidShopPayload.data, currency: "USD" } }, 1_495_000), false)
   assert.equal(isMatchingWebhookPaymentTotal({ event: "payment_session.completed" }, 1_495_000), true)
+})
+
+test("website sale reconciliation requires exact session, reference, amount, currency, and PAY type", () => {
+  const expected = {
+    paymentSessionId: "ps-661f87c614802d6c402cd82d",
+    paymentReference: "shop_123",
+    expectedAmount: 1_495_000,
+    expectedCurrency: "IDR",
+    remotePaymentSessionId: "ps-661f87c614802d6c402cd82d",
+    remoteReference: "shop_123",
+    remoteAmount: 1_495_000,
+    remoteCurrency: "IDR",
+    remoteSessionType: "PAY",
+  }
+
+  assert.equal(isMatchingXenditSalePayment(expected), true)
+  assert.equal(isMatchingXenditSalePayment({ ...expected, remoteReference: "shop_other" }), false)
+  assert.equal(isMatchingXenditSalePayment({ ...expected, remoteAmount: 1_000_000 }), false)
+  assert.equal(isMatchingXenditSalePayment({ ...expected, remoteCurrency: "USD" }), false)
+  assert.equal(isMatchingXenditSalePayment({ ...expected, remoteSessionType: "SAVE" }), false)
+  assert.equal(isMatchingXenditSalePayment({ ...expected, remoteAmount: undefined }), false)
 })
 
 test("protected cup carton is never smaller than the cushioned piece", () => {
