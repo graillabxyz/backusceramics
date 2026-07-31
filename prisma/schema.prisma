@@ -197,13 +197,15 @@ model ClassHold {
   endDate      DateTime?
   notes        String?
   status       String @default("ACTIVE")
-  // Status values: ACTIVE, PAUSED, CANCELLED
+  // Status values: ACTIVE, PAUSED, CANCELLED, ARCHIVED
+  archivedAt   DateTime?
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
   @@index([workshopId, startDate, endDate])
   @@index([status])
+  @@index([status, endDate])
 }
 
 model PosProduct {

@@ -5,17 +5,23 @@ import { isFullAdminRole } from "@/lib/permissions"
 import { validateClassHoldPayload } from "@/lib/class-hold-validation"
 import { validateClassHoldCapacity } from "@/lib/class-hold-capacity"
 import { isRequestBodyTooLarge } from "@/lib/server-security"
+import { archiveExpiredClassHolds } from "@/lib/class-hold-archive"
 
 const MAX_CLASS_HOLD_BODY_BYTES = 32 * 1024
 
-export async function GET() {
+export async function GET(req: NextRequest) {
   const session = await auth()
   if (!session || !isFullAdminRole(session.user.role)) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
   }
 
   try {
+    await archiveExpiredClassHolds()
+    const archivedView = req.nextUrl.searchParams.get("view") === "archived"
     const holds = await prisma.classHold.findMany({
+      where: archivedView
+        ? { status: "ARCHIVED" }
+        : { status: { not: "ARCHIVED" } },
       orderBy: [{ status: "asc" }, { startDate: "asc" }],
     })
 

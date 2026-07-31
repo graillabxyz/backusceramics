@@ -36,7 +36,10 @@ export async function PATCH(
       try {
         const hold = await prisma.classHold.update({
           where: { id },
-          data: { status: data.status },
+          data: {
+            status: data.status,
+            archivedAt: data.status === "ARCHIVED" ? new Date() : null,
+          },
         })
         return NextResponse.json(hold)
       } catch (error) {
@@ -72,7 +75,7 @@ export async function PATCH(
 
         const hold = await tx.classHold.update({
           where: { id },
-          data: { status: "ACTIVE" },
+          data: { status: "ACTIVE", archivedAt: null },
         })
         return { notFound: false, capacityError: null, hold }
       }, { timeout: 10_000 })
@@ -122,6 +125,7 @@ export async function PATCH(
           endDate: holdData.endDate,
           notes: holdData.notes,
           ...(holdData.status ? { status: holdData.status } : {}),
+          archivedAt: holdData.status === "ARCHIVED" ? new Date() : null,
         },
       })
       return { capacityError: null, hold }

@@ -1,7 +1,7 @@
 import { parseDateKey, parseScheduleDays, parseTimeLabel, scheduleOfferings } from "@/lib/class-schedule"
 import { cleanString, safeHeaderValue } from "@/lib/server-security"
 
-export const classHoldStatuses = ["ACTIVE", "PAUSED", "CANCELLED"] as const
+export const classHoldStatuses = ["ACTIVE", "PAUSED", "CANCELLED", "ARCHIVED"] as const
 
 export interface ValidatedClassHold {
   studentName: string
