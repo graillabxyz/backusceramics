@@ -31,6 +31,7 @@ import { cn } from "@/lib/utils"
 import {
   ArrowLeft,
   CheckCircle2,
+  Crown,
   Eye,
   ImagePlus,
   Loader2,
@@ -39,8 +40,8 @@ import {
   Plus,
   Search,
   ShoppingBag,
-  Store,
   Trash2,
+  Upload,
 } from "lucide-react"
 import Link from "next/link"
 import { prepareImageForUpload } from "@/lib/client-image-upload"
@@ -284,39 +285,86 @@ export default function AdminProductsPage() {
     })
   }
 
-  const handleUpload = async (event: ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0]
-    if (!file) return
+  const uploadProductImage = async (file: File) => {
+    const uploadForm = new FormData()
+    uploadForm.append("file", await prepareImageForUpload(file))
+    const res = await fetch("/api/upload", { method: "POST", body: uploadForm })
+    const data = await res.json().catch(() => ({}))
+    if (!res.ok || !data.url) {
+      console.error("Product image upload failed details", { status: res.status, response: data })
+      throw new Error(data.error || "Upload failed")
+    }
+
+    return data as { url: string; size?: number; originalSize?: number }
+  }
+
+  const handleUpload = async (event: ChangeEvent<HTMLInputElement>, replaceIndex?: number) => {
+    const input = event.currentTarget
+    const selectedFiles = Array.from(input.files || [])
+    if (selectedFiles.length === 0) return
+
+    const availableSlots = typeof replaceIndex === "number" ? 1 : Math.max(8 - formImages.length, 0)
+    const files = selectedFiles.slice(0, availableSlots)
+    if (files.length === 0) {
+      setImageUploadError("A product can have up to 8 images. Remove one before uploading another.")
+      input.value = ""
+      return
+    }
 
     setUploading(true)
     setImageUploadNotice("")
     setImageUploadError("")
 
     try {
-      const uploadForm = new FormData()
-      uploadForm.append("file", await prepareImageForUpload(file))
-      const res = await fetch("/api/upload", { method: "POST", body: uploadForm })
-      const data = await res.json().catch(() => ({}))
-      if (!res.ok || !data.url) {
-        console.error("Product image upload failed details", { status: res.status, response: data })
-        throw new Error(data.error || "Upload failed")
-      }
+      const uploaded: Array<{ url: string; size?: number; originalSize?: number }> = []
+      for (const file of files) uploaded.push(await uploadProductImage(file))
 
       setFormData((current) => ({
         ...current,
-        imageUrls: [current.imageUrls, data.url].filter(Boolean).join("\n"),
+        imageUrls: (() => {
+          const currentImages = parseProductImageUrls(current.imageUrls)
+          if (typeof replaceIndex === "number" && currentImages[replaceIndex]) {
+            currentImages[replaceIndex] = uploaded[0].url
+            return currentImages.join("\n")
+          }
+          return Array.from(new Set([...currentImages, ...uploaded.map((image) => image.url)])).slice(0, 8).join("\n")
+        })(),
       }))
-      const savedPercent = data.originalSize > 0
-        ? Math.max(Math.round((1 - data.size / data.originalSize) * 100), 0)
-        : 0
-      setImageUploadNotice(`Image uploaded as WebP${savedPercent > 0 ? ` (${savedPercent}% smaller)` : ""} and previewed below.`)
+      setImageUploadNotice(
+        typeof replaceIndex === "number"
+          ? "Image replaced. Save the product to apply this change."
+          : `${uploaded.length} ${uploaded.length === 1 ? "image" : "images"} uploaded as WebP and added below.`
+      )
     } catch (uploadError) {
       console.error("Product image upload failed", uploadError)
       setImageUploadError("That image could not be uploaded. Try a smaller JPG, PNG, WebP, HEIC, or HEIF.")
     } finally {
       setUploading(false)
-      event.target.value = ""
+      input.value = ""
     }
+  }
+
+  const removeFormImage = (index: number) => {
+    setFormData((current) => ({
+      ...current,
+      imageUrls: parseProductImageUrls(current.imageUrls).filter((_, imageIndex) => imageIndex !== index).join("\n"),
+    }))
+    setImageUploadError("")
+    setImageUploadNotice("Image removed. Save the product to apply this change.")
+  }
+
+  const makePrimaryImage = (index: number) => {
+    setFormData((current) => {
+      const images = parseProductImageUrls(current.imageUrls)
+      const selected = images[index]
+      if (!selected) return current
+      return {
+        ...current,
+        imageUrls: [selected, ...images.filter((_, imageIndex) => imageIndex !== index)].join("\n"),
+      }
+    })
+    setImageUploadError("")
+    setImageUploadNotice("Primary image updated. Save the product to apply this change.")
   }
 
   const exitPosFullscreen = () => {
@@ -889,24 +937,26 @@ export default function AdminProductsPage() {
 
                 <div className="space-y-2">
                   <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-                    <Label htmlFor="imageUrls">Images</Label>
-                    <label className="inline-flex cursor-pointer items-center justify-center gap-2 rounded-md border border-border px-3 py-2 text-sm font-medium hover:bg-muted">
+                    <div>
+                      <Label>Images</Label>
+                      <p className="mt-1 text-xs text-muted-foreground">The primary image appears first in the shop and POS.</p>
+                    </div>
+                    <label className={cn(
+                      "inline-flex min-h-11 cursor-pointer items-center justify-center gap-2 rounded-md border border-border px-3 py-2 text-sm font-medium hover:bg-muted",
+                      (uploading || formImages.length >= 8) && "pointer-events-none opacity-50"
+                    )}>
                       {uploading ? <Loader2 className="h-4 w-4 animate-spin" /> : <ImagePlus className="h-4 w-4" />}
-                      Upload image
-                      <input type="file" accept="image/*,.heic,.heif,.avif" className="hidden" onChange={handleUpload} disabled={uploading} />
+                      {uploading ? "Uploading..." : formImages.length > 0 ? "Add images" : "Choose images"}
+                      <input
+                        type="file"
+                        accept="image/*,.heic,.heif,.avif"
+                        className="hidden"
+                        multiple
+                        onChange={handleUpload}
+                        disabled={uploading || formImages.length >= 8}
+                      />
                     </label>
                   </div>
-                  <Textarea
-                    id="imageUrls"
-                    value={formData.imageUrls}
-                    onChange={(event) => {
-                      handleFormChange("imageUrls", event.target.value)
-                      setImageUploadNotice("")
-                      setImageUploadError("")
-                    }}
-                    rows={3}
-                    placeholder="/uploads/cup.jpg or https://..."
-                  />
                   {imageUploadNotice && (
                     <p className="flex items-center gap-2 text-sm font-medium text-emerald-700 dark:text-emerald-400">
                       <CheckCircle2 className="h-4 w-4" />
@@ -919,20 +969,89 @@ export default function AdminProductsPage() {
                     </p>
                   )}
                   {formImages.length > 0 ? (
-                    <div className="grid grid-cols-3 gap-2 sm:grid-cols-5">
-                      {formImages.map((image) => (
-                        <div key={image} className="overflow-hidden rounded-md border border-border bg-muted">
-                          <img src={image} alt="" className="aspect-square w-full object-cover" />
+                    <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                      {formImages.map((image, index) => (
+                        <div key={`${image}-${index}`} className="overflow-hidden rounded-md border border-border bg-background">
+                          <div className="relative aspect-square bg-muted">
+                            <img src={image} alt={`${formData.name || "Product"} image ${index + 1}`} className="h-full w-full object-cover" />
+                            {index === 0 && (
+                              <Badge className="absolute left-2 top-2 bg-background/90 text-foreground shadow-sm hover:bg-background/90">
+                                Primary
+                              </Badge>
+                            )}
+                          </div>
+                          <div className="grid grid-cols-2 gap-2 p-2">
+                            {index > 0 ? (
+                              <Button
+                                type="button"
+                                variant="outline"
+                                size="sm"
+                                onClick={() => makePrimaryImage(index)}
+                                disabled={uploading}
+                              >
+                                <Crown className="h-4 w-4" />
+                                Make primary
+                              </Button>
+                            ) : (
+                              <div className="flex items-center px-2 text-xs font-medium text-muted-foreground">Main thumbnail</div>
+                            )}
+                            <label className={cn(
+                              "inline-flex min-h-9 cursor-pointer items-center justify-center gap-2 rounded-md border border-border px-3 text-sm font-medium hover:bg-muted",
+                              uploading && "pointer-events-none opacity-50"
+                            )}>
+                              <Upload className="h-4 w-4" />
+                              Replace
+                              <input
+                                type="file"
+                                accept="image/*,.heic,.heif,.avif"
+                                className="hidden"
+                                onChange={(event) => handleUpload(event, index)}
+                                disabled={uploading}
+                              />
+                            </label>
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              size="sm"
+                              className="col-span-2 text-destructive hover:text-destructive"
+                              onClick={() => removeFormImage(index)}
+                              disabled={uploading}
+                            >
+                              <Trash2 className="h-4 w-4" />
+                              Remove image
+                            </Button>
+                          </div>
                         </div>
                       ))}
                     </div>
                   ) : (
-                    <div className="flex items-center gap-2 rounded-md border border-dashed border-border px-3 py-4 text-sm text-muted-foreground">
-                      <Store className="h-4 w-4" />
-                      Image previews will appear here after upload or URL entry.
-                    </div>
+                    <label className="flex min-h-32 cursor-pointer flex-col items-center justify-center gap-2 rounded-md border border-dashed border-border px-4 py-6 text-center text-sm text-muted-foreground hover:bg-muted/40">
+                      <ImagePlus className="h-6 w-6" />
+                      <span className="font-medium text-foreground">Choose product images</span>
+                      <span>Select up to 8 photos. They are converted to WebP automatically.</span>
+                      <input type="file" accept="image/*,.heic,.heif,.avif" className="hidden" multiple onChange={handleUpload} disabled={uploading} />
+                    </label>
                   )}
-                  <p className="text-xs text-muted-foreground">Add one image URL per line. The first image is used as the main thumbnail.</p>
+                  <details className="rounded-md border border-border bg-background">
+                    <summary className="cursor-pointer px-3 py-2 text-sm font-medium text-muted-foreground hover:text-foreground">
+                      Add an image by URL
+                    </summary>
+                    <div className="space-y-2 border-t border-border p-3">
+                      <Label htmlFor="imageUrls">Image addresses</Label>
+                      <Textarea
+                        id="imageUrls"
+                        value={formData.imageUrls}
+                        onChange={(event) => {
+                          handleFormChange("imageUrls", event.target.value)
+                          setImageUploadNotice("")
+                          setImageUploadError("")
+                        }}
+                        rows={3}
+                        placeholder="https://example.com/cup.webp"
+                      />
+                      <p className="text-xs text-muted-foreground">One address per line. This is only needed for images already hosted elsewhere.</p>
+                    </div>
+                  </details>
                 </div>
               </div>
             </section>
