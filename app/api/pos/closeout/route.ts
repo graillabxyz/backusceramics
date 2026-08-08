@@ -3,11 +3,36 @@ import { auth } from "@/lib/auth"
 import { prisma } from "@/lib/prisma"
 import { canUsePos } from "@/lib/permissions"
 import { buildPosCloseoutReport, sendPosCloseoutReportEmail } from "@/lib/pos-closeout"
+import { calculatePosCashReconciliation, type PosCashExpense } from "@/lib/pos-cash-reconciliation"
 import { POS_PIN_LOCK_SECONDS } from "@/lib/pos-pin"
 import { cleanString, isRequestBodyTooLarge, safeHeaderValue } from "@/lib/server-security"
 import { getPosOperatorFromRequest, setPosOperatorCookie } from "@/lib/pos-operator-session"
 
 const MAX_POS_CLOSEOUT_BODY_BYTES = 32 * 1024
+const MAX_CASH_AMOUNT = 2_000_000_000
+const MAX_CASH_EXPENSES = 30
+
+function parseCashAmount(value: unknown, label: string) {
+  const amount = typeof value === "number" ? value : Number(value)
+  if (!Number.isSafeInteger(amount) || amount < 0 || amount > MAX_CASH_AMOUNT) {
+    throw new Error(`${label} must be a whole IDR amount between 0 and ${MAX_CASH_AMOUNT}.`)
+  }
+  return amount
+}
+
+function parseCashExpenses(value: unknown): PosCashExpense[] {
+  if (!Array.isArray(value)) return []
+  if (value.length > MAX_CASH_EXPENSES) throw new Error(`Add no more than ${MAX_CASH_EXPENSES} cash expenses.`)
+
+  return value.map((expense, index) => {
+    if (!expense || typeof expense !== "object") throw new Error(`Cash expense ${index + 1} is invalid.`)
+    const row = expense as Record<string, unknown>
+    const description = typeof row.description === "string" ? cleanString(row.description, 160) : ""
+    const amount = parseCashAmount(row.amount, `Cash expense ${index + 1}`)
+    if (!description && amount > 0) throw new Error(`Add a description for cash expense ${index + 1}.`)
+    return { description, amount }
+  }).filter((expense) => expense.description || expense.amount > 0)
+}
 
 export async function GET(req: NextRequest) {
   const session = await auth()
@@ -61,6 +86,20 @@ export async function POST(req: NextRequest) {
   const requestedEmail = typeof data.reportEmail === "string" ? safeHeaderValue(data.reportEmail, 254) : ""
   const reportEmail = requestedEmail || session.user.email || ""
   const closedById = posOperator.id
+  let cash
+  try {
+    cash = calculatePosCashReconciliation({
+      openingCash: parseCashAmount(data.openingCash ?? 0, "Opening cash"),
+      cashSales: report.paymentBreakdown.find((item) => item.key === "CASH")?.total || 0,
+      closingCash: parseCashAmount(data.closingCash ?? 0, "Closing cash"),
+      cashExpenseItems: parseCashExpenses(data.cashExpenseItems),
+    })
+  } catch (cashError) {
+    return NextResponse.json(
+      { error: cashError instanceof Error ? cashError.message : "Cash reconciliation is invalid." },
+      { status: 400 },
+    )
+  }
 
   const closeout = await prisma.posCloseout.upsert({
     where: { businessDate: report.businessDate },
@@ -80,6 +119,13 @@ export async function POST(req: NextRequest) {
       paymentBreakdown: JSON.stringify(report.paymentBreakdown),
       categoryBreakdown: JSON.stringify(report.categoryBreakdown),
       operatorBreakdown: JSON.stringify(report.operatorBreakdown),
+      openingCash: cash.openingCash,
+      cashSales: cash.cashSales,
+      cashExpenses: cash.cashExpenses,
+      cashExpenseItems: JSON.stringify(cash.cashExpenseItems),
+      expectedClosingCash: cash.expectedClosingCash,
+      closingCash: cash.closingCash,
+      cashVariance: cash.cashVariance,
       notes: notes || null,
     },
     update: {
@@ -98,6 +144,13 @@ export async function POST(req: NextRequest) {
       paymentBreakdown: JSON.stringify(report.paymentBreakdown),
       categoryBreakdown: JSON.stringify(report.categoryBreakdown),
       operatorBreakdown: JSON.stringify(report.operatorBreakdown),
+      openingCash: cash.openingCash,
+      cashSales: cash.cashSales,
+      cashExpenses: cash.cashExpenses,
+      cashExpenseItems: JSON.stringify(cash.cashExpenseItems),
+      expectedClosingCash: cash.expectedClosingCash,
+      closingCash: cash.closingCash,
+      cashVariance: cash.cashVariance,
       notes: notes || null,
     },
     include: {
@@ -111,9 +164,9 @@ export async function POST(req: NextRequest) {
     },
   })
 
-  const emailSent = data.emailReport ? await sendPosCloseoutReportEmail(report, reportEmail, notes) : false
+  const emailSent = data.emailReport ? await sendPosCloseoutReportEmail(report, cash, reportEmail, notes) : false
 
-  const response = NextResponse.json({ report, closeout, emailSent })
+  const response = NextResponse.json({ report, closeout, cash, emailSent })
   setPosOperatorCookie(response, posOperator.id, POS_PIN_LOCK_SECONDS)
   return response
 }

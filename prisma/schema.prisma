@@ -349,6 +349,13 @@ model PosCloseout {
   paymentBreakdown  String?
   categoryBreakdown String?
   operatorBreakdown String?
+  openingCash        Int @default(0)
+  cashSales          Int @default(0)
+  cashExpenses       Int @default(0)
+  cashExpenseItems   String @default("[]")
+  expectedClosingCash Int @default(0)
+  closingCash        Int @default(0)
+  cashVariance       Int @default(0)
   notes             String?
 
   createdAt DateTime @default(now())

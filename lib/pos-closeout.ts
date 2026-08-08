@@ -1,6 +1,7 @@
 import { Resend } from "resend"
 import { prisma } from "@/lib/prisma"
 import { formatPrice, getProductCategoryLabel } from "@/lib/pos-catalog"
+import type { PosCashReconciliation } from "@/lib/pos-cash-reconciliation"
 
 const BALI_UTC_OFFSET_MS = 8 * 60 * 60 * 1000
 
@@ -213,7 +214,11 @@ function breakdownRows(items: Breakdown[]) {
   `).join("")
 }
 
-function buildCloseoutHtml(report: PosCloseoutReport, notes?: string | null) {
+function buildCloseoutHtml(report: PosCloseoutReport, cash: PosCashReconciliation, notes?: string | null) {
+  const expenseRows = cash.cashExpenseItems.map((expense) => `
+    <tr><td style="padding:6px 0;color:#777;">${escapeHtml(expense.description)}</td><td style="padding:6px 0;text-align:right;">-${formatPrice(expense.amount)}</td></tr>
+  `).join("")
+
   return `
     <div style="font-family:Inter,Arial,sans-serif;max-width:720px;margin:0 auto;color:#1f1f1f;">
       <div style="padding:28px 0;border-bottom:1px solid #e8e1d8;">
@@ -240,6 +245,20 @@ function buildCloseoutHtml(report: PosCloseoutReport, notes?: string | null) {
         <table style="width:100%;border-collapse:collapse;">${breakdownRows(report.paymentBreakdown)}</table>
       </div>
       <div style="padding:8px 0 24px;">
+        <h2 style="margin:0 0 12px;font-size:18px;">Cash reconciliation</h2>
+        <table style="width:100%;border-collapse:collapse;">
+          <tbody>
+            <tr><td style="padding:6px 0;color:#777;">Opening register cash</td><td style="padding:6px 0;text-align:right;">${formatPrice(cash.openingCash)}</td></tr>
+            <tr><td style="padding:6px 0;color:#777;">Cash sales</td><td style="padding:6px 0;text-align:right;">${formatPrice(cash.cashSales)}</td></tr>
+            ${expenseRows}
+            <tr><td style="padding:6px 0;color:#777;">Cash expenses total</td><td style="padding:6px 0;text-align:right;">-${formatPrice(cash.cashExpenses)}</td></tr>
+            <tr><td style="padding:10px 0;font-weight:700;border-top:1px solid #eee;">Expected closing cash</td><td style="padding:10px 0;text-align:right;font-weight:700;border-top:1px solid #eee;">${formatPrice(cash.expectedClosingCash)}</td></tr>
+            <tr><td style="padding:6px 0;color:#777;">Counted closing cash</td><td style="padding:6px 0;text-align:right;">${formatPrice(cash.closingCash)}</td></tr>
+            <tr><td style="padding:6px 0;font-weight:700;">Over / short</td><td style="padding:6px 0;text-align:right;font-weight:700;">${cash.cashVariance > 0 ? "+" : cash.cashVariance < 0 ? "-" : ""}${formatPrice(Math.abs(cash.cashVariance))}</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <div style="padding:8px 0 24px;">
         <h2 style="margin:0 0 12px;font-size:18px;">Categories</h2>
         <table style="width:100%;border-collapse:collapse;">${breakdownRows(report.categoryBreakdown)}</table>
       </div>
@@ -248,7 +267,7 @@ function buildCloseoutHtml(report: PosCloseoutReport, notes?: string | null) {
   `
 }
 
-export async function sendPosCloseoutReportEmail(report: PosCloseoutReport, toEmail: string, notes?: string | null) {
+export async function sendPosCloseoutReportEmail(report: PosCloseoutReport, cash: PosCashReconciliation, toEmail: string, notes?: string | null) {
   const email = toEmail.trim()
   if (!email) return false
 
@@ -263,7 +282,7 @@ export async function sendPosCloseoutReportEmail(report: PosCloseoutReport, toEm
     from: fromEmail,
     to: email,
     subject: `Backus Ceramics POS closeout ${report.businessDate}`,
-    html: buildCloseoutHtml(report, notes),
+    html: buildCloseoutHtml(report, cash, notes),
   })
 
   if (error) {

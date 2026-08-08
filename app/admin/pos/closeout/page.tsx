@@ -4,16 +4,19 @@ import { useEffect, useMemo, useRef, useState } from "react"
 import Link from "next/link"
 import {
   ArrowLeft,
+  Banknote,
   CalendarDays,
   CheckCircle2,
   Copy,
   Loader2,
   Mail,
   MessageCircle,
+  Plus,
   Printer,
   RefreshCw,
   Send,
   ShieldCheck,
+  Trash2,
 } from "lucide-react"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -23,6 +26,7 @@ import { Label } from "@/components/ui/label"
 import { Switch } from "@/components/ui/switch"
 import { Textarea } from "@/components/ui/textarea"
 import { formatPrice } from "@/lib/pos-catalog"
+import { calculatePosCashReconciliation, type PosCashExpense } from "@/lib/pos-cash-reconciliation"
 
 const BALI_UTC_OFFSET_MS = 8 * 60 * 60 * 1000
 const WHATSAPP_REPORT_NUMBER = "6282145890402"
@@ -88,7 +92,20 @@ interface CloseoutRecord {
   businessDate: string
   closedAt: string
   notes: string | null
+  openingCash: number
+  cashSales: number
+  cashExpenses: number
+  cashExpenseItems: string
+  expectedClosingCash: number
+  closingCash: number
+  cashVariance: number
   closedBy: CloseoutUser | null
+}
+
+interface CashExpenseDraft {
+  id: string
+  description: string
+  amount: string
 }
 
 function todayInBali() {
@@ -127,11 +144,18 @@ function detailedSaleLines(sales: CloseoutSale[]) {
   }).join("\n")
 }
 
-function reportText(report: CloseoutReport, notes: string) {
+function cashVarianceLabel(value: number) {
+  if (value > 0) return `+${formatPrice(value)}`
+  if (value < 0) return `-${formatPrice(Math.abs(value))}`
+  return formatPrice(0)
+}
+
+function reportText(report: CloseoutReport, cash: ReturnType<typeof calculatePosCashReconciliation>, notes: string) {
   const paymentLines = report.paymentBreakdown.map((item) => `- ${item.label}: ${formatPrice(item.total)} (${item.count} sales)`).join("\n")
   const categoryLines = report.categoryBreakdown.map((item) => `- ${item.label}: ${formatPrice(item.total)} (${item.quantity} items)`).join("\n")
   const operatorLines = report.operatorBreakdown.map((item) => `- ${item.label}: ${formatPrice(item.total)} (${item.count} sales)`).join("\n")
   const saleLines = detailedSaleLines(report.paidSales)
+  const cashExpenseLines = cash.cashExpenseItems.map((expense) => `- ${expense.description}: -${formatPrice(expense.amount)}`).join("\n")
 
   return [
     `Backus Ceramics POS closeout`,
@@ -150,6 +174,15 @@ function reportText(report: CloseoutReport, notes: string) {
     ``,
     `Payment methods`,
     paymentLines || "- None",
+    ``,
+    `Cash reconciliation`,
+    `- Opening register cash: ${formatPrice(cash.openingCash)}`,
+    `- Cash sales: ${formatPrice(cash.cashSales)}`,
+    cashExpenseLines,
+    `- Cash expenses total: -${formatPrice(cash.cashExpenses)}`,
+    `- Expected closing cash: ${formatPrice(cash.expectedClosingCash)}`,
+    `- Counted closing cash: ${formatPrice(cash.closingCash)}`,
+    `- Over / short: ${cashVarianceLabel(cash.cashVariance)}`,
     ``,
     `Categories`,
     categoryLines || "- None",
@@ -207,11 +240,26 @@ export default function PosCloseoutPage() {
   const [emailReport, setEmailReport] = useState(true)
   const [reportEmail, setReportEmail] = useState("")
   const [notes, setNotes] = useState("")
+  const [openingCash, setOpeningCash] = useState("0")
+  const [closingCash, setClosingCash] = useState("0")
+  const [cashExpenses, setCashExpenses] = useState<CashExpenseDraft[]>([])
   const [error, setError] = useState("")
   const [success, setSuccess] = useState("")
 
-  const canClose = Boolean(report && !closing)
-  const reportCopy = useMemo(() => report ? reportText(report, notes) : "", [report, notes])
+  const cashSales = report?.paymentBreakdown.find((item) => item.key === "CASH")?.total || 0
+  const parsedCashExpenses = useMemo<PosCashExpense[]>(() => cashExpenses.map((expense) => ({
+    description: expense.description.trim(),
+    amount: Math.max(0, Math.round(Number(expense.amount) || 0)),
+  })).filter((expense) => expense.description || expense.amount > 0), [cashExpenses])
+  const cashReconciliation = useMemo(() => calculatePosCashReconciliation({
+    openingCash: Math.max(0, Math.round(Number(openingCash) || 0)),
+    cashSales,
+    closingCash: Math.max(0, Math.round(Number(closingCash) || 0)),
+    cashExpenseItems: parsedCashExpenses,
+  }), [cashSales, closingCash, openingCash, parsedCashExpenses])
+  const hasInvalidExpense = cashExpenses.some((expense) => !expense.description.trim() && Number(expense.amount) > 0)
+  const canClose = Boolean(report && !closing && !hasInvalidExpense)
+  const reportCopy = useMemo(() => report ? reportText(report, cashReconciliation, notes) : "", [cashReconciliation, report, notes])
   const whatsappReportUrl = useMemo(() => {
     if (!reportCopy) return "#"
     return `https://wa.me/${WHATSAPP_REPORT_NUMBER}?text=${encodeURIComponent(reportCopy)}`
@@ -266,6 +314,18 @@ export default function PosCloseoutPage() {
       setReport(data.report)
       setCloseout(data.closeout)
       setNotes(data.closeout?.notes || "")
+      setOpeningCash(String(data.closeout?.openingCash || 0))
+      setClosingCash(String(data.closeout?.closingCash || 0))
+      try {
+        const savedExpenses = data.closeout?.cashExpenseItems ? JSON.parse(data.closeout.cashExpenseItems) : []
+        setCashExpenses(Array.isArray(savedExpenses) ? savedExpenses.map((expense: PosCashExpense, index: number) => ({
+          id: `${date}-${index}-${expense.description}`,
+          description: expense.description || "",
+          amount: String(expense.amount || 0),
+        })) : [])
+      } catch {
+        setCashExpenses([])
+      }
     } catch (loadError) {
       console.error("Could not load POS closeout", loadError)
       setError(loadError instanceof Error ? loadError.message : "Could not load closeout report.")
@@ -290,6 +350,9 @@ export default function PosCloseoutPage() {
           notes,
           emailReport,
           reportEmail,
+          openingCash: cashReconciliation.openingCash,
+          closingCash: cashReconciliation.closingCash,
+          cashExpenseItems: cashReconciliation.cashExpenseItems,
         }),
       })
       const data = await res.json().catch(() => ({}))
@@ -563,6 +626,124 @@ export default function PosCloseoutPage() {
                   <div className="mt-2 flex items-center justify-between text-xl font-bold text-foreground">
                     <span>Net collected</span>
                     <span>{formatPrice(report.netTotal)}</span>
+                  </div>
+                </div>
+
+                <div className="space-y-4 rounded-md border border-border p-4">
+                  <div>
+                    <h2 className="flex items-center gap-2 font-heading text-lg font-semibold text-foreground">
+                      <Banknote className="h-5 w-5" />
+                      Cash reconciliation
+                    </h2>
+                    <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
+                      Count the physical register cash. Cash sales are added automatically and expenses are deducted.
+                    </p>
+                  </div>
+
+                  <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-1 2xl:grid-cols-2">
+                    <div className="space-y-2">
+                      <Label htmlFor="openingCash">Cash at start of day</Label>
+                      <Input
+                        id="openingCash"
+                        type="number"
+                        inputMode="numeric"
+                        min={0}
+                        step={1000}
+                        value={openingCash}
+                        onChange={(event) => setOpeningCash(event.target.value)}
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="closingCash">Cash counted at end</Label>
+                      <Input
+                        id="closingCash"
+                        type="number"
+                        inputMode="numeric"
+                        min={0}
+                        step={1000}
+                        value={closingCash}
+                        onChange={(event) => setClosingCash(event.target.value)}
+                      />
+                    </div>
+                  </div>
+
+                  <div className="space-y-2">
+                    <div className="flex items-center justify-between gap-3">
+                      <Label>Cash expenses</Label>
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="outline"
+                        onClick={() => setCashExpenses((current) => [...current, {
+                          id: `${Date.now()}-${current.length}`,
+                          description: "",
+                          amount: "",
+                        }])}
+                      >
+                        <Plus className="mr-1 h-4 w-4" />
+                        Add expense
+                      </Button>
+                    </div>
+                    {cashExpenses.length === 0 ? (
+                      <p className="rounded-md bg-muted/35 px-3 py-2 text-xs text-muted-foreground">No cash expenses recorded.</p>
+                    ) : (
+                      <div className="space-y-2">
+                        {cashExpenses.map((expense) => (
+                          <div key={expense.id} className="grid grid-cols-[minmax(0,1fr)_120px_36px] gap-2">
+                            <Input
+                              aria-label="Cash expense description"
+                              value={expense.description}
+                              maxLength={160}
+                              placeholder="Expense description"
+                              onChange={(event) => setCashExpenses((current) => current.map((item) => (
+                                item.id === expense.id ? { ...item, description: event.target.value } : item
+                              )))}
+                            />
+                            <Input
+                              aria-label="Cash expense amount in IDR"
+                              type="number"
+                              inputMode="numeric"
+                              min={0}
+                              step={1000}
+                              value={expense.amount}
+                              placeholder="IDR"
+                              onChange={(event) => setCashExpenses((current) => current.map((item) => (
+                                item.id === expense.id ? { ...item, amount: event.target.value } : item
+                              )))}
+                            />
+                            <Button
+                              type="button"
+                              size="icon"
+                              variant="ghost"
+                              aria-label="Remove cash expense"
+                              onClick={() => setCashExpenses((current) => current.filter((item) => item.id !== expense.id))}
+                            >
+                              <Trash2 className="h-4 w-4" />
+                            </Button>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                    {hasInvalidExpense && <p className="text-xs text-destructive">Add a description for every cash expense.</p>}
+                  </div>
+
+                  <div className="space-y-1 border-t border-border pt-3 text-sm">
+                    <div className="flex items-center justify-between text-muted-foreground">
+                      <span>Cash sales</span>
+                      <span>{formatPrice(cashReconciliation.cashSales)}</span>
+                    </div>
+                    <div className="flex items-center justify-between text-muted-foreground">
+                      <span>Cash expenses</span>
+                      <span>-{formatPrice(cashReconciliation.cashExpenses)}</span>
+                    </div>
+                    <div className="flex items-center justify-between font-semibold text-foreground">
+                      <span>Expected closing cash</span>
+                      <span>{formatPrice(cashReconciliation.expectedClosingCash)}</span>
+                    </div>
+                    <div className={`flex items-center justify-between font-semibold ${cashReconciliation.cashVariance === 0 ? "text-green-700" : "text-destructive"}`}>
+                      <span>Over / short</span>
+                      <span>{cashVarianceLabel(cashReconciliation.cashVariance)}</span>
+                    </div>
                   </div>
                 </div>
 
