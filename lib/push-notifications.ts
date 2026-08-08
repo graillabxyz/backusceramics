@@ -1,6 +1,7 @@
 import webPush, { type PushSubscription as WebPushSubscription } from "web-push"
 import { prisma } from "@/lib/prisma"
 import { normalizeRole, type AppRole } from "@/lib/permissions"
+import { isWithinStoreHours } from "@/lib/store-hours"
 
 type PushPreferenceKey = "classBookingNotifications" | "salesNotifications" | "websiteVisitNotifications"
 
@@ -41,13 +42,13 @@ function configureWebPush() {
 
 function preferenceForNotificationType(type: string): PushPreferenceKey | null {
   if (type === "CLASS_BOOKED") return "classBookingNotifications"
-  if (type === "CUP_SOLD" || type === "POS_SALE_PAID") return "salesNotifications"
+  if (type === "CUP_SOLD" || type === "POS_SALE_PAID" || type === "WEBSITE_SALE_PAID") return "salesNotifications"
   if (type === "WEBSITE_VISIT") return "websiteVisitNotifications"
   return null
 }
 
 function rolesForNotificationType(type: string): AppRole[] {
-  if (type === "CLASS_BOOKED" || type === "CUP_SOLD" || type === "POS_SALE_PAID") {
+  if (type === "CLASS_BOOKED" || type === "CUP_SOLD" || type === "POS_SALE_PAID" || type === "WEBSITE_SALE_PAID") {
     return ["OWNER", "ADMIN", "MANAGER", "POS_OPERATOR"]
   }
 
@@ -94,6 +95,7 @@ export async function sendPushForAdminNotification(payload: PushPayload) {
       },
     },
     include: {
+      notificationPreference: true,
       pushSubscriptions: {
         where: { enabled: true },
         select: {
@@ -122,6 +124,15 @@ export async function sendPushForAdminNotification(payload: PushPayload) {
   await Promise.all(
     users
       .filter((user) => allowedRoles.includes(normalizeRole(user.role)))
+      .filter((user) => {
+        const preference = user.notificationPreference
+        if (!preference) return false
+        return preference.afterHoursPushEnabled || isWithinStoreHours(
+          new Date(),
+          preference.openingTimeMinutes,
+          preference.closingTimeMinutes
+        )
+      })
       .flatMap((user) => user.pushSubscriptions)
       .map(async (subscription) => {
         try {

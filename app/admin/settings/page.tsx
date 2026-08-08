@@ -1,16 +1,17 @@
 "use client"
 
-import { useState } from "react"
+import { useEffect, useState } from "react"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
-import { Switch } from "@/components/ui/switch"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Save, Globe, Mail, Instagram, MapPin } from "lucide-react"
+import { PushNotificationSettings } from "@/components/push-notification-settings"
 
 export default function AdminSettingsPage() {
+  const [activeTab, setActiveTab] = useState("general")
   const [generalSettings, setGeneralSettings] = useState({
     siteName: "Backus Ceramics",
     tagline: "Bali Pottery Studio & Residency",
@@ -38,6 +39,13 @@ export default function AdminSettingsPage() {
 
   const [saved, setSaved] = useState(false)
 
+  useEffect(() => {
+    const requestedTab = new URLSearchParams(window.location.search).get("tab")
+    if (requestedTab === "notifications" || requestedTab === "business" || requestedTab === "general") {
+      setActiveTab(requestedTab)
+    }
+  }, [])
+
   const handleSave = () => {
     // In production, this would save to database
     console.log("Settings saved:", { generalSettings, businessSettings, notificationSettings })
@@ -60,7 +68,7 @@ export default function AdminSettingsPage() {
         </Button>
       </div>
 
-      <Tabs defaultValue="general" className="space-y-6">
+      <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6">
         <TabsList>
           <TabsTrigger value="general">General</TabsTrigger>
           <TabsTrigger value="business">Business</TabsTrigger>
@@ -240,56 +248,7 @@ export default function AdminSettingsPage() {
         </TabsContent>
 
         <TabsContent value="notifications" className="space-y-6">
-          <Card>
-            <CardHeader>
-              <CardTitle className="font-heading font-bold">Email Notifications</CardTitle>
-              <CardDescription>
-                Configure when you receive email notifications
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-6">
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="font-medium text-foreground">Email Notifications</p>
-                  <p className="text-sm text-muted-foreground">Receive email notifications</p>
-                </div>
-                <Switch
-                  checked={notificationSettings.emailNotifications}
-                  onCheckedChange={(checked) => setNotificationSettings({ ...notificationSettings, emailNotifications: checked })}
-                />
-              </div>
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="font-medium text-foreground">New Inquiry Alerts</p>
-                  <p className="text-sm text-muted-foreground">Get notified when someone submits an inquiry</p>
-                </div>
-                <Switch
-                  checked={notificationSettings.newInquiryAlert}
-                  onCheckedChange={(checked) => setNotificationSettings({ ...notificationSettings, newInquiryAlert: checked })}
-                />
-              </div>
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="font-medium text-foreground">Low Stock Alerts</p>
-                  <p className="text-sm text-muted-foreground">Get notified when products are running low</p>
-                </div>
-                <Switch
-                  checked={notificationSettings.lowStockAlert}
-                  onCheckedChange={(checked) => setNotificationSettings({ ...notificationSettings, lowStockAlert: checked })}
-                />
-              </div>
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="font-medium text-foreground">Weekly Reports</p>
-                  <p className="text-sm text-muted-foreground">Receive a weekly summary of activity</p>
-                </div>
-                <Switch
-                  checked={notificationSettings.weeklyReport}
-                  onCheckedChange={(checked) => setNotificationSettings({ ...notificationSettings, weeklyReport: checked })}
-                />
-              </div>
-            </CardContent>
-          </Card>
+          <PushNotificationSettings />
         </TabsContent>
       </Tabs>
     </div>

@@ -48,6 +48,7 @@ interface WebsiteSale {
   receiptEmail: string | null
   receiptSentAt: string | null
   fulfillmentMethod: string
+  fulfilledAt: string | null
   shippingCountry: string | null
   shippingPostalCode: string | null
   shippingCity: string | null
@@ -120,6 +121,7 @@ export default function WebsiteSalesPage() {
   const [loading, setLoading] = useState(true)
   const [refreshing, setRefreshing] = useState(false)
   const [error, setError] = useState("")
+  const [savingFulfillmentId, setSavingFulfillmentId] = useState("")
 
   const fetchSales = useCallback(async (manual = false) => {
     setError("")
@@ -164,6 +166,29 @@ export default function WebsiteSalesPage() {
       next.has(saleId) ? next.delete(saleId) : next.add(saleId)
       return next
     })
+  }
+
+  const setFulfilled = async (sale: WebsiteSale, fulfilled: boolean) => {
+    setSavingFulfillmentId(sale.id)
+    setError("")
+    try {
+      const response = await fetch("/api/admin/sales", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ saleId: sale.id, fulfilled }),
+      })
+      const payload = await response.json().catch(() => ({}))
+      if (!response.ok) throw new Error(payload.error || "Could not update fulfillment")
+      setData((current) => current ? {
+        ...current,
+        sales: current.sales.map((item) => item.id === sale.id ? { ...item, fulfilledAt: payload.sale.fulfilledAt } : item),
+      } : current)
+    } catch (fulfillmentError) {
+      console.error("Website sale fulfillment update failed", fulfillmentError)
+      setError(fulfillmentError instanceof Error ? fulfillmentError.message : "Could not update fulfillment.")
+    } finally {
+      setSavingFulfillmentId("")
+    }
   }
 
   if (loading) {
@@ -297,6 +322,9 @@ export default function WebsiteSalesPage() {
                   <div className="min-w-0">
                     <div className="flex flex-wrap items-center gap-2">
                       <Badge variant="outline" className={statusStyles[sale.status]}>{statusLabel(sale.status)}</Badge>
+                      {sale.status === "PAID" && (
+                        <Badge variant={sale.fulfilledAt ? "secondary" : "outline"}>{sale.fulfilledAt ? "Fulfilled" : "Needs fulfillment"}</Badge>
+                      )}
                       <span className="text-xs text-muted-foreground">{formatDateTime(sale.createdAt)}</span>
                     </div>
                     <p className="mt-2 truncate font-semibold text-foreground">
@@ -358,6 +386,19 @@ export default function WebsiteSalesPage() {
                         <p className="mt-2 text-xs text-muted-foreground">
                           Receipt {sale.receiptSentAt ? `sent ${formatDateTime(sale.receiptSentAt)}` : "not sent yet"}
                         </p>
+                        {sale.status === "PAID" && (
+                          <Button
+                            type="button"
+                            variant={sale.fulfilledAt ? "outline" : "default"}
+                            size="sm"
+                            className="mt-3 w-full"
+                            disabled={savingFulfillmentId === sale.id}
+                            onClick={() => void setFulfilled(sale, !sale.fulfilledAt)}
+                          >
+                            {savingFulfillmentId === sale.id && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                            {sale.fulfilledAt ? "Mark as not fulfilled" : "Mark fulfilled"}
+                          </Button>
+                        )}
                       </dl>
                     </div>
                   </div>

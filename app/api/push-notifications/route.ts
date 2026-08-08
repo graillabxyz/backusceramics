@@ -12,6 +12,12 @@ type PreferencePatch = {
   classBookingNotifications?: unknown
   salesNotifications?: unknown
   websiteVisitNotifications?: unknown
+  morningBriefingEnabled?: unknown
+  morningBriefingSoundEnabled?: unknown
+  liveAlertSoundEnabled?: unknown
+  afterHoursPushEnabled?: unknown
+  openingTimeMinutes?: unknown
+  closingTimeMinutes?: unknown
 }
 
 function booleanPatch(data: PreferencePatch) {
@@ -21,8 +27,22 @@ function booleanPatch(data: PreferencePatch) {
     "classBookingNotifications",
     "salesNotifications",
     "websiteVisitNotifications",
+    "morningBriefingEnabled",
+    "morningBriefingSoundEnabled",
+    "liveAlertSoundEnabled",
+    "afterHoursPushEnabled",
   ] as const) {
     if (typeof data[key] === "boolean") update[key] = data[key]
+  }
+  return update
+}
+
+function timePatch(data: PreferencePatch) {
+  const update: Record<string, number> = {}
+  for (const key of ["openingTimeMinutes", "closingTimeMinutes"] as const) {
+    if (typeof data[key] === "number" && Number.isInteger(data[key]) && data[key] >= 0 && data[key] < 1440) {
+      update[key] = data[key]
+    }
   }
   return update
 }
@@ -82,19 +102,28 @@ export async function PATCH(req: NextRequest) {
   }
 
   const data = await req.json().catch(() => ({}))
-  const update = booleanPatch(data)
+  const update = { ...booleanPatch(data), ...timePatch(data) }
+
+  const opening = update.openingTimeMinutes
+  const closing = update.closingTimeMinutes
+  if (typeof opening === "number" && typeof closing === "number" && opening >= closing) {
+    return NextResponse.json({ error: "Opening time must be before closing time" }, { status: 400 })
+  }
 
   if (Object.keys(update).length === 0) {
     return NextResponse.json({ error: "No notification settings supplied" }, { status: 400 })
   }
 
-  const preference = await prisma.userNotificationPreference.upsert({
+  const existing = await getOrCreatePreference(user.id)
+  const nextOpening = typeof opening === "number" ? opening : existing.openingTimeMinutes
+  const nextClosing = typeof closing === "number" ? closing : existing.closingTimeMinutes
+  if (nextOpening >= nextClosing) {
+    return NextResponse.json({ error: "Opening time must be before closing time" }, { status: 400 })
+  }
+
+  const preference = await prisma.userNotificationPreference.update({
     where: { userId: user.id },
-    update,
-    create: {
-      userId: user.id,
-      ...update,
-    },
+    data: update,
   })
 
   return NextResponse.json({ preference })

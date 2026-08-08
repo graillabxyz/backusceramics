@@ -34,7 +34,9 @@ import {
   POS_PRODUCT_STATUSES,
 } from "@/lib/pos-catalog"
 import { cn } from "@/lib/utils"
+import { PosMorningBriefing } from "@/components/pos-morning-briefing"
 import {
+  BellRing,
   CheckCircle2,
   ClipboardCheck,
   CreditCard,
@@ -53,6 +55,7 @@ import {
   ReceiptText,
   Search,
   Send,
+  Settings,
   ShoppingBag,
   ShoppingCart,
   Tag,
@@ -1289,6 +1292,16 @@ function PosWorkspace() {
                     Close out day
                   </Link>
                 </DropdownMenuItem>
+                <DropdownMenuItem onClick={() => window.dispatchEvent(new Event("backus-open-pos-briefing"))}>
+                  <BellRing className="mr-2 h-4 w-4" />
+                  Opening briefing
+                </DropdownMenuItem>
+                <DropdownMenuItem asChild>
+                  <Link href={`/admin/settings?tab=notifications${isFullscreen ? "&posFullscreen=1" : ""}`}>
+                    <Settings className="mr-2 h-4 w-4" />
+                    Notification settings
+                  </Link>
+                </DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenu>
           </div>
@@ -1300,6 +1313,8 @@ function PosWorkspace() {
           </div>
         )}
       </div>
+
+      <PosMorningBriefing enabled={posPinUnlocked && !checkingPosPinSession} />
 
       {error && (
         <div className="rounded-md border border-destructive/30 bg-destructive/10 px-4 py-3 text-sm text-destructive">

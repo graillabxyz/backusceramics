@@ -6,7 +6,8 @@ import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Switch } from "@/components/ui/switch"
-import { Bell, BellOff, Loader2 } from "lucide-react"
+import { Bell, BellOff, Clock3, Loader2, Volume2, VolumeX } from "lucide-react"
+import { formatMinutesAsTime } from "@/lib/store-hours"
 import { useAuth } from "@/lib/auth-context"
 
 type NotificationPreference = {
@@ -14,6 +15,12 @@ type NotificationPreference = {
   classBookingNotifications: boolean
   salesNotifications: boolean
   websiteVisitNotifications: boolean
+  morningBriefingEnabled: boolean
+  morningBriefingSoundEnabled: boolean
+  liveAlertSoundEnabled: boolean
+  afterHoursPushEnabled: boolean
+  openingTimeMinutes: number
+  closingTimeMinutes: number
 }
 
 type PushSettingsResponse = {
@@ -28,6 +35,21 @@ const defaultPreference: NotificationPreference = {
   classBookingNotifications: true,
   salesNotifications: true,
   websiteVisitNotifications: false,
+  morningBriefingEnabled: true,
+  morningBriefingSoundEnabled: true,
+  liveAlertSoundEnabled: true,
+  afterHoursPushEnabled: false,
+  openingTimeMinutes: 510,
+  closingTimeMinutes: 1020,
+}
+
+function minutesToInput(minutes: number) {
+  return `${String(Math.floor(minutes / 60)).padStart(2, "0")}:${String(minutes % 60).padStart(2, "0")}`
+}
+
+function inputToMinutes(value: string) {
+  const [hour, minute] = value.split(":").map(Number)
+  return hour * 60 + minute
 }
 
 function urlBase64ToUint8Array(base64String: string) {
@@ -301,7 +323,7 @@ export function PushNotificationSettings() {
           <div>
             <p className="font-medium text-foreground">Alert types</p>
             <p className="mt-1 text-sm text-muted-foreground">
-              Staff roles receive operational alerts. Customer accounts can keep these preferences ready if their role changes later.
+              Choose the operational events that should reach this account on enabled devices.
             </p>
           </div>
 
@@ -346,6 +368,81 @@ export function PushNotificationSettings() {
               aria-label="Website visit push notifications"
             />
           </div>
+        </div>
+
+        <div className="space-y-5 rounded-lg border p-4">
+          <div>
+            <p className="font-medium text-foreground">POS timing and sound</p>
+            <p className="mt-1 text-sm text-muted-foreground">
+              Bali store hours determine whether alerts arrive immediately or wait for the next POS briefing.
+            </p>
+          </div>
+
+          <div className="grid gap-4 sm:grid-cols-2">
+            <label className="space-y-2 text-sm font-medium text-foreground">
+              Opening time
+              <input
+                type="time"
+                value={minutesToInput(preference.openingTimeMinutes)}
+                onChange={(event) => savePreference({ openingTimeMinutes: inputToMinutes(event.target.value) })}
+                disabled={saving}
+                className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
+              />
+            </label>
+            <label className="space-y-2 text-sm font-medium text-foreground">
+              Closing time
+              <input
+                type="time"
+                value={minutesToInput(preference.closingTimeMinutes)}
+                onChange={(event) => savePreference({ closingTimeMinutes: inputToMinutes(event.target.value) })}
+                disabled={saving}
+                className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
+              />
+            </label>
+          </div>
+          <p className="flex items-center gap-2 text-xs text-muted-foreground">
+            <Clock3 className="h-3.5 w-3.5" />
+            Current window: {formatMinutesAsTime(preference.openingTimeMinutes)} to {formatMinutesAsTime(preference.closingTimeMinutes)}, Bali time.
+          </p>
+
+          {[
+            {
+              key: "morningBriefingEnabled" as const,
+              title: "Opening briefing",
+              description: "Show today's confirmed classes, overnight sales, and online orders when the POS opens.",
+            },
+            {
+              key: "morningBriefingSoundEnabled" as const,
+              title: "Opening briefing sound",
+              description: "Play a short chime when the briefing contains work for today.",
+            },
+            {
+              key: "liveAlertSoundEnabled" as const,
+              title: "Live in-app alert sound",
+              description: "Play a chime for new booking and sale alerts while the admin or POS is open.",
+            },
+            {
+              key: "afterHoursPushEnabled" as const,
+              title: "Immediate after-hours push",
+              description: "Send device push immediately while closed. Leave off to collect activity in the next opening briefing.",
+            },
+          ].map((item) => (
+            <div key={item.key} className="flex items-center justify-between gap-4">
+              <div>
+                <p className="flex items-center gap-2 font-medium text-foreground">
+                  {item.key.includes("Sound") ? (preference[item.key] ? <Volume2 className="h-4 w-4" /> : <VolumeX className="h-4 w-4" />) : null}
+                  {item.title}
+                </p>
+                <p className="text-sm text-muted-foreground">{item.description}</p>
+              </div>
+              <Switch
+                checked={preference[item.key]}
+                disabled={saving || (item.key === "morningBriefingSoundEnabled" && !preference.morningBriefingEnabled)}
+                onCheckedChange={(checked) => savePreference({ [item.key]: checked })}
+                aria-label={item.title}
+              />
+            </div>
+          ))}
         </div>
       </CardContent>
     </Card>

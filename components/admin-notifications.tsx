@@ -6,6 +6,7 @@ import Link from "next/link"
 import { Bell, CalendarCheck, MapPin, ShoppingBag, UserRound, X } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { cn } from "@/lib/utils"
+import { playNotificationChime } from "@/lib/client-notification-sound"
 
 interface AdminNotification {
   id: string
@@ -37,6 +38,7 @@ function place(notification: AdminNotification) {
 
 function notificationIcon(type: string) {
   if (type === "CUP_SOLD") return ShoppingBag
+  if (type === "WEBSITE_SALE_PAID" || type === "POS_SALE_PAID") return ShoppingBag
   if (type === "CLASS_BOOKED") return CalendarCheck
   if (type === "WEBSITE_VISIT") return MapPin
   return UserRound
@@ -56,6 +58,8 @@ export function AdminNotifications({ enabled }: { enabled: boolean }) {
   const [unreadCount, setUnreadCount] = useState(0)
   const triggerRef = useRef<HTMLDivElement | null>(null)
   const panelRef = useRef<HTMLDivElement | null>(null)
+  const knownIdsRef = useRef<Set<string> | null>(null)
+  const liveSoundEnabledRef = useRef(false)
 
   async function loadNotifications() {
     if (!enabled) return
@@ -63,7 +67,19 @@ export function AdminNotifications({ enabled }: { enabled: boolean }) {
       const res = await fetch("/api/admin/notifications")
       if (!res.ok) return
       const data = await res.json()
-      setNotifications(data.notifications || [])
+      const nextNotifications = (data.notifications || []) as AdminNotification[]
+      const knownIds = knownIdsRef.current
+      if (knownIds) {
+        const hasNewOperationalAlert = nextNotifications.some((notification) => (
+          !knownIds.has(notification.id) &&
+          ["CLASS_BOOKED", "CUP_SOLD", "POS_SALE_PAID", "WEBSITE_SALE_PAID"].includes(notification.type)
+        ))
+        if (hasNewOperationalAlert && liveSoundEnabledRef.current) {
+          void playNotificationChime()
+        }
+      }
+      knownIdsRef.current = new Set(nextNotifications.map((notification) => notification.id))
+      setNotifications(nextNotifications)
       setUnreadCount(data.unreadCount || 0)
     } catch {
       // Notification polling should never interrupt admin work.
@@ -73,6 +89,16 @@ export function AdminNotifications({ enabled }: { enabled: boolean }) {
   useEffect(() => {
     setMounted(true)
   }, [])
+
+  useEffect(() => {
+    if (!enabled) return
+    fetch("/api/push-notifications")
+      .then((response) => response.ok ? response.json() : null)
+      .then((data) => {
+        liveSoundEnabledRef.current = data?.preference?.liveAlertSoundEnabled === true
+      })
+      .catch(() => undefined)
+  }, [enabled])
 
   useEffect(() => {
     loadNotifications()

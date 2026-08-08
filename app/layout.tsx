@@ -6,6 +6,7 @@ import { AuthProvider } from "@/lib/auth-context"
 import { AuthModal } from "@/components/auth-modal"
 import { ThemeProvider } from "@/components/theme-provider"
 import { VisitTracker } from "@/components/visit-tracker"
+import { PwaRegistration } from "@/components/pwa-registration"
 import './globals.css'
 
 const montserrat = Montserrat({ 
@@ -76,6 +77,7 @@ export default function RootLayout({
           disableTransitionOnChange
         >
           <AuthProvider>
+            <PwaRegistration />
             <VisitTracker />
             {children}
             <AuthModal />

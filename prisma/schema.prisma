@@ -267,6 +267,7 @@ model PosSale {
   receiptEmail String?
   receiptSentAt DateTime?
   fulfillmentMethod String @default("PICKUP")
+  fulfilledAt DateTime?
   shippingCountry String?
   shippingPostalCode String?
   shippingCity String?
@@ -284,6 +285,7 @@ model PosSale {
   @@index([voidedById])
   @@index([createdAt])
   @@index([status])
+  @@index([fulfilledAt])
   @@index([paymentReference])
   @@index([paymentSessionId])
 }
@@ -387,6 +389,12 @@ model UserNotificationPreference {
   classBookingNotifications Boolean @default(true)
   salesNotifications        Boolean @default(true)
   websiteVisitNotifications Boolean @default(false)
+  morningBriefingEnabled    Boolean @default(true)
+  morningBriefingSoundEnabled Boolean @default(true)
+  liveAlertSoundEnabled     Boolean @default(true)
+  afterHoursPushEnabled     Boolean @default(false)
+  openingTimeMinutes        Int @default(510)
+  closingTimeMinutes        Int @default(1020)
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
