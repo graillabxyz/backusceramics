@@ -54,6 +54,7 @@ import {
   Plus,
   Percent,
   ReceiptText,
+  HandCoins,
   Search,
   Send,
   Settings,
@@ -1285,6 +1286,12 @@ function PosWorkspace() {
                   <Link href={`/admin/pos/sales${isFullscreen ? "?posFullscreen=1" : ""}`}>
                     <ReceiptText className="mr-2 h-4 w-4" />
                     Sales history
+                  </Link>
+                </DropdownMenuItem>
+                <DropdownMenuItem asChild>
+                  <Link href={`/admin/pos/suppliers${isFullscreen ? "?posFullscreen=1" : ""}`}>
+                    <HandCoins className="mr-2 h-4 w-4" />
+                    Supplier accounts
                   </Link>
                 </DropdownMenuItem>
                 <DropdownMenuItem asChild>

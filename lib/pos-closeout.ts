@@ -3,6 +3,7 @@ import { prisma } from "@/lib/prisma"
 import { formatPrice, getProductCategoryLabel } from "@/lib/pos-catalog"
 import type { PosCashReconciliation } from "@/lib/pos-cash-reconciliation"
 import { getBaliBusinessWeek, getBaliDateKey } from "@/lib/pos-week"
+import { buildSupplierLedgerReport, type SupplierBreakdown } from "@/lib/supplier-ledger"
 
 const BALI_UTC_OFFSET_MS = 8 * 60 * 60 * 1000
 
@@ -36,6 +37,14 @@ export interface PosCloseoutReport {
   paymentBreakdown: Breakdown[]
   categoryBreakdown: Breakdown[]
   operatorBreakdown: Breakdown[]
+  supplierBillCount: number
+  supplierBillsTotal: number
+  supplierPaymentCount: number
+  supplierPaymentsTotal: number
+  supplierCashPayments: number
+  supplierNetChange: number
+  supplierOutstanding: number
+  supplierBreakdown: SupplierBreakdown[]
   paidSales: SaleForCloseout[]
   voidedSales: SaleForCloseout[]
   pendingSales: SaleForCloseout[]
@@ -53,6 +62,7 @@ export interface PosWeeklyCashBreakdown {
   openingCash: number
   cashSales: number
   cashExpenses: number
+  supplierCashPayments: number
   expectedClosingCash: number
   closingCash: number
   cashVariance: number
@@ -166,7 +176,11 @@ async function loadCloseoutSales(rangeStart: Date, rangeEnd: Date) {
 }
 
 async function buildReportForRange(businessDate: string, rangeStart: Date, rangeEnd: Date): Promise<PosCloseoutReport> {
-  const sales = await loadCloseoutSales(rangeStart, rangeEnd)
+  const endDate = getBaliDateKey(new Date(rangeEnd.getTime() - 1))
+  const [sales, supplierReport] = await Promise.all([
+    loadCloseoutSales(rangeStart, rangeEnd),
+    buildSupplierLedgerReport(businessDate, endDate),
+  ])
   const createdToday = sales.filter((sale) => isInRange(sale.createdAt, rangeStart, rangeEnd))
   const paidSales = createdToday.filter((sale) => sale.status === "PAID")
   const pendingSales = createdToday.filter((sale) => sale.status === "PENDING_PAYMENT")
@@ -225,6 +239,14 @@ async function buildReportForRange(businessDate: string, rangeStart: Date, range
     paymentBreakdown: sortBreakdowns(Array.from(paymentMap.values())),
     categoryBreakdown: sortBreakdowns(Array.from(categoryMap.values())),
     operatorBreakdown: sortBreakdowns(Array.from(operatorMap.values())),
+    supplierBillCount: supplierReport.billCount,
+    supplierBillsTotal: supplierReport.billsTotal,
+    supplierPaymentCount: supplierReport.paymentCount,
+    supplierPaymentsTotal: supplierReport.paymentsTotal,
+    supplierCashPayments: supplierReport.entries.reduce((total, entry) => total + (entry.entryType === "PAYMENT" && entry.paymentMethod === "CASH" ? entry.amount : 0), 0),
+    supplierNetChange: supplierReport.netChange,
+    supplierOutstanding: supplierReport.outstanding,
+    supplierBreakdown: supplierReport.breakdown,
     paidSales,
     voidedSales,
     pendingSales,
@@ -267,6 +289,7 @@ export async function buildPosWeeklyCloseoutReport(anchorDate?: string | null): 
     openingCash: closeout.openingCash,
     cashSales: closeout.cashSales,
     cashExpenses: closeout.cashExpenses,
+    supplierCashPayments: closeout.supplierCashPayments,
     expectedClosingCash: closeout.expectedClosingCash,
     closingCash: closeout.closingCash,
     cashVariance: closeout.cashVariance,
@@ -291,6 +314,17 @@ function breakdownRows(items: Breakdown[]) {
       <td style="padding:8px 0;border-bottom:1px solid #eee;">${escapeHtml(item.label)}</td>
       <td style="padding:8px 0;border-bottom:1px solid #eee;text-align:right;">${item.count || item.quantity}</td>
       <td style="padding:8px 0;border-bottom:1px solid #eee;text-align:right;">${formatPrice(item.total)}</td>
+    </tr>
+  `).join("")
+}
+
+function supplierRows(items: SupplierBreakdown[]) {
+  return items.map((item) => `
+    <tr>
+      <td style="padding:8px 0;border-bottom:1px solid #eee;">${escapeHtml(item.supplierName)}</td>
+      <td style="padding:8px 0;border-bottom:1px solid #eee;text-align:right;">${formatPrice(item.billsTotal)}</td>
+      <td style="padding:8px 0;border-bottom:1px solid #eee;text-align:right;">-${formatPrice(item.paymentsTotal)}</td>
+      <td style="padding:8px 0;border-bottom:1px solid #eee;text-align:right;font-weight:600;">${formatPrice(item.netChange)}</td>
     </tr>
   `).join("")
 }
@@ -333,6 +367,7 @@ function buildCloseoutHtml(report: PosCloseoutReport, cash: PosCashReconciliatio
             <tr><td style="padding:6px 0;color:#777;">Cash sales</td><td style="padding:6px 0;text-align:right;">${formatPrice(cash.cashSales)}</td></tr>
             ${expenseRows}
             <tr><td style="padding:6px 0;color:#777;">Cash expenses total</td><td style="padding:6px 0;text-align:right;">-${formatPrice(cash.cashExpenses)}</td></tr>
+            <tr><td style="padding:6px 0;color:#777;">Cash supplier payments</td><td style="padding:6px 0;text-align:right;">-${formatPrice(cash.supplierCashPayments)}</td></tr>
             <tr><td style="padding:10px 0;font-weight:700;border-top:1px solid #eee;">Expected closing cash</td><td style="padding:10px 0;text-align:right;font-weight:700;border-top:1px solid #eee;">${formatPrice(cash.expectedClosingCash)}</td></tr>
             <tr><td style="padding:6px 0;color:#777;">Counted closing cash</td><td style="padding:6px 0;text-align:right;">${formatPrice(cash.closingCash)}</td></tr>
             <tr><td style="padding:6px 0;font-weight:700;">Over / short</td><td style="padding:6px 0;text-align:right;font-weight:700;">${cash.cashVariance > 0 ? "+" : cash.cashVariance < 0 ? "-" : ""}${formatPrice(Math.abs(cash.cashVariance))}</td></tr>
@@ -342,6 +377,17 @@ function buildCloseoutHtml(report: PosCloseoutReport, cash: PosCashReconciliatio
       <div style="padding:8px 0 24px;">
         <h2 style="margin:0 0 12px;font-size:18px;">Categories</h2>
         <table style="width:100%;border-collapse:collapse;">${breakdownRows(report.categoryBreakdown)}</table>
+      </div>
+      <div style="padding:8px 0 24px;">
+        <h2 style="margin:0 0 12px;font-size:18px;">Supplier accounts</h2>
+        <table style="width:100%;border-collapse:collapse;">
+          <tbody>
+            <tr><td style="padding:6px 0;color:#777;">Bills received</td><td style="padding:6px 0;text-align:right;">${report.supplierBillCount} / ${formatPrice(report.supplierBillsTotal)}</td></tr>
+            <tr><td style="padding:6px 0;color:#777;">Payments made</td><td style="padding:6px 0;text-align:right;">${report.supplierPaymentCount} / ${formatPrice(report.supplierPaymentsTotal)}</td></tr>
+            <tr><td style="padding:10px 0;font-weight:700;border-top:1px solid #eee;">Total supplier debt</td><td style="padding:10px 0;text-align:right;font-weight:700;border-top:1px solid #eee;">${formatPrice(report.supplierOutstanding)}</td></tr>
+          </tbody>
+        </table>
+        ${report.supplierBreakdown.length ? `<table style="width:100%;border-collapse:collapse;margin-top:12px;">${supplierRows(report.supplierBreakdown)}</table>` : ""}
       </div>
       ${notes ? `<div style="padding:16px 0;border-top:1px solid #e8e1d8;"><strong>Notes</strong><p style="white-space:pre-line;color:#555;">${escapeHtml(notes)}</p></div>` : ""}
     </div>
@@ -405,6 +451,11 @@ function buildWeeklyCloseoutHtml(report: PosWeeklyCloseoutReport, notes?: string
     <div style="padding:8px 0 24px;"><h2 style="font-size:18px;">Daily activity</h2><table style="width:100%;border-collapse:collapse;"><thead><tr><th style="text-align:left;">Date</th><th style="text-align:right;">Sales</th><th style="text-align:right;">Net</th><th style="text-align:right;">Cash variance</th></tr></thead><tbody>${dailyRows}</tbody></table></div>
     <div style="padding:8px 0 24px;"><h2 style="font-size:18px;">Payment methods</h2><table style="width:100%;border-collapse:collapse;">${breakdownRows(report.paymentBreakdown)}</table></div>
     <div style="padding:8px 0 24px;"><h2 style="font-size:18px;">Categories</h2><table style="width:100%;border-collapse:collapse;">${breakdownRows(report.categoryBreakdown)}</table></div>
+    <div style="padding:8px 0 24px;"><h2 style="font-size:18px;">Supplier accounts</h2><table style="width:100%;border-collapse:collapse;"><tbody>
+      <tr><td style="padding:6px 0;color:#777;">Bills received</td><td style="text-align:right;">${report.supplierBillCount} / ${formatPrice(report.supplierBillsTotal)}</td></tr>
+      <tr><td style="padding:6px 0;color:#777;">Payments made</td><td style="text-align:right;">${report.supplierPaymentCount} / ${formatPrice(report.supplierPaymentsTotal)}</td></tr>
+      <tr><td style="padding:10px 0;font-weight:700;border-top:1px solid #eee;">Total supplier debt</td><td style="padding:10px 0;text-align:right;font-weight:700;border-top:1px solid #eee;">${formatPrice(report.supplierOutstanding)}</td></tr>
+    </tbody></table>${report.supplierBreakdown.length ? `<table style="width:100%;border-collapse:collapse;margin-top:12px;">${supplierRows(report.supplierBreakdown)}</table>` : ""}</div>
     ${notes ? `<div style="padding:16px 0;border-top:1px solid #e8e1d8;"><strong>Notes</strong><p style="white-space:pre-line;color:#555;">${escapeHtml(notes)}</p></div>` : ""}
   </div>`
 }

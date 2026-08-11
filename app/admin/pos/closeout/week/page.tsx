@@ -17,13 +17,16 @@ const WHATSAPP_REPORT_NUMBER = "6282145890402"
 
 interface Breakdown { key: string; label: string; count: number; quantity: number; total: number }
 interface DailySales { businessDate: string; saleCount: number; itemCount: number; netTotal: number }
-interface DailyCash { businessDate: string; openingCash: number; cashSales: number; cashExpenses: number; expectedClosingCash: number; closingCash: number; cashVariance: number; closedAt: string }
+interface DailyCash { businessDate: string; openingCash: number; cashSales: number; cashExpenses: number; supplierCashPayments: number; expectedClosingCash: number; closingCash: number; cashVariance: number; closedAt: string }
 interface WeeklyReport {
   weekStart: string; weekEnd: string; weekCode: string; saleCount: number; itemCount: number
   grossSubtotal: number; discountTotal: number; taxTotal: number; netTotal: number
   voidedSaleCount: number; voidedTotal: number; pendingSaleCount: number; pendingTotal: number
   paymentBreakdown: Breakdown[]; categoryBreakdown: Breakdown[]; operatorBreakdown: Breakdown[]
   dailyBreakdown: DailySales[]; dailyCashBreakdown: DailyCash[]; missingDailyCloseouts: string[]
+  supplierBillCount: number; supplierBillsTotal: number; supplierPaymentCount: number; supplierPaymentsTotal: number
+  supplierNetChange: number; supplierOutstanding: number
+  supplierBreakdown: Array<{ supplierId: string; supplierName: string; billCount: number; billsTotal: number; paymentCount: number; paymentsTotal: number; netChange: number }>
 }
 interface CloseoutRecord { id: string; weekStart: string; weekEnd: string; closedAt: string; notes: string | null; closedBy: { name: string | null; email: string | null } | null }
 
@@ -72,6 +75,12 @@ function weeklyReportText(report: WeeklyReport, notes: string) {
     "",
     "Operators",
     breakdown(report.operatorBreakdown, "sales"),
+    "",
+    "Supplier accounts",
+    `- Bills received: ${report.supplierBillCount} / ${formatPrice(report.supplierBillsTotal)}`,
+    `- Payments made: ${report.supplierPaymentCount} / ${formatPrice(report.supplierPaymentsTotal)}`,
+    `- Total outstanding debt: ${formatPrice(report.supplierOutstanding)}`,
+    ...report.supplierBreakdown.map((item) => `- ${item.supplierName}: bills ${formatPrice(item.billsTotal)}, payments -${formatPrice(item.paymentsTotal)}, change ${formatPrice(item.netChange)}`),
     notes.trim() ? `\nNotes\n${notes.trim()}` : "",
   ].filter(Boolean).join("\n")
 }
@@ -150,6 +159,7 @@ export default function WeeklyPosCloseoutPage() {
       <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_400px]"><div className="space-y-4">
         <Card><CardHeader><CardTitle className="font-heading text-xl">Monday–Saturday Activity</CardTitle><CardDescription>Sales come directly from completed POS transactions. Cash figures come from each saved daily closeout.</CardDescription></CardHeader><CardContent className="space-y-2">{report.dailyBreakdown.map((day) => { const cash = cashByDate.get(day.businessDate); return <div key={day.businessDate} className="grid gap-2 rounded-md border border-border p-3 text-sm sm:grid-cols-[minmax(140px,1fr)_auto_auto_auto] sm:items-center"><div><p className="font-medium">{readableDate(day.businessDate)}</p><p className="text-xs text-muted-foreground">{day.saleCount} sales · {day.itemCount} items</p></div><p className="font-semibold sm:text-right">{formatPrice(day.netTotal)}</p><p className="text-xs text-muted-foreground sm:text-right">{cash ? `Cash counted ${formatPrice(cash.closingCash)}` : "Daily closeout missing"}</p><Badge variant="outline" className="w-fit">{cash ? `Variance ${signedPrice(cash.cashVariance)}` : "Not closed"}</Badge></div>})}</CardContent></Card>
         <div className="grid gap-4 lg:grid-cols-2"><BreakdownList title="Payment Methods" items={report.paymentBreakdown} unit="sales" /><BreakdownList title="Categories" items={report.categoryBreakdown} unit="items" /></div><BreakdownList title="Operators" items={report.operatorBreakdown} unit="sales" />
+        <Card><CardHeader className="flex flex-row items-start justify-between gap-3"><div><CardTitle className="font-heading text-xl">Supplier Accounts</CardTitle><CardDescription>Bills and partial payments recorded Monday through Saturday.</CardDescription></div><Button asChild size="sm" variant="outline"><Link href="/admin/pos/suppliers?posFullscreen=1">Open ledger</Link></Button></CardHeader><CardContent className="space-y-3"><div className="grid grid-cols-3 gap-2 text-sm"><div className="rounded-md bg-muted p-3"><p className="text-xs text-muted-foreground">Bills</p><p className="font-semibold">{formatPrice(report.supplierBillsTotal)}</p></div><div className="rounded-md bg-muted p-3"><p className="text-xs text-muted-foreground">Payments</p><p className="font-semibold">{formatPrice(report.supplierPaymentsTotal)}</p></div><div className="rounded-md bg-muted p-3"><p className="text-xs text-muted-foreground">Debt now</p><p className="font-semibold">{formatPrice(report.supplierOutstanding)}</p></div></div>{report.supplierBreakdown.length ? <div className="divide-y divide-border">{report.supplierBreakdown.map((supplier) => <div key={supplier.supplierId} className="grid grid-cols-[minmax(0,1fr)_auto] gap-3 py-2 text-sm"><div><p className="font-medium">{supplier.supplierName}</p><p className="text-xs text-muted-foreground">Bills {formatPrice(supplier.billsTotal)} · Payments {formatPrice(supplier.paymentsTotal)}</p></div><p className="font-semibold">{formatPrice(supplier.netChange)}</p></div>)}</div> : <p className="text-sm text-muted-foreground">No supplier activity this week.</p>}</CardContent></Card>
       </div><Card className="h-fit"><CardHeader><CardTitle className="flex items-center gap-2 font-heading text-xl"><ShieldCheck className="h-5 w-5" />Finalize Week</CardTitle><CardDescription>Save a permanent weekly snapshot and send the same detailed report used for daily closeout.</CardDescription></CardHeader><CardContent className="space-y-4">
         <div className="rounded-md bg-muted/45 p-4 text-sm"><div className="flex justify-between"><span>Gross subtotal</span><span>{formatPrice(report.grossSubtotal)}</span></div><div className="mt-1 flex justify-between"><span>Discounts</span><span>-{formatPrice(report.discountTotal)}</span></div><div className="mt-1 flex justify-between"><span>Tax</span><span>{formatPrice(report.taxTotal)}</span></div><div className="mt-3 flex justify-between border-t border-border pt-3 font-bold"><span>Net</span><span>{formatPrice(report.netTotal)}</span></div></div>
         <div className="space-y-2"><Label htmlFor="weeklyNotes">Weekly notes</Label><Textarea id="weeklyNotes" value={notes} onChange={(event) => setNotes(event.target.value)} placeholder="Staffing, discrepancies, stock, or follow-up notes" /></div>

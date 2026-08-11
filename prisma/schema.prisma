@@ -23,21 +23,24 @@ model User {
   posPinHash    String?
   posPinSetAt   DateTime?
 
-  accounts      Account[]
-  sessions      Session[]
-  orders        Order[]
-  classBookings ClassBooking[]
-  classHolds    ClassHold[]
-  classSchedules ClassSchedule[]
-  posProducts    PosProduct[] @relation("PosProductCreator")
-  posSales       PosSale[] @relation("PosSaleOperator")
-  voidedPosSales PosSale[] @relation("PosSaleVoider")
-  posCloseouts   PosCloseout[] @relation("PosCloseoutCloser")
-  posWeeklyCloseouts PosWeeklyCloseout[] @relation("PosWeeklyCloseoutCloser")
-  analyticsEvents AnalyticsEvent[]
-  residencyApps ResidencyApplication[]
-  notificationPreference UserNotificationPreference?
-  pushSubscriptions PushSubscription[]
+  accounts                    Account[]
+  sessions                    Session[]
+  orders                      Order[]
+  classBookings               ClassBooking[]
+  classHolds                  ClassHold[]
+  classSchedules              ClassSchedule[]
+  posProducts                 PosProduct[]                @relation("PosProductCreator")
+  posSales                    PosSale[]                   @relation("PosSaleOperator")
+  voidedPosSales              PosSale[]                   @relation("PosSaleVoider")
+  posCloseouts                PosCloseout[]               @relation("PosCloseoutCloser")
+  posWeeklyCloseouts          PosWeeklyCloseout[]         @relation("PosWeeklyCloseoutCloser")
+  createdSuppliers            Supplier[]                  @relation("SupplierCreator")
+  supplierLedgerEntries       SupplierLedgerEntry[]       @relation("SupplierLedgerCreator")
+  voidedSupplierLedgerEntries SupplierLedgerEntry[]       @relation("SupplierLedgerVoider")
+  analyticsEvents             AnalyticsEvent[]
+  residencyApps               ResidencyApplication[]
+  notificationPreference      UserNotificationPreference?
+  pushSubscriptions           PushSubscription[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -122,26 +125,26 @@ model OrderUpdate {
 }
 
 model ClassBooking {
-  id     String @id @default(cuid())
+  id     String  @id @default(cuid())
   userId String?
-  user   User?  @relation(fields: [userId], references: [id])
+  user   User?   @relation(fields: [userId], references: [id])
 
   workshopId String // References classes-data.ts workshop ID
-  scheduleId  String?
-  schedule    ClassSchedule? @relation(fields: [scheduleId], references: [id])
-  status     String @default("PENDING")
+  scheduleId String?
+  schedule   ClassSchedule? @relation(fields: [scheduleId], references: [id])
+  status     String         @default("PENDING")
   // Status values: PENDING, CONFIRMED, COMPLETED, CANCELLED
 
   // Booking details
-  preferredDate String?
-  participants  Int     @default(1)
-  notes         String?
+  preferredDate    String?
+  participants     Int       @default(1)
+  notes            String?
   paymentReference String?
   paymentSessionId String?
-  holdExpiresAt DateTime?
-  confirmedAt DateTime?
-  cancelledAt DateTime?
-  archivedAt DateTime?
+  holdExpiresAt    DateTime?
+  confirmedAt      DateTime?
+  cancelledAt      DateTime?
+  archivedAt       DateTime?
 
   // Contact snapshot
   contactName  String
@@ -158,14 +161,14 @@ model ClassBooking {
 }
 
 model ClassSchedule {
-  id        String @id @default(cuid())
+  id        String  @id @default(cuid())
   createdBy String?
-  creator   User?  @relation(fields: [createdBy], references: [id])
+  creator   User?   @relation(fields: [createdBy], references: [id])
 
   offeringId      String
   title           String
-  category        String @default("class")
-  status          String @default("ACTIVE")
+  category        String    @default("class")
+  status          String    @default("ACTIVE")
   // Status values: ACTIVE, PAUSED, CANCELLED
   timeLabel       String
   startDate       DateTime
@@ -184,20 +187,20 @@ model ClassSchedule {
 }
 
 model ClassHold {
-  id        String @id @default(cuid())
+  id        String  @id @default(cuid())
   createdBy String?
-  creator   User?  @relation(fields: [createdBy], references: [id])
+  creator   User?   @relation(fields: [createdBy], references: [id])
 
   studentName  String
   studentEmail String?
   workshopId   String
   timeLabel    String
-  seats        Int    @default(1)
+  seats        Int       @default(1)
   weekdays     String // JSON array of day indexes, 0 = Sunday
   startDate    DateTime
   endDate      DateTime?
   notes        String?
-  status       String @default("ACTIVE")
+  status       String    @default("ACTIVE")
   // Status values: ACTIVE, PAUSED, CANCELLED, ARCHIVED
   archivedAt   DateTime?
 
@@ -210,9 +213,9 @@ model ClassHold {
 }
 
 model PosProduct {
-  id        String @id @default(cuid())
+  id        String  @id @default(cuid())
   createdBy String?
-  creator   User?  @relation("PosProductCreator", fields: [createdBy], references: [id])
+  creator   User?   @relation("PosProductCreator", fields: [createdBy], references: [id])
 
   name        String
   slug        String  @unique
@@ -230,10 +233,10 @@ model PosProduct {
   quantity    Int     @default(1)
   status      String  @default("AVAILABLE")
   // Status values: AVAILABLE, SOLD, DRAFT, ARCHIVED
-  cafeOnly   Boolean @default(false)
+  cafeOnly    Boolean @default(false)
   showInShop  Boolean @default(false)
-  featured   Boolean @default(false)
-  sortOrder  Int     @default(0)
+  featured    Boolean @default(false)
+  sortOrder   Int     @default(0)
 
   saleItems PosSaleItem[]
 
@@ -248,35 +251,35 @@ model PosProduct {
 }
 
 model PosSale {
-  id         String @id @default(cuid())
+  id         String  @id @default(cuid())
   operatorId String?
-  operator  User?  @relation("PosSaleOperator", fields: [operatorId], references: [id])
+  operator   User?   @relation("PosSaleOperator", fields: [operatorId], references: [id])
   voidedById String?
-  voidedBy   User?  @relation("PosSaleVoider", fields: [voidedById], references: [id])
+  voidedBy   User?   @relation("PosSaleVoider", fields: [voidedById], references: [id])
 
-  subtotal      Int    @default(0)
-  discountTotal Int    @default(0)
-  taxTotal      Int    @default(0)
-  shippingAmount Int   @default(0)
-  total         Int
-  currency      String @default("IDR")
-  status        String @default("PAID")
+  subtotal           Int       @default(0)
+  discountTotal      Int       @default(0)
+  taxTotal           Int       @default(0)
+  shippingAmount     Int       @default(0)
+  total              Int
+  currency           String    @default("IDR")
+  status             String    @default("PAID")
   // Status values: PAID, PENDING_PAYMENT, CANCELLED, VOIDED
-  paymentMethod String @default("CARD_MACHINE")
-  paymentReference String?
-  paymentSessionId String?
-  receiptEmail String?
-  receiptSentAt DateTime?
-  fulfillmentMethod String @default("PICKUP")
-  fulfilledAt DateTime?
-  shippingCountry String?
+  paymentMethod      String    @default("CARD_MACHINE")
+  paymentReference   String?
+  paymentSessionId   String?
+  receiptEmail       String?
+  receiptSentAt      DateTime?
+  fulfillmentMethod  String    @default("PICKUP")
+  fulfilledAt        DateTime?
+  shippingCountry    String?
   shippingPostalCode String?
-  shippingCity String?
-  shippingAddress String?
-  shippingQuote String?
-  notes         String?
-  voidedAt      DateTime?
-  voidReason    String?
+  shippingCity       String?
+  shippingAddress    String?
+  shippingQuote      String?
+  notes              String?
+  voidedAt           DateTime?
+  voidReason         String?
 
   items PosSaleItem[]
 
@@ -292,9 +295,9 @@ model PosSale {
 }
 
 model PosSaleItem {
-  id        String @id @default(cuid())
+  id        String      @id @default(cuid())
   saleId    String
-  sale      PosSale @relation(fields: [saleId], references: [id], onDelete: Cascade)
+  sale      PosSale     @relation(fields: [saleId], references: [id], onDelete: Cascade)
   productId String?
   product   PosProduct? @relation(fields: [productId], references: [id])
 
@@ -303,10 +306,10 @@ model PosSaleItem {
   categorySnapshot String
   unitPrice        Int
   quantity         Int
-  subtotal         Int @default(0)
-  discountAmount   Int @default(0)
-  taxRate          Int @default(0)
-  taxAmount        Int @default(0)
+  subtotal         Int     @default(0)
+  discountAmount   Int     @default(0)
+  taxRate          Int     @default(0)
+  taxAmount        Int     @default(0)
   lineTotal        Int
 
   @@index([saleId])
@@ -330,50 +333,11 @@ model PaymentWebhookEvent {
 }
 
 model PosCloseout {
-  id           String @id @default(cuid())
-  businessDate String @unique
+  id           String   @id @default(cuid())
+  businessDate String   @unique
   closedAt     DateTime @default(now())
   closedById   String?
-  closedBy     User? @relation("PosCloseoutCloser", fields: [closedById], references: [id])
-
-  saleCount       Int @default(0)
-  itemCount       Int @default(0)
-  grossSubtotal   Int @default(0)
-  discountTotal   Int @default(0)
-  taxTotal        Int @default(0)
-  netTotal        Int @default(0)
-  voidedSaleCount Int @default(0)
-  voidedTotal     Int @default(0)
-  pendingSaleCount Int @default(0)
-  pendingTotal     Int @default(0)
-
-  paymentBreakdown  String?
-  categoryBreakdown String?
-  operatorBreakdown String?
-  openingCash        Int @default(0)
-  cashSales          Int @default(0)
-  cashExpenses       Int @default(0)
-  cashExpenseItems   String @default("[]")
-  expectedClosingCash Int @default(0)
-  closingCash        Int @default(0)
-  cashVariance       Int @default(0)
-  notes             String?
-
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  @@index([businessDate])
-  @@index([closedById])
-  @@index([closedAt])
-}
-
-model PosWeeklyCloseout {
-  id           String @id @default(cuid())
-  weekStart    String @unique
-  weekEnd      String
-  closedAt     DateTime @default(now())
-  closedById   String?
-  closedBy     User? @relation("PosWeeklyCloseoutCloser", fields: [closedById], references: [id])
+  closedBy     User?    @relation("PosCloseoutCloser", fields: [closedById], references: [id])
 
   saleCount        Int @default(0)
   itemCount        Int @default(0)
@@ -386,13 +350,63 @@ model PosWeeklyCloseout {
   pendingSaleCount Int @default(0)
   pendingTotal     Int @default(0)
 
-  paymentBreakdown     String?
-  categoryBreakdown    String?
-  operatorBreakdown    String?
-  dailyBreakdown       String @default("[]")
-  dailyCashBreakdown   String @default("[]")
-  missingDailyCloseouts String @default("[]")
-  notes                String?
+  paymentBreakdown      String?
+  categoryBreakdown     String?
+  operatorBreakdown     String?
+  openingCash           Int     @default(0)
+  cashSales             Int     @default(0)
+  cashExpenses          Int     @default(0)
+  cashExpenseItems      String  @default("[]")
+  expectedClosingCash   Int     @default(0)
+  closingCash           Int     @default(0)
+  cashVariance          Int     @default(0)
+  supplierBillsTotal    Int     @default(0)
+  supplierPaymentsTotal Int     @default(0)
+  supplierCashPayments  Int     @default(0)
+  supplierNetChange     Int     @default(0)
+  supplierOutstanding   Int     @default(0)
+  supplierBreakdown     String  @default("[]")
+  notes                 String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([businessDate])
+  @@index([closedById])
+  @@index([closedAt])
+}
+
+model PosWeeklyCloseout {
+  id         String   @id @default(cuid())
+  weekStart  String   @unique
+  weekEnd    String
+  closedAt   DateTime @default(now())
+  closedById String?
+  closedBy   User?    @relation("PosWeeklyCloseoutCloser", fields: [closedById], references: [id])
+
+  saleCount        Int @default(0)
+  itemCount        Int @default(0)
+  grossSubtotal    Int @default(0)
+  discountTotal    Int @default(0)
+  taxTotal         Int @default(0)
+  netTotal         Int @default(0)
+  voidedSaleCount  Int @default(0)
+  voidedTotal      Int @default(0)
+  pendingSaleCount Int @default(0)
+  pendingTotal     Int @default(0)
+
+  paymentBreakdown      String?
+  categoryBreakdown     String?
+  operatorBreakdown     String?
+  dailyBreakdown        String  @default("[]")
+  dailyCashBreakdown    String  @default("[]")
+  missingDailyCloseouts String  @default("[]")
+  supplierBillsTotal    Int     @default(0)
+  supplierPaymentsTotal Int     @default(0)
+  supplierNetChange     Int     @default(0)
+  supplierOutstanding   Int     @default(0)
+  supplierBreakdown     String  @default("[]")
+  notes                 String?
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -401,6 +415,50 @@ model PosWeeklyCloseout {
   @@index([weekEnd])
   @@index([closedById])
   @@index([closedAt])
+}
+
+model Supplier {
+  id             String                @id @default(cuid())
+  name           String
+  normalizedName String                @unique
+  active         Boolean               @default(true)
+  notes          String?
+  createdById    String?
+  createdBy      User?                 @relation("SupplierCreator", fields: [createdById], references: [id])
+  entries        SupplierLedgerEntry[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([active, name])
+  @@index([createdById])
+}
+
+model SupplierLedgerEntry {
+  id            String    @id @default(cuid())
+  supplierId    String
+  supplier      Supplier  @relation(fields: [supplierId], references: [id])
+  entryType     String
+  // Entry types: BILL, PAYMENT
+  amount        Int
+  businessDate  String
+  description   String?
+  imageUrls     String    @default("[]")
+  paymentMethod String?
+  reference     String?
+  createdById   String?
+  createdBy     User?     @relation("SupplierLedgerCreator", fields: [createdById], references: [id])
+  voidedAt      DateTime?
+  voidedById    String?
+  voidedBy      User?     @relation("SupplierLedgerVoider", fields: [voidedById], references: [id])
+  voidReason    String?
+
+  createdAt DateTime @default(now())
+
+  @@index([supplierId, businessDate])
+  @@index([businessDate, entryType])
+  @@index([createdById])
+  @@index([voidedAt])
 }
 
 model AdminNotification {
@@ -425,35 +483,35 @@ model AdminNotification {
 }
 
 model UserNotificationPreference {
-  id        String @id @default(cuid())
-  userId    String @unique
-  user      User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  id     String @id @default(cuid())
+  userId String @unique
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
 
-  browserPushEnabled       Boolean @default(false)
-  classBookingNotifications Boolean @default(true)
-  salesNotifications        Boolean @default(true)
-  websiteVisitNotifications Boolean @default(false)
-  morningBriefingEnabled    Boolean @default(true)
+  browserPushEnabled          Boolean @default(false)
+  classBookingNotifications   Boolean @default(true)
+  salesNotifications          Boolean @default(true)
+  websiteVisitNotifications   Boolean @default(false)
+  morningBriefingEnabled      Boolean @default(true)
   morningBriefingSoundEnabled Boolean @default(true)
-  liveAlertSoundEnabled     Boolean @default(true)
-  afterHoursPushEnabled     Boolean @default(false)
-  openingTimeMinutes        Int @default(510)
-  closingTimeMinutes        Int @default(1020)
+  liveAlertSoundEnabled       Boolean @default(true)
+  afterHoursPushEnabled       Boolean @default(false)
+  openingTimeMinutes          Int     @default(510)
+  closingTimeMinutes          Int     @default(1020)
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 }
 
 model PushSubscription {
-  id        String @id @default(cuid())
-  userId    String
-  user      User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  id     String @id @default(cuid())
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
 
-  endpoint String @unique
-  p256dh   String
-  auth     String
+  endpoint  String  @unique
+  p256dh    String
+  auth      String
   userAgent String?
-  enabled  Boolean @default(true)
+  enabled   Boolean @default(true)
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -463,7 +521,7 @@ model PushSubscription {
 }
 
 model AnalyticsEvent {
-  id        String @id @default(cuid())
+  id        String  @id @default(cuid())
   type      String
   path      String?
   referrer  String?
@@ -485,7 +543,7 @@ model AnalyticsEvent {
   source        String?
 
   value    Int?
-  currency String @default("IDR")
+  currency String  @default("IDR")
   metadata String?
 
   city      String?
@@ -508,9 +566,9 @@ model AnalyticsEvent {
 }
 
 model ResidencyApplication {
-  id     String @id @default(cuid())
+  id     String  @id @default(cuid())
   userId String?
-  user   User?  @relation(fields: [userId], references: [id])
+  user   User?   @relation(fields: [userId], references: [id])
 
   programId String // References classes-data.ts residency ID
   status    String @default("SUBMITTED")

@@ -93,6 +93,7 @@ export async function POST(req: NextRequest) {
       cashSales: report.paymentBreakdown.find((item) => item.key === "CASH")?.total || 0,
       closingCash: parseCashAmount(data.closingCash ?? 0, "Closing cash"),
       cashExpenseItems: parseCashExpenses(data.cashExpenseItems),
+      supplierCashPayments: report.supplierCashPayments,
     })
   } catch (cashError) {
     return NextResponse.json(
@@ -126,6 +127,12 @@ export async function POST(req: NextRequest) {
       expectedClosingCash: cash.expectedClosingCash,
       closingCash: cash.closingCash,
       cashVariance: cash.cashVariance,
+      supplierBillsTotal: report.supplierBillsTotal,
+      supplierPaymentsTotal: report.supplierPaymentsTotal,
+      supplierCashPayments: report.supplierCashPayments,
+      supplierNetChange: report.supplierNetChange,
+      supplierOutstanding: report.supplierOutstanding,
+      supplierBreakdown: JSON.stringify(report.supplierBreakdown),
       notes: notes || null,
     },
     update: {
@@ -151,6 +158,12 @@ export async function POST(req: NextRequest) {
       expectedClosingCash: cash.expectedClosingCash,
       closingCash: cash.closingCash,
       cashVariance: cash.cashVariance,
+      supplierBillsTotal: report.supplierBillsTotal,
+      supplierPaymentsTotal: report.supplierPaymentsTotal,
+      supplierCashPayments: report.supplierCashPayments,
+      supplierNetChange: report.supplierNetChange,
+      supplierOutstanding: report.supplierOutstanding,
+      supplierBreakdown: JSON.stringify(report.supplierBreakdown),
       notes: notes || null,
     },
     include: {

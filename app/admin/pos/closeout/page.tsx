@@ -76,6 +76,14 @@ interface CloseoutReport {
   paymentBreakdown: Breakdown[]
   categoryBreakdown: Breakdown[]
   operatorBreakdown: Breakdown[]
+  supplierBillCount: number
+  supplierBillsTotal: number
+  supplierPaymentCount: number
+  supplierPaymentsTotal: number
+  supplierCashPayments: number
+  supplierNetChange: number
+  supplierOutstanding: number
+  supplierBreakdown: Array<{ supplierId: string; supplierName: string; billCount: number; billsTotal: number; paymentCount: number; paymentsTotal: number; netChange: number }>
   paidSales: CloseoutSale[]
   voidedSales: CloseoutSale[]
   pendingSales: CloseoutSale[]
@@ -156,6 +164,7 @@ function reportText(report: CloseoutReport, cash: ReturnType<typeof calculatePos
   const operatorLines = report.operatorBreakdown.map((item) => `- ${item.label}: ${formatPrice(item.total)} (${item.count} sales)`).join("\n")
   const saleLines = detailedSaleLines(report.paidSales)
   const cashExpenseLines = cash.cashExpenseItems.map((expense) => `- ${expense.description}: -${formatPrice(expense.amount)}`).join("\n")
+  const supplierLines = report.supplierBreakdown.map((item) => `- ${item.supplierName}: bills ${formatPrice(item.billsTotal)}, payments -${formatPrice(item.paymentsTotal)}, change ${formatPrice(item.netChange)}`).join("\n")
 
   return [
     `Backus Ceramics POS closeout`,
@@ -180,12 +189,19 @@ function reportText(report: CloseoutReport, cash: ReturnType<typeof calculatePos
     `- Cash sales: ${formatPrice(cash.cashSales)}`,
     cashExpenseLines,
     `- Cash expenses total: -${formatPrice(cash.cashExpenses)}`,
+    `- Cash supplier payments: -${formatPrice(cash.supplierCashPayments)}`,
     `- Expected closing cash: ${formatPrice(cash.expectedClosingCash)}`,
     `- Counted closing cash: ${formatPrice(cash.closingCash)}`,
     `- Over / short: ${cashVarianceLabel(cash.cashVariance)}`,
     ``,
     `Categories`,
     categoryLines || "- None",
+    ``,
+    `Supplier accounts`,
+    `- Bills received: ${report.supplierBillCount} / ${formatPrice(report.supplierBillsTotal)}`,
+    `- Payments made: ${report.supplierPaymentCount} / ${formatPrice(report.supplierPaymentsTotal)}`,
+    `- Total outstanding debt: ${formatPrice(report.supplierOutstanding)}`,
+    supplierLines || "- No supplier activity",
     ``,
     `Operators`,
     operatorLines || "- None",
@@ -256,7 +272,8 @@ export default function PosCloseoutPage() {
     cashSales,
     closingCash: Math.max(0, Math.round(Number(closingCash) || 0)),
     cashExpenseItems: parsedCashExpenses,
-  }), [cashSales, closingCash, openingCash, parsedCashExpenses])
+    supplierCashPayments: report?.supplierCashPayments || 0,
+  }), [cashSales, closingCash, openingCash, parsedCashExpenses, report?.supplierCashPayments])
   const hasInvalidExpense = cashExpenses.some((expense) => !expense.description.trim() && Number(expense.amount) > 0)
   const canClose = Boolean(report && !closing && !hasInvalidExpense)
   const reportCopy = useMemo(() => report ? reportText(report, cashReconciliation, notes) : "", [cashReconciliation, report, notes])
@@ -537,6 +554,14 @@ export default function PosCloseoutPage() {
               <BreakdownTable title="Operators" items={report.operatorBreakdown} countLabel="sales" />
 
               <Card>
+                <CardHeader className="flex flex-row items-start justify-between gap-3"><div><CardTitle className="font-heading text-xl">Supplier Accounts</CardTitle><CardDescription>Bills and payments recorded on this business date.</CardDescription></div><Button asChild size="sm" variant="outline"><Link href="/admin/pos/suppliers?posFullscreen=1">Open ledger</Link></Button></CardHeader>
+                <CardContent className="space-y-3">
+                  <div className="grid grid-cols-3 gap-2 text-sm"><div className="rounded-md bg-muted p-3"><p className="text-xs text-muted-foreground">Bills</p><p className="font-semibold">{formatPrice(report.supplierBillsTotal)}</p></div><div className="rounded-md bg-muted p-3"><p className="text-xs text-muted-foreground">Payments</p><p className="font-semibold">{formatPrice(report.supplierPaymentsTotal)}</p></div><div className="rounded-md bg-muted p-3"><p className="text-xs text-muted-foreground">Debt now</p><p className="font-semibold">{formatPrice(report.supplierOutstanding)}</p></div></div>
+                  {report.supplierBreakdown.length ? <div className="divide-y divide-border">{report.supplierBreakdown.map((supplier) => <div key={supplier.supplierId} className="grid grid-cols-[minmax(0,1fr)_auto] gap-3 py-2 text-sm"><div><p className="font-medium">{supplier.supplierName}</p><p className="text-xs text-muted-foreground">Bills {formatPrice(supplier.billsTotal)} · Payments {formatPrice(supplier.paymentsTotal)}</p></div><p className="font-semibold">{formatPrice(supplier.netChange)}</p></div>)}</div> : <p className="text-sm text-muted-foreground">No supplier activity for this date.</p>}
+                </CardContent>
+              </Card>
+
+              <Card>
                 <CardHeader>
                   <CardTitle className="font-heading text-xl">Sales Included</CardTitle>
                   <CardDescription>Paid POS sales created on this business date.</CardDescription>
@@ -642,7 +667,7 @@ export default function PosCloseoutPage() {
                       Cash reconciliation
                     </h2>
                     <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
-                      Count the physical register cash. Cash sales are added automatically and expenses are deducted.
+                      Count the physical register cash. Cash sales are added automatically; expenses and cash supplier payments are deducted.
                     </p>
                   </div>
 
@@ -741,6 +766,10 @@ export default function PosCloseoutPage() {
                     <div className="flex items-center justify-between text-muted-foreground">
                       <span>Cash expenses</span>
                       <span>-{formatPrice(cashReconciliation.cashExpenses)}</span>
+                    </div>
+                    <div className="flex items-center justify-between text-muted-foreground">
+                      <span>Cash supplier payments</span>
+                      <span>-{formatPrice(report.supplierCashPayments)}</span>
                     </div>
                     <div className="flex items-center justify-between font-semibold text-foreground">
                       <span>Expected closing cash</span>

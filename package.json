@@ -9,7 +9,7 @@
     "dev": "next dev",
     "lint": "eslint . --quiet",
     "test": "npm run test:seats && npm run test:commerce && npm run test:notifications && npm run test:closeout",
-    "test:closeout": "tsx --test tests/pos-cash-reconciliation.test.ts tests/pos-week.test.ts",
+    "test:closeout": "tsx --test tests/pos-cash-reconciliation.test.ts tests/pos-week.test.ts tests/supplier-ledger.test.ts",
     "test:commerce": "tsx --test tests/commerce-payment.test.ts",
     "test:seats": "tsx --test tests/class-seat-accounting.test.ts",
     "test:notifications": "tsx --test tests/store-hours.test.ts",

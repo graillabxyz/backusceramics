@@ -18,7 +18,9 @@ async function loadBrowserImage(file: File) {
 }
 
 export async function prepareImageForUpload(file: File) {
-  if (!isHeicFile(file) || typeof document === "undefined") return file
+  if (typeof document === "undefined") return file
+  const shouldPrepare = isHeicFile(file) || file.size > 4 * 1024 * 1024
+  if (!shouldPrepare) return file
 
   const image = await loadBrowserImage(file)
   const longestSide = Math.max(image.naturalWidth, image.naturalHeight)
@@ -40,6 +42,6 @@ export async function prepareImageForUpload(file: File) {
     )
   })
 
-  const convertedName = file.name.replace(/\.(heic|heif)$/i, "") || "image"
+  const convertedName = file.name.replace(/\.[^.]+$/i, "") || "image"
   return new File([blob], `${convertedName}.jpg`, { type: "image/jpeg", lastModified: file.lastModified })
 }

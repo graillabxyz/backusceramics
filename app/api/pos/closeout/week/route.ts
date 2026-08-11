@@ -67,6 +67,11 @@ export async function POST(req: NextRequest) {
     dailyBreakdown: JSON.stringify(report.dailyBreakdown),
     dailyCashBreakdown: JSON.stringify(report.dailyCashBreakdown),
     missingDailyCloseouts: JSON.stringify(report.missingDailyCloseouts),
+    supplierBillsTotal: report.supplierBillsTotal,
+    supplierPaymentsTotal: report.supplierPaymentsTotal,
+    supplierNetChange: report.supplierNetChange,
+    supplierOutstanding: report.supplierOutstanding,
+    supplierBreakdown: JSON.stringify(report.supplierBreakdown),
     notes: notes || null,
   }
   const closeout = await prisma.posWeeklyCloseout.upsert({

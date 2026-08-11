@@ -8,6 +8,7 @@ import {
   BarChart3,
   CalendarDays,
   CircleDollarSign,
+  HandCoins,
   ClipboardList,
   Eye,
   GraduationCap,
@@ -44,7 +45,8 @@ const navSections = [
       { href: "/admin/bookings", label: "Class Bookings", shortLabel: "Classes", icon: GraduationCap, access: "admin" as NavAccess },
       { href: "/admin/applications", label: "Residency Apps", icon: CalendarDays, access: "admin" as NavAccess },
       { href: "/admin/sales", label: "Website Sales", icon: CircleDollarSign, access: "admin" as NavAccess },
-      { href: "/admin/pos", label: "Point of Sale", shortLabel: "POS", icon: Store, access: "pos" as NavAccess },
+      { href: "/admin/pos", label: "Point of Sale", shortLabel: "POS", icon: Store, exact: true, access: "pos" as NavAccess },
+      { href: "/admin/pos/suppliers", label: "Supplier Accounts", icon: HandCoins, access: "pos" as NavAccess },
     ],
   },
   {
