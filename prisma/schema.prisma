@@ -33,6 +33,7 @@ model User {
   posSales       PosSale[] @relation("PosSaleOperator")
   voidedPosSales PosSale[] @relation("PosSaleVoider")
   posCloseouts   PosCloseout[] @relation("PosCloseoutCloser")
+  posWeeklyCloseouts PosWeeklyCloseout[] @relation("PosWeeklyCloseoutCloser")
   analyticsEvents AnalyticsEvent[]
   residencyApps ResidencyApplication[]
   notificationPreference UserNotificationPreference?
@@ -362,6 +363,42 @@ model PosCloseout {
   updatedAt DateTime @updatedAt
 
   @@index([businessDate])
+  @@index([closedById])
+  @@index([closedAt])
+}
+
+model PosWeeklyCloseout {
+  id           String @id @default(cuid())
+  weekStart    String @unique
+  weekEnd      String
+  closedAt     DateTime @default(now())
+  closedById   String?
+  closedBy     User? @relation("PosWeeklyCloseoutCloser", fields: [closedById], references: [id])
+
+  saleCount        Int @default(0)
+  itemCount        Int @default(0)
+  grossSubtotal    Int @default(0)
+  discountTotal    Int @default(0)
+  taxTotal         Int @default(0)
+  netTotal         Int @default(0)
+  voidedSaleCount  Int @default(0)
+  voidedTotal      Int @default(0)
+  pendingSaleCount Int @default(0)
+  pendingTotal     Int @default(0)
+
+  paymentBreakdown     String?
+  categoryBreakdown    String?
+  operatorBreakdown    String?
+  dailyBreakdown       String @default("[]")
+  dailyCashBreakdown   String @default("[]")
+  missingDailyCloseouts String @default("[]")
+  notes                String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([weekStart])
+  @@index([weekEnd])
   @@index([closedById])
   @@index([closedAt])
 }

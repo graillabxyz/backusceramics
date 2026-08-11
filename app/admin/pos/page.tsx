@@ -37,6 +37,7 @@ import { cn } from "@/lib/utils"
 import { PosMorningBriefing } from "@/components/pos-morning-briefing"
 import {
   BellRing,
+  CalendarDays,
   CheckCircle2,
   ClipboardCheck,
   CreditCard,
@@ -1290,6 +1291,12 @@ function PosWorkspace() {
                   <Link href={`/admin/pos/closeout${isFullscreen ? "?posFullscreen=1" : ""}`}>
                     <ClipboardCheck className="mr-2 h-4 w-4" />
                     Close out day
+                  </Link>
+                </DropdownMenuItem>
+                <DropdownMenuItem asChild>
+                  <Link href={`/admin/pos/closeout/week${isFullscreen ? "?posFullscreen=1" : ""}`}>
+                    <CalendarDays className="mr-2 h-4 w-4" />
+                    Close out week
                   </Link>
                 </DropdownMenuItem>
                 <DropdownMenuItem onClick={() => window.dispatchEvent(new Event("backus-open-pos-briefing"))}>

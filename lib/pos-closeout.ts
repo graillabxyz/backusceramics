@@ -2,6 +2,7 @@ import { Resend } from "resend"
 import { prisma } from "@/lib/prisma"
 import { formatPrice, getProductCategoryLabel } from "@/lib/pos-catalog"
 import type { PosCashReconciliation } from "@/lib/pos-cash-reconciliation"
+import { getBaliBusinessWeek, getBaliDateKey } from "@/lib/pos-week"
 
 const BALI_UTC_OFFSET_MS = 8 * 60 * 60 * 1000
 
@@ -38,6 +39,33 @@ export interface PosCloseoutReport {
   paidSales: SaleForCloseout[]
   voidedSales: SaleForCloseout[]
   pendingSales: SaleForCloseout[]
+}
+
+export interface PosWeeklyDailyBreakdown {
+  businessDate: string
+  saleCount: number
+  itemCount: number
+  netTotal: number
+}
+
+export interface PosWeeklyCashBreakdown {
+  businessDate: string
+  openingCash: number
+  cashSales: number
+  cashExpenses: number
+  expectedClosingCash: number
+  closingCash: number
+  cashVariance: number
+  closedAt: string
+}
+
+export interface PosWeeklyCloseoutReport extends PosCloseoutReport {
+  weekStart: string
+  weekEnd: string
+  weekCode: string
+  dailyBreakdown: PosWeeklyDailyBreakdown[]
+  dailyCashBreakdown: PosWeeklyCashBreakdown[]
+  missingDailyCloseouts: string[]
 }
 
 function getResendClient() {
@@ -137,8 +165,7 @@ async function loadCloseoutSales(rangeStart: Date, rangeEnd: Date) {
   })
 }
 
-export async function buildPosCloseoutReport(dateKey?: string | null): Promise<PosCloseoutReport> {
-  const { businessDate, rangeStart, rangeEnd } = getBaliBusinessDateRange(dateKey)
+async function buildReportForRange(businessDate: string, rangeStart: Date, rangeEnd: Date): Promise<PosCloseoutReport> {
   const sales = await loadCloseoutSales(rangeStart, rangeEnd)
   const createdToday = sales.filter((sale) => isInRange(sale.createdAt, rangeStart, rangeEnd))
   const paidSales = createdToday.filter((sale) => sale.status === "PAID")
@@ -201,6 +228,60 @@ export async function buildPosCloseoutReport(dateKey?: string | null): Promise<P
     paidSales,
     voidedSales,
     pendingSales,
+  }
+}
+
+export async function buildPosCloseoutReport(dateKey?: string | null): Promise<PosCloseoutReport> {
+  const { businessDate, rangeStart, rangeEnd } = getBaliBusinessDateRange(dateKey)
+  return buildReportForRange(businessDate, rangeStart, rangeEnd)
+}
+
+export async function buildPosWeeklyCloseoutReport(anchorDate?: string | null): Promise<PosWeeklyCloseoutReport> {
+  const week = getBaliBusinessWeek(anchorDate)
+  const [report, dailyCloseouts] = await Promise.all([
+    buildReportForRange(week.weekStart, week.rangeStart, week.rangeEnd),
+    prisma.posCloseout.findMany({
+      where: { businessDate: { gte: week.weekStart, lte: week.weekEnd } },
+      orderBy: { businessDate: "asc" },
+    }),
+  ])
+
+  const dailyMap = new Map<string, PosWeeklyDailyBreakdown>(week.dates.map((businessDate) => [businessDate, {
+    businessDate,
+    saleCount: 0,
+    itemCount: 0,
+    netTotal: 0,
+  }]))
+
+  for (const sale of report.paidSales) {
+    const businessDate = getBaliDateKey(sale.createdAt)
+    const day = dailyMap.get(businessDate)
+    if (!day) continue
+    day.saleCount += 1
+    day.itemCount += sum(sale.items.map((item) => item.quantity))
+    day.netTotal += sale.total
+  }
+
+  const dailyCashBreakdown = dailyCloseouts.map((closeout) => ({
+    businessDate: closeout.businessDate,
+    openingCash: closeout.openingCash,
+    cashSales: closeout.cashSales,
+    cashExpenses: closeout.cashExpenses,
+    expectedClosingCash: closeout.expectedClosingCash,
+    closingCash: closeout.closingCash,
+    cashVariance: closeout.cashVariance,
+    closedAt: closeout.closedAt.toISOString(),
+  }))
+  const closedDates = new Set(dailyCloseouts.map((closeout) => closeout.businessDate))
+
+  return {
+    ...report,
+    weekStart: week.weekStart,
+    weekEnd: week.weekEnd,
+    weekCode: week.weekCode,
+    dailyBreakdown: Array.from(dailyMap.values()),
+    dailyCashBreakdown,
+    missingDailyCloseouts: week.dates.filter((date) => !closedDates.has(date)),
   }
 }
 
@@ -290,5 +371,62 @@ export async function sendPosCloseoutReportEmail(report: PosCloseoutReport, cash
     return false
   }
 
+  return true
+}
+
+function buildWeeklyCloseoutHtml(report: PosWeeklyCloseoutReport, notes?: string | null) {
+  const cashByDate = new Map(report.dailyCashBreakdown.map((day) => [day.businessDate, day]))
+  const dailyRows = report.dailyBreakdown.map((day) => {
+    const cash = cashByDate.get(day.businessDate)
+    return `<tr>
+      <td style="padding:8px 0;border-bottom:1px solid #eee;">${escapeHtml(day.businessDate)}</td>
+      <td style="padding:8px 0;border-bottom:1px solid #eee;text-align:right;">${day.saleCount}</td>
+      <td style="padding:8px 0;border-bottom:1px solid #eee;text-align:right;">${formatPrice(day.netTotal)}</td>
+      <td style="padding:8px 0;border-bottom:1px solid #eee;text-align:right;">${cash ? formatPrice(cash.cashVariance) : "Not closed"}</td>
+    </tr>`
+  }).join("")
+
+  return `<div style="font-family:Inter,Arial,sans-serif;max-width:760px;margin:0 auto;color:#1f1f1f;">
+    <div style="padding:28px 0;border-bottom:1px solid #e8e1d8;">
+      <h1 style="margin:0;font-size:24px;">Backus Ceramics weekly POS closeout</h1>
+      <p style="margin:6px 0 0;color:#777;">Monday ${escapeHtml(report.weekStart)} through Saturday ${escapeHtml(report.weekEnd)}</p>
+    </div>
+    <div style="padding:24px 0;">
+      <h2 style="margin:0 0 12px;font-size:18px;">Weekly summary</h2>
+      <table style="width:100%;border-collapse:collapse;"><tbody>
+        <tr><td style="padding:6px 0;color:#777;">Paid sales</td><td style="text-align:right;">${report.saleCount}</td></tr>
+        <tr><td style="padding:6px 0;color:#777;">Items sold</td><td style="text-align:right;">${report.itemCount}</td></tr>
+        <tr><td style="padding:6px 0;color:#777;">Discounts</td><td style="text-align:right;">-${formatPrice(report.discountTotal)}</td></tr>
+        <tr><td style="padding:6px 0;color:#777;">Tax</td><td style="text-align:right;">${formatPrice(report.taxTotal)}</td></tr>
+        <tr><td style="padding:10px 0;font-weight:700;border-top:1px solid #eee;">Net collected</td><td style="padding:10px 0;text-align:right;font-weight:700;border-top:1px solid #eee;">${formatPrice(report.netTotal)}</td></tr>
+      </tbody></table>
+    </div>
+    ${report.missingDailyCloseouts.length ? `<p style="padding:12px;background:#fff6df;border:1px solid #edd9a3;">Cash reconciliation is incomplete. Missing daily closeouts: ${escapeHtml(report.missingDailyCloseouts.join(", "))}.</p>` : ""}
+    <div style="padding:8px 0 24px;"><h2 style="font-size:18px;">Daily activity</h2><table style="width:100%;border-collapse:collapse;"><thead><tr><th style="text-align:left;">Date</th><th style="text-align:right;">Sales</th><th style="text-align:right;">Net</th><th style="text-align:right;">Cash variance</th></tr></thead><tbody>${dailyRows}</tbody></table></div>
+    <div style="padding:8px 0 24px;"><h2 style="font-size:18px;">Payment methods</h2><table style="width:100%;border-collapse:collapse;">${breakdownRows(report.paymentBreakdown)}</table></div>
+    <div style="padding:8px 0 24px;"><h2 style="font-size:18px;">Categories</h2><table style="width:100%;border-collapse:collapse;">${breakdownRows(report.categoryBreakdown)}</table></div>
+    ${notes ? `<div style="padding:16px 0;border-top:1px solid #e8e1d8;"><strong>Notes</strong><p style="white-space:pre-line;color:#555;">${escapeHtml(notes)}</p></div>` : ""}
+  </div>`
+}
+
+export async function sendPosWeeklyCloseoutReportEmail(report: PosWeeklyCloseoutReport, toEmail: string, notes?: string | null) {
+  const email = toEmail.trim()
+  if (!email) return false
+  const resend = getResendClient()
+  if (!resend) {
+    console.error("RESEND_API_KEY is not set; weekly POS closeout email was not sent", { weekCode: report.weekCode })
+    return false
+  }
+
+  const { error } = await resend.emails.send({
+    from: process.env.RESEND_FROM_EMAIL || "onboarding@resend.dev",
+    to: email,
+    subject: `Backus Ceramics weekly POS closeout ${report.weekStart} - ${report.weekEnd}`,
+    html: buildWeeklyCloseoutHtml(report, notes),
+  })
+  if (error) {
+    console.error("Weekly POS closeout report email failed", { error, weekCode: report.weekCode })
+    return false
+  }
   return true
 }
