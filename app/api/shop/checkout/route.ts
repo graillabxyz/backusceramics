@@ -15,6 +15,7 @@ import { getTrustedRequestOrigin } from "@/lib/request-origin"
 import { calculateCeramicShipping, type ShippingQuote } from "@/lib/shop-shipping"
 import { getShippingDestination } from "@/lib/shipping-destinations"
 import { getPaymentSessionExpiresAt } from "@/lib/payment-session"
+import { normalizePromoCode, PromoCodeError, reservePromoCode, setPromoPaymentSession } from "@/lib/promo-codes"
 
 const MAX_SHOP_CHECKOUT_BODY_BYTES = 64 * 1024
 const PUBLIC_CATEGORY_IDS = PUBLIC_WARES_CATEGORIES.map((category) => category.id)
@@ -79,6 +80,10 @@ async function restoreOnlineShopInventory(saleId: string) {
       where: { id: saleId },
       data: { status: "CANCELLED" },
     }),
+    prisma.promoRedemption.updateMany({
+      where: { saleId, status: "PENDING" },
+      data: { status: "CANCELLED", cancelledAt: new Date() },
+    }),
   ])
 }
 
@@ -113,6 +118,7 @@ export async function POST(req: NextRequest) {
   const shippingCity = cleanString(data?.shippingCity, 120)
   const shippingPostalCode = cleanString(data?.shippingPostalCode, 24)
   const shippingAddress = cleanString(data?.shippingAddress, 500)
+  const promoCode = normalizePromoCode(data?.promoCode)
 
   if (items.length === 0) {
     return NextResponse.json({ error: "Checkout needs at least one available item." }, { status: 400 })
@@ -132,6 +138,7 @@ export async function POST(req: NextRequest) {
   }
 
   const paymentReference = sanitizeReference(`shop_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`)
+  const paymentExpiresAt = getPaymentSessionExpiresAt()
   let createdSaleId = ""
 
   try {
@@ -214,12 +221,24 @@ export async function POST(req: NextRequest) {
         ? calculateCeramicShipping(shippingProducts, shippingCountry)
         : null
       const shippingAmount = shippingQuote?.amount || 0
-      const total = subtotal + shippingAmount
+      const promo = await reservePromoCode({
+        db: tx,
+        code: promoCode,
+        channel: "SHOP",
+        subtotal,
+        userId: session.user.id,
+        customerEmail: receiptEmail,
+        paymentReference,
+        expiresAt: paymentExpiresAt,
+      })
+      const discountTotal = promo?.discountAmount || 0
+      const total = subtotal - discountTotal + shippingAmount
 
-      return tx.posSale.create({
+      const sale = await tx.posSale.create({
         data: {
           subtotal,
-          discountTotal: 0,
+          discountTotal,
+          promoCodeSnapshot: promo?.promo.code || null,
           taxTotal: 0,
           shippingAmount,
           total,
@@ -238,12 +257,18 @@ export async function POST(req: NextRequest) {
         },
         include: { items: true },
       })
+      if (promo) {
+        await tx.promoRedemption.update({
+          where: { paymentReference },
+          data: { saleId: sale.id },
+        })
+      }
+      return sale
     })
 
     createdSaleId = sale.id
     revalidatePath("/wall-of-cups")
     const origin = getTrustedRequestOrigin(req)
-    const paymentExpiresAt = getPaymentSessionExpiresAt()
     const paymentSession = await createXenditPaymentSession({
       reference_id: paymentReference,
       session_type: "PAY",
@@ -263,14 +288,14 @@ export async function POST(req: NextRequest) {
         },
       },
       items: [
-        ...sale.items.map((item) => ({
-          reference_id: item.productId || item.id,
+        {
+          reference_id: `order_${sale.id}`,
           type: "PHYSICAL_PRODUCT" as const,
-          name: item.nameSnapshot,
-          net_unit_amount: Math.max(item.unitPrice, 0),
-          quantity: item.quantity,
-          category: item.categorySnapshot,
-        })),
+          name: sale.promoCodeSnapshot ? `Backus Ceramics order (${sale.promoCodeSnapshot} applied)` : "Backus Ceramics order",
+          net_unit_amount: sale.subtotal - sale.discountTotal,
+          quantity: 1,
+          category: "CERAMICS",
+        },
         ...(sale.shippingAmount > 0 ? [{
           reference_id: `shipping_${sale.id}`,
           type: "FEE" as const,
@@ -289,6 +314,8 @@ export async function POST(req: NextRequest) {
         fulfillment_method: sale.fulfillmentMethod,
         shipping_country: sale.shippingCountry || "pickup",
         shipping_amount: sale.shippingAmount,
+        promo_code: sale.promoCodeSnapshot || undefined,
+        discount_amount: sale.discountTotal,
         order_total: sale.total,
       },
       success_return_url: `${origin}/shop/checkout?payment=success&sale=${sale.id}`,
@@ -301,6 +328,7 @@ export async function POST(req: NextRequest) {
       data: { paymentSessionId: paymentSession.payment_session_id },
       include: { items: true },
     })
+    await setPromoPaymentSession(paymentReference, paymentSession.payment_session_id)
 
     await recordAnalyticsEvent({
       type: "shop_payment_started",
@@ -314,6 +342,8 @@ export async function POST(req: NextRequest) {
         paymentSessionId: paymentSession.payment_session_id,
         itemCount: updatedSale.items.length,
         shippingAmount: updatedSale.shippingAmount,
+        promoCode: updatedSale.promoCodeSnapshot,
+        discountAmount: updatedSale.discountTotal,
         fulfillmentMethod: updatedSale.fulfillmentMethod,
       },
     }, req)
@@ -337,6 +367,7 @@ export async function POST(req: NextRequest) {
     const isXenditError = error instanceof XenditApiError
     const isConfigError = error instanceof XenditConfigurationError
     const isValidationError = error instanceof ShopCheckoutValidationError
+    const isPromoError = error instanceof PromoCodeError
     console.error("Could not start online shop checkout", {
       error,
       xenditStatus: isXenditError ? error.status : undefined,
@@ -348,12 +379,16 @@ export async function POST(req: NextRequest) {
       {
         error: isConfigError
           ? "Online payment is not configured yet."
-          : isValidationError && error instanceof Error
+          : (isValidationError || isPromoError) && error instanceof Error
             ? error.message
             : "Checkout could not be started right now. Please try again shortly.",
-        code: isConfigError ? "SHOP_PAYMENT_CONFIGURATION_MISSING" : "SHOP_PAYMENT_FAILED",
+        code: isConfigError
+          ? "SHOP_PAYMENT_CONFIGURATION_MISSING"
+          : isPromoError
+            ? error.code
+            : "SHOP_PAYMENT_FAILED",
       },
-      { status: isConfigError ? 503 : isValidationError ? 409 : 502 }
+      { status: isConfigError ? 503 : isPromoError ? 400 : isValidationError ? 409 : 502 }
     )
   }
 }

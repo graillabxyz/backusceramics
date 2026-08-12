@@ -19,17 +19,18 @@ import {
   Settings,
   ShoppingBag,
   Store,
+  TicketPercent,
   Users,
   X,
   Loader2,
 } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { useAuth } from "@/lib/auth-context"
-import { canAccessAdmin, canUsePos, canViewAnalytics, isFullAdminRole, roleLabels } from "@/lib/permissions"
+import { canAccessAdmin, canManagePromotions, canUsePos, canViewAnalytics, isFullAdminRole, roleLabels } from "@/lib/permissions"
 import { Button } from "@/components/ui/button"
 import { AdminNotifications } from "@/components/admin-notifications"
 
-type NavAccess = "admin" | "pos" | "analytics"
+type NavAccess = "admin" | "pos" | "analytics" | "promotions"
 
 const navSections = [
   {
@@ -45,6 +46,7 @@ const navSections = [
       { href: "/admin/bookings", label: "Class Bookings", shortLabel: "Classes", icon: GraduationCap, access: "admin" as NavAccess },
       { href: "/admin/applications", label: "Residency Apps", icon: CalendarDays, access: "admin" as NavAccess },
       { href: "/admin/sales", label: "Website Sales", icon: CircleDollarSign, access: "admin" as NavAccess },
+      { href: "/admin/promotions", label: "Promo Codes", icon: TicketPercent, access: "promotions" as NavAccess },
       { href: "/admin/pos", label: "Point of Sale", shortLabel: "POS", icon: Store, exact: true, access: "pos" as NavAccess },
       { href: "/admin/pos/suppliers", label: "Supplier Accounts", icon: HandCoins, access: "pos" as NavAccess },
     ],
@@ -77,6 +79,7 @@ function itemIsActive(pathname: string, item: NavItem) {
 function canSeeItem(access: NavAccess, role?: string | null) {
   if (access === "pos") return canUsePos(role)
   if (access === "analytics") return canViewAnalytics(role)
+  if (access === "promotions") return canManagePromotions(role)
   return isFullAdminRole(role)
 }
 

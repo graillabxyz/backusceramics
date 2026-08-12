@@ -31,6 +31,7 @@ import {
 } from "@/lib/class-booking-pricing"
 import { markCheckoutPaymentStarted, trackAnalyticsEvent } from "@/lib/client-analytics"
 import { PAYMENT_SESSION_DURATION_MINUTES } from "@/lib/payment-session"
+import { PromoCodeField, type AppliedPromoCode } from "@/components/promo-code-field"
 
 interface CheckoutMeeting {
   key: string
@@ -62,6 +63,10 @@ function safeInternalPath(value: string | null, fallback = "/classes/calendar") 
 
 function friendlyPaymentError(status: number, data: Record<string, unknown>) {
   const code = typeof data.code === "string" ? data.code : ""
+
+  if (code.startsWith("PROMO_") && typeof data.error === "string") {
+    return data.error
+  }
 
   if (code === "PAYMENT_AUTH_FAILED") {
     return "Please sign in again before continuing to payment."
@@ -138,6 +143,7 @@ function ClassCheckoutContent() {
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [error, setError] = useState("")
   const [success, setSuccess] = useState("")
+  const [appliedPromo, setAppliedPromo] = useState<AppliedPromoCode | null>(null)
 
   const bookingUnits = Number(people || 1)
   const seatsPerBooking = bookingOption === "parent-child" ? 2 : 1
@@ -145,7 +151,9 @@ function ClassCheckoutContent() {
   const pricing = workshop ? getClassBookingPricing(workshop, bookingOption, bookingUnits) : null
   const selectedSeatCount = pricing?.participants ?? bookingUnits
   const unitPrice = pricing?.unitPrice ?? fallbackPrice
-  const total = pricing?.total ?? fallbackPrice * bookingUnits
+  const subtotal = pricing?.total ?? fallbackPrice * bookingUnits
+  const discountAmount = appliedPromo?.discountAmount || 0
+  const total = Math.max(subtotal - discountAmount, 0)
   const onsitePaymentWhatsAppUrl = `https://wa.me/6282145890402?text=${encodeURIComponent(
     `Hi! I'd like to arrange onsite payment for ${title} on ${dateLabel} at ${timeLabel}.`
   )}`
@@ -271,6 +279,7 @@ function ClassCheckoutContent() {
           requiredMeetings: paymentRequiredMeetings,
           focus,
           source: bookingSource,
+          promoCode: appliedPromo?.code || undefined,
           returnPath,
         }),
       })
@@ -568,12 +577,31 @@ function ClassCheckoutContent() {
                     <span>Seats</span>
                     <span>x {selectedSeatCount}</span>
                   </div>
+                  {discountAmount > 0 && (
+                    <>
+                      <div className="flex items-center justify-between gap-4 text-muted-foreground">
+                        <span>Subtotal</span>
+                        <span>{formatPrice(subtotal)}</span>
+                      </div>
+                      <div className="flex items-center justify-between gap-4 font-medium text-emerald-700">
+                        <span>Promo {appliedPromo?.code}</span>
+                        <span>-{formatPrice(discountAmount)}</span>
+                      </div>
+                    </>
+                  )}
                   <div className="flex items-center justify-between gap-4 border-t border-border pt-2 font-semibold text-foreground">
                     <span>Total due today</span>
                     <span>{formatPrice(total)}</span>
                   </div>
                 </div>
               </div>
+
+              <PromoCodeField
+                channel="CLASSES"
+                subtotal={subtotal}
+                formatAmount={formatPrice}
+                onChange={setAppliedPromo}
+              />
 
               <p className="rounded-md bg-muted/50 p-3 text-sm leading-relaxed text-muted-foreground">
                 Online payment confirms your seat immediately. We will hold the selected {paymentMeetings.length === 1 ? "class time" : "program days"} for {PAYMENT_SESSION_DURATION_MINUTES} minutes while you complete secure payment through Xendit.

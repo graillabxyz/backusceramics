@@ -17,8 +17,8 @@ export const roleLabels: Record<AppRole, string> = {
 export const roleAccessDescriptions: Record<AppRole, string> = {
   USER: "Customer account access only: bookings, checkout, profile, and order history. No admin or POS access.",
   POS_OPERATOR: "Cashier access: use the POS, add POS products and drafts, and receive sales and class booking notifications.",
-  MANAGER: "Daily operations access: add and edit products, use the POS, manage bookings/orders, view analytics, and receive sales and class booking notifications. Cannot change user roles.",
-  ADMIN: "Full admin operations access: products, POS, bookings, orders, applications, analytics, settings, and notifications. Cannot change the owner role.",
+  MANAGER: "Daily operations access: add and edit products, use the POS, manage bookings/orders and promo codes, view analytics, and receive sales and class booking notifications. Cannot change user roles.",
+  ADMIN: "Full admin operations access: products, POS, bookings, orders, promo codes, applications, analytics, settings, and notifications. Cannot change the owner role.",
   OWNER: "Owner access: all admin and POS tools, notifications, settings, and user role management.",
 }
 
@@ -65,6 +65,11 @@ export function canUsePos(role?: string | null) {
 }
 
 export function canViewAnalytics(role?: string | null) {
+  const normalized = normalizeRole(role)
+  return normalized === "OWNER" || normalized === "ADMIN" || normalized === "MANAGER"
+}
+
+export function canManagePromotions(role?: string | null) {
   const normalized = normalizeRole(role)
   return normalized === "OWNER" || normalized === "ADMIN" || normalized === "MANAGER"
 }

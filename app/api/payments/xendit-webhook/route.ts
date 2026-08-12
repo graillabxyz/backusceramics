@@ -6,6 +6,7 @@ import { recordAnalyticsEvent } from "@/lib/analytics-server"
 import { notifyClassBookingsConfirmed } from "@/lib/admin-notification-events"
 import { cancelPendingPosSalePayment, completePendingPosSalePayment } from "@/lib/pos-sale-payment"
 import { isRequestBodyTooLarge } from "@/lib/server-security"
+import { settlePromoRedemption } from "@/lib/promo-codes"
 import {
   extractBookingIds,
   getWebhookAmount,
@@ -117,6 +118,11 @@ export async function POST(req: NextRequest) {
 
     if (sale && posSaleStatus === "CANCELLED") {
       const result = await cancelPendingPosSalePayment(sale.id)
+      await settlePromoRedemption({
+        paymentReference: sale.paymentReference || posReference,
+        paymentSessionId: sale.paymentSessionId || paymentSessionId,
+        status: "CANCELLED",
+      })
       await recordAnalyticsEvent({
         type: "pos_payment_cancelled",
         source: "xendit_webhook",
@@ -170,6 +176,12 @@ export async function POST(req: NextRequest) {
         return NextResponse.json({ ok: true, status: posSaleStatus, posUpdated: 0 })
       }
 
+      await settlePromoRedemption({
+        paymentReference: updatedSale.paymentReference || posReference,
+        paymentSessionId: updatedSale.paymentSessionId || paymentSessionId,
+        status: "APPLIED",
+      })
+
       return NextResponse.json({ ok: true, status: posSaleStatus, posUpdated: 1 })
     }
   }
@@ -205,6 +217,11 @@ export async function POST(req: NextRequest) {
       holdExpiresAt: null,
       ...(bookingStatus === "CONFIRMED" ? { confirmedAt: new Date() } : { cancelledAt: new Date() }),
     },
+  })
+  await settlePromoRedemption({
+    paymentReference: externalId,
+    paymentSessionId,
+    status: bookingStatus === "CONFIRMED" ? "APPLIED" : "CANCELLED",
   })
 
   if (result.count === 0) {

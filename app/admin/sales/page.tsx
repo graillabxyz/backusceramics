@@ -37,6 +37,7 @@ interface WebsiteSale {
   id: string
   subtotal: number
   discountTotal: number
+  promoCodeSnapshot: string | null
   taxTotal: number
   shippingAmount: number
   total: number
@@ -368,6 +369,12 @@ export default function WebsiteSalesPage() {
 
                       <dl className="grid content-start gap-2 text-sm">
                         <div className="flex justify-between gap-4"><dt className="text-muted-foreground">Subtotal</dt><dd>{formatPrice(sale.subtotal)}</dd></div>
+                        {sale.discountTotal > 0 && (
+                          <div className="flex justify-between gap-4 text-emerald-700">
+                            <dt>Promo{sale.promoCodeSnapshot ? ` · ${sale.promoCodeSnapshot}` : ""}</dt>
+                            <dd>-{formatPrice(sale.discountTotal)}</dd>
+                          </div>
+                        )}
                         {sale.shippingAmount > 0 && <div className="flex justify-between gap-4"><dt className="text-muted-foreground">Shipping</dt><dd>{formatPrice(sale.shippingAmount)}</dd></div>}
                         <div className="flex justify-between gap-4 border-t border-border pt-2 font-semibold"><dt>Total</dt><dd>{formatPrice(sale.total)}</dd></div>
                         <div className="mt-2 border-t border-border pt-3">

@@ -37,6 +37,8 @@ model User {
   createdSuppliers            Supplier[]                  @relation("SupplierCreator")
   supplierLedgerEntries       SupplierLedgerEntry[]       @relation("SupplierLedgerCreator")
   voidedSupplierLedgerEntries SupplierLedgerEntry[]       @relation("SupplierLedgerVoider")
+  createdPromoCodes           PromoCode[]                 @relation("PromoCodeCreator")
+  promoRedemptions            PromoRedemption[]
   analyticsEvents             AnalyticsEvent[]
   residencyApps               ResidencyApplication[]
   notificationPreference      UserNotificationPreference?
@@ -259,6 +261,7 @@ model PosSale {
 
   subtotal           Int       @default(0)
   discountTotal      Int       @default(0)
+  promoCodeSnapshot  String?
   taxTotal           Int       @default(0)
   shippingAmount     Int       @default(0)
   total              Int
@@ -292,6 +295,65 @@ model PosSale {
   @@index([fulfilledAt])
   @@index([paymentReference])
   @@index([paymentSessionId])
+  @@index([promoCodeSnapshot])
+}
+
+model PromoCode {
+  id                    String            @id @default(cuid())
+  code                  String            @unique
+  description           String?
+  discountType          String
+  // Discount types: PERCENT, FIXED
+  discountValue         Int
+  maxDiscount           Int?
+  minSubtotal           Int               @default(0)
+  scope                 String            @default("ALL")
+  // Scopes: ALL, SHOP, CLASSES
+  active                Boolean           @default(true)
+  startsAt              DateTime?
+  expiresAt             DateTime?
+  maxRedemptions        Int?
+  maxRedemptionsPerUser Int               @default(1)
+  createdById           String?
+  createdBy             User?             @relation("PromoCodeCreator", fields: [createdById], references: [id])
+  redemptions           PromoRedemption[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([active, startsAt, expiresAt])
+  @@index([scope])
+  @@index([createdById])
+}
+
+model PromoRedemption {
+  id               String    @id @default(cuid())
+  promoCodeId      String
+  promoCode        PromoCode @relation(fields: [promoCodeId], references: [id])
+  userId           String?
+  user             User?     @relation(fields: [userId], references: [id])
+  customerEmail    String?
+  channel          String
+  // Channels: SHOP, CLASSES
+  subtotal         Int
+  discountAmount   Int
+  paymentReference String    @unique
+  paymentSessionId String?
+  saleId           String?   @unique
+  bookingIds       String    @default("[]")
+  status           String    @default("PENDING")
+  // Status values: PENDING, APPLIED, CANCELLED
+  expiresAt        DateTime
+  appliedAt        DateTime?
+  cancelledAt      DateTime?
+
+  createdAt DateTime @default(now())
+
+  @@index([promoCodeId, status, expiresAt])
+  @@index([userId, promoCodeId, status])
+  @@index([customerEmail, promoCodeId, status])
+  @@index([paymentSessionId])
+  @@index([saleId])
 }
 
 model PosSaleItem {

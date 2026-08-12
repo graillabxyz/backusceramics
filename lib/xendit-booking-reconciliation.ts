@@ -3,6 +3,7 @@ import { recordAnalyticsEvent } from "@/lib/analytics-server"
 import { notifyClassBookingsConfirmed } from "@/lib/admin-notification-events"
 import { getXenditPaymentSession } from "@/lib/xendit"
 import { mapInvoiceStatusToBookingStatus } from "@/lib/xendit-webhook"
+import { settlePromoRedemption } from "@/lib/promo-codes"
 
 const RECONCILIATION_LOOKBACK_HOURS = 72
 
@@ -81,6 +82,11 @@ async function reconcilePaymentSession({
         ? { confirmedAt: new Date(), cancelledAt: null }
         : { cancelledAt: new Date() }),
     },
+  })
+  await settlePromoRedemption({
+    paymentReference,
+    paymentSessionId,
+    status: bookingStatus === "CONFIRMED" ? "APPLIED" : "CANCELLED",
   })
 
   await recordAnalyticsEvent({

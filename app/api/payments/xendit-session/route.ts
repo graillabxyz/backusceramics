@@ -27,6 +27,7 @@ import { recordAnalyticsEvent } from "@/lib/analytics-server"
 import type { Prisma } from "@prisma/client"
 import { getTrustedRequestOrigin } from "@/lib/request-origin"
 import { activeSeatBookingWhere, calculateSeatUsage, lockClassSeatPools } from "@/lib/class-seat-accounting"
+import { normalizePromoCode, PromoCodeError, reservePromoCode, setPromoPaymentSession, settlePromoRedemption } from "@/lib/promo-codes"
 
 export const runtime = "nodejs"
 const MAX_PAYMENT_SESSION_BODY_BYTES = 64 * 1024
@@ -465,7 +466,9 @@ async function handlePaymentSessionPost(req: NextRequest, trace?: PaymentTrace) 
     )
   }
 
-  const total = pricing.total
+  const subtotal = pricing.total
+  let discountTotal = 0
+  let total = subtotal
   const referenceId = sanitizeReference(`bc_${Date.now()}_${workshop.id}`)
   const holdExpiresAt = getPaymentSessionExpiresAt()
   const origin = getPaymentOrigin(req)
@@ -473,15 +476,7 @@ async function handlePaymentSessionPost(req: NextRequest, trace?: PaymentTrace) 
   const returnPath = safeInternalPath(data.returnPath, "/classes/calendar")
   const contactPhone = typeof data.contactPhone === "string" ? data.contactPhone.trim() : ""
   const bookingSource = typeof data.source === "string" ? data.source : undefined
-  const paymentNote = [
-    `Payment required via Xendit.`,
-    `Payment reference: ${referenceId}.`,
-    `Program: ${workshop.title}.`,
-    workshop.id === "kids-workshop" ? `Booking type: ${pricing.label}.` : "",
-    data.focus ? `Focus: ${data.focus}.` : "",
-    `Covers ${meetings.length} studio ${meetings.length === 1 ? "day" : "days"}.`,
-    `Total due today: ${formatPrice(total)}.`,
-  ].filter(Boolean).join(" ")
+  const promoCode = normalizePromoCode(data.promoCode)
 
   let createdBookings: { id: string }[] = []
   try {
@@ -498,6 +493,29 @@ async function handlePaymentSessionPost(req: NextRequest, trace?: PaymentTrace) 
         tx,
         meetings.map((meeting) => classSeatPoolKey(meeting.dateKey, meeting.timeLabel))
       )
+
+      const promo = await reservePromoCode({
+        db: tx,
+        code: promoCode,
+        channel: "CLASSES",
+        subtotal,
+        userId: bookingUser?.id || session.user.id,
+        customerEmail: session.user.email,
+        paymentReference: referenceId,
+        expiresAt: holdExpiresAt,
+      })
+      discountTotal = promo?.discountAmount || 0
+      total = subtotal - discountTotal
+      const paymentNote = [
+        `Payment required via Xendit.`,
+        `Payment reference: ${referenceId}.`,
+        `Program: ${workshop.title}.`,
+        workshop.id === "kids-workshop" ? `Booking type: ${pricing.label}.` : "",
+        data.focus ? `Focus: ${data.focus}.` : "",
+        promo ? `Promo code: ${promo.promo.code}. Discount: ${formatPrice(discountTotal)}.` : "",
+        `Covers ${meetings.length} studio ${meetings.length === 1 ? "day" : "days"}.`,
+        `Total due today: ${formatPrice(total)}.`,
+      ].filter(Boolean).join(" ")
 
       for (const meeting of meetings) {
         const slotWorkshopId = resolveSlotWorkshopId(workshop, meeting.slotWorkshopId)
@@ -520,7 +538,7 @@ async function handlePaymentSessionPost(req: NextRequest, trace?: PaymentTrace) 
         }
       }
 
-      return Promise.all(meetings.map((meeting) =>
+      const bookings = await Promise.all(meetings.map((meeting) =>
         tx.classBooking.create({
           data: {
             workshopId: resolveSlotWorkshopId(workshop, meeting.slotWorkshopId) || workshopId,
@@ -537,6 +555,13 @@ async function handlePaymentSessionPost(req: NextRequest, trace?: PaymentTrace) 
           },
         })
       ))
+      if (promo) {
+        await tx.promoRedemption.update({
+          where: { paymentReference: referenceId },
+          data: { bookingIds: JSON.stringify(bookings.map((booking) => booking.id)) },
+        })
+      }
+      return bookings
     }, { timeout: 10_000 })
   } catch (error) {
     console.error("Could not reserve booking before Xendit payment with Prisma", {
@@ -549,6 +574,12 @@ async function handlePaymentSessionPost(req: NextRequest, trace?: PaymentTrace) 
       return NextResponse.json(
         { error: error.message, code: paymentErrorCodes.invalidRequest },
         { status: 409 }
+      )
+    }
+    if (error instanceof PromoCodeError) {
+      return NextResponse.json(
+        { error: error.message, code: error.code },
+        { status: 400 }
       )
     }
     return NextResponse.json(
@@ -586,9 +617,9 @@ async function handlePaymentSessionPost(req: NextRequest, trace?: PaymentTrace) 
         {
           reference_id: `${workshop.id}-${pricing.option}`,
           type: "PHYSICAL_SERVICE",
-          name: workshop.id === "kids-workshop" ? `${workshop.title} - ${pricing.label}` : workshop.title,
-          net_unit_amount: pricing.unitPrice,
-          quantity: pricing.bookingUnits,
+          name: `${workshop.id === "kids-workshop" ? `${workshop.title} - ${pricing.label}` : workshop.title}${promoCode ? " (promo applied)" : ""}`,
+          net_unit_amount: total,
+          quantity: 1,
           category: "Ceramics class",
         },
       ],
@@ -605,6 +636,9 @@ async function handlePaymentSessionPost(req: NextRequest, trace?: PaymentTrace) 
         participants,
         booking_option: pricing.option,
         booking_units: pricing.bookingUnits,
+        promo_code: promoCode || undefined,
+        discount_amount: discountTotal,
+        original_subtotal: subtotal,
         customer_email: session.user.email || undefined,
         customer_phone: contactPhone || undefined,
       },
@@ -629,6 +663,7 @@ async function handlePaymentSessionPost(req: NextRequest, trace?: PaymentTrace) 
         bookingIds: createdBookings.map((booking) => booking.id),
       })
     }
+    await setPromoPaymentSession(referenceId, paymentSession.payment_session_id)
 
     await recordAnalyticsEvent({
       type: "payment_session_created",
@@ -650,6 +685,8 @@ async function handlePaymentSessionPost(req: NextRequest, trace?: PaymentTrace) 
         meetingCount: meetings.length,
         requiredMeetings,
         holdExpiresAt: holdExpiresAt.toISOString(),
+        promoCode: promoCode || undefined,
+        discountAmount: discountTotal,
       },
     }, req)
 
@@ -679,6 +716,7 @@ async function handlePaymentSessionPost(req: NextRequest, trace?: PaymentTrace) 
           where: { id: { in: createdBookings.map((booking) => booking.id) } },
           data: { status: "CANCELLED", cancelledAt: new Date(), holdExpiresAt: null },
         })
+        await settlePromoRedemption({ paymentReference: referenceId, status: "CANCELLED" })
       }
     } catch (rollbackError) {
       console.error("Could not cancel reserved bookings after Xendit failure", rollbackError)

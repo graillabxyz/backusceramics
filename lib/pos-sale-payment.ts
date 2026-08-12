@@ -4,6 +4,7 @@ import { prisma } from "@/lib/prisma"
 import { recordAnalyticsEvent } from "@/lib/analytics-server"
 import { notifyCupSalePaid, notifyWebsiteSalePaid } from "@/lib/admin-notification-events"
 import { sendPosReceiptEmail } from "@/lib/pos-receipts"
+import { settlePromoRedemption } from "@/lib/promo-codes"
 
 export const ONLINE_SHOP_NOTE = "[online-shop]"
 
@@ -34,6 +35,11 @@ export async function completePendingPosSalePayment(
     include: { items: true },
   })
   if (!sale) throw new Error(`Paid sale ${saleId} could not be reloaded.`)
+  await settlePromoRedemption({
+    paymentReference: sale.paymentReference,
+    paymentSessionId: sale.paymentSessionId,
+    status: "APPLIED",
+  })
 
   if (sale.receiptEmail && !sale.receiptSentAt) {
     try {
@@ -122,6 +128,11 @@ export async function cancelPendingPosSalePayment(saleId: string) {
   })
 
   if (result.updated && isOnlineShopSale(result.sale?.notes)) {
+    await settlePromoRedemption({
+      paymentReference: result.sale?.paymentReference,
+      paymentSessionId: result.sale?.paymentSessionId,
+      status: "CANCELLED",
+    })
     revalidatePath("/wall-of-cups")
     revalidatePath("/shop")
   }

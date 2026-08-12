@@ -18,6 +18,7 @@ import { formatPrice } from "@/lib/pos-catalog"
 import { clearShopCart, readShopCart, writeShopCart, type ShopCartItem } from "@/lib/shop-cart"
 import { markCheckoutPaymentStarted, trackAnalyticsEvent } from "@/lib/client-analytics"
 import { SHIPPING_DESTINATIONS } from "@/lib/shipping-destinations"
+import { PromoCodeField, type AppliedPromoCode } from "@/components/promo-code-field"
 
 interface CartPreviewItem {
   productId: string
@@ -84,6 +85,7 @@ function ShopCheckoutContent() {
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [error, setError] = useState("")
   const [notice, setNotice] = useState("")
+  const [appliedPromo, setAppliedPromo] = useState<AppliedPromoCode | null>(null)
 
   useEffect(() => {
     if (paymentStatus === "success") {
@@ -214,7 +216,8 @@ function ShopCheckoutContent() {
   const subtotal = useMemo(() => items.reduce((sum, item) => sum + item.price * item.quantity, 0), [items])
   const itemCount = useMemo(() => items.reduce((sum, item) => sum + item.quantity, 0), [items])
   const shippingAmount = fulfillmentMethod === "SHIPPING" ? shippingQuote?.amount || 0 : 0
-  const total = subtotal + shippingAmount
+  const discountAmount = appliedPromo?.discountAmount || 0
+  const total = Math.max(subtotal - discountAmount, 0) + shippingAmount
 
   useEffect(() => {
     setShippingQuote(null)
@@ -277,6 +280,8 @@ function ShopCheckoutContent() {
         itemCount,
         fulfillmentMethod,
         shippingAmount,
+        promoCode: appliedPromo?.code || undefined,
+        discountAmount,
       },
     })
 
@@ -325,6 +330,7 @@ function ShopCheckoutContent() {
           shippingCity: shippingCity.trim(),
           shippingPostalCode: shippingPostalCode.trim(),
           shippingAddress: shippingAddress.trim(),
+          promoCode: appliedPromo?.code || undefined,
         }),
       })
 
@@ -366,6 +372,8 @@ function ShopCheckoutContent() {
           paymentReference: typeof data.paymentReference === "string" ? data.paymentReference : undefined,
           paymentSessionId: typeof data.paymentSessionId === "string" ? data.paymentSessionId : undefined,
           itemCount,
+          promoCode: appliedPromo?.code || undefined,
+          discountAmount,
         },
       }, { beacon: true })
       window.location.href = paymentUrl
@@ -521,6 +529,12 @@ function ShopCheckoutContent() {
                   <span>Subtotal</span>
                   <span>{formatPrice(subtotal)}</span>
                 </div>
+                {discountAmount > 0 && (
+                  <div className="flex items-center justify-between font-medium text-emerald-700">
+                    <span>Promo {appliedPromo?.code}</span>
+                    <span>-{formatPrice(discountAmount)}</span>
+                  </div>
+                )}
                 <div className="flex items-center justify-between text-muted-foreground">
                   <span>{fulfillmentMethod === "SHIPPING" ? "Packing and shipping" : "Shop pickup"}</span>
                   <span>{fulfillmentMethod === "SHIPPING" ? (shippingQuote ? formatPrice(shippingAmount) : "Not calculated") : "Free"}</span>
@@ -530,6 +544,13 @@ function ShopCheckoutContent() {
                   <span>{formatPrice(total)}</span>
                 </div>
               </div>
+
+              <PromoCodeField
+                channel="SHOP"
+                subtotal={subtotal}
+                formatAmount={formatPrice}
+                onChange={setAppliedPromo}
+              />
 
               <div className="space-y-3">
                 <Label>Receive your order</Label>
