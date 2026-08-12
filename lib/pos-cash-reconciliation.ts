@@ -7,6 +7,7 @@ export interface PosCashReconciliation {
   openingCash: number
   cashSales: number
   cashExpenses: number
+  registerCashOuts: number
   supplierCashPayments: number
   cashExpenseItems: PosCashExpense[]
   expectedClosingCash: number
@@ -20,20 +21,23 @@ export function calculatePosCashReconciliation({
   closingCash,
   cashExpenseItems,
   supplierCashPayments = 0,
+  registerCashOuts = 0,
 }: {
   openingCash: number
   cashSales: number
   closingCash: number
   cashExpenseItems: PosCashExpense[]
   supplierCashPayments?: number
+  registerCashOuts?: number
 }): PosCashReconciliation {
   const cashExpenses = cashExpenseItems.reduce((total, expense) => total + expense.amount, 0)
-  const expectedClosingCash = openingCash + cashSales - cashExpenses - supplierCashPayments
+  const expectedClosingCash = openingCash + cashSales - cashExpenses - supplierCashPayments - registerCashOuts
 
   return {
     openingCash,
     cashSales,
     cashExpenses,
+    registerCashOuts,
     cashExpenseItems,
     supplierCashPayments,
     expectedClosingCash,

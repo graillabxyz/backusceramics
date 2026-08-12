@@ -36,8 +36,10 @@ import {
 import { cn } from "@/lib/utils"
 import { PosMorningBriefing } from "@/components/pos-morning-briefing"
 import {
+  Banknote,
   BellRing,
   CalendarDays,
+  CircleDollarSign,
   CheckCircle2,
   ClipboardCheck,
   CreditCard,
@@ -216,6 +218,11 @@ function PosWorkspace() {
   const [isQuickAddOpen, setIsQuickAddOpen] = useState(false)
   const [isQuickEditOpen, setIsQuickEditOpen] = useState(false)
   const [isDiscountBoxOpen, setIsDiscountBoxOpen] = useState(false)
+  const [isCashOutOpen, setIsCashOutOpen] = useState(false)
+  const [cashOutFundingSource, setCashOutFundingSource] = useState<"REGISTER" | "STAFF">("REGISTER")
+  const [cashOutAmount, setCashOutAmount] = useState("")
+  const [cashOutDescription, setCashOutDescription] = useState("")
+  const [savingCashOut, setSavingCashOut] = useState(false)
   const [discountBoxPrice, setDiscountBoxPrice] = useState("")
   const [discountBoxName, setDiscountBoxName] = useState("")
   const [discountBoxError, setDiscountBoxError] = useState("")
@@ -491,6 +498,39 @@ function PosWorkspace() {
     setError("")
     setSuccess("")
     setIsQuickAddOpen(true)
+  }
+
+  const openCashOut = () => {
+    setCashOutFundingSource("REGISTER")
+    setCashOutAmount("")
+    setCashOutDescription("")
+    setError("")
+    setSuccess("")
+    setIsCashOutOpen(true)
+  }
+
+  const saveCashOut = async () => {
+    setSavingCashOut(true)
+    setError("")
+    setSuccess("")
+    try {
+      const businessDate = new Date(Date.now() + 8 * 60 * 60 * 1000).toISOString().slice(0, 10)
+      const response = await fetch("/api/pos/cash-outs", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ fundingSource: cashOutFundingSource, amount: Number(cashOutAmount), description: cashOutDescription, businessDate }),
+      })
+      const result = await response.json().catch(() => ({}))
+      if (response.status === 423) { lockPos(); return }
+      if (!response.ok) throw new Error(result.error || "Could not record this cash out.")
+      setIsCashOutOpen(false)
+      setSuccess(cashOutFundingSource === "REGISTER" ? `Cash out recorded: ${formatPrice(result.amount)}.` : `Staff reimbursement recorded: ${formatPrice(result.amount)} owed to ${result.staffMember?.name || result.staffMember?.email || "staff"}.`)
+    } catch (saveError) {
+      console.error("Could not save POS cash out", saveError)
+      setError(saveError instanceof Error ? saveError.message : "Could not record this cash out.")
+    } finally {
+      setSavingCashOut(false)
+    }
   }
 
   const openQuickEdit = (product: PosProduct) => {
@@ -1213,6 +1253,10 @@ function PosWorkspace() {
             </p>
           </div>
           <div className="flex shrink-0 items-center gap-1 sm:gap-2">
+            <Button type="button" variant="outline" className="h-10 px-3" onClick={openCashOut}>
+              <CircleDollarSign className="h-4 w-4 sm:mr-2" />
+              <span className="hidden sm:inline">Cash Out</span>
+            </Button>
             {cartCount > 0 && posStep !== "CHECKOUT" && (
             <Button
               type="button"
@@ -1264,6 +1308,10 @@ function PosWorkspace() {
                   <Tag className="mr-2 h-4 w-4" />
                   Discount box
                 </DropdownMenuItem>
+                <DropdownMenuItem onClick={openCashOut} className="sm:hidden">
+                  <CircleDollarSign className="mr-2 h-4 w-4" />
+                  Cash out
+                </DropdownMenuItem>
                 <DropdownMenuItem onClick={openQuickAdd} className="sm:hidden">
                   <Plus className="mr-2 h-4 w-4" />
                   New product
@@ -1286,6 +1334,12 @@ function PosWorkspace() {
                   <Link href={`/admin/pos/sales${isFullscreen ? "?posFullscreen=1" : ""}`}>
                     <ReceiptText className="mr-2 h-4 w-4" />
                     Sales history
+                  </Link>
+                </DropdownMenuItem>
+                <DropdownMenuItem asChild>
+                  <Link href={`/admin/pos/cash-outs${isFullscreen ? "?posFullscreen=1" : ""}`}>
+                    <Banknote className="mr-2 h-4 w-4" />
+                    Cash & reimbursements
                   </Link>
                 </DropdownMenuItem>
                 <DropdownMenuItem asChild>
@@ -1872,6 +1926,26 @@ function PosWorkspace() {
             <Button type="button" variant="outline" onClick={() => setIsDiscountBoxOpen(false)}>Cancel</Button>
             <Button type="button" onClick={addDiscountBoxItem} disabled={!discountBoxPrice}>Add to bill</Button>
           </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={isCashOutOpen} onOpenChange={setIsCashOutOpen}>
+        <DialogContent className="max-w-[calc(100vw-1rem)] sm:max-w-lg">
+          <DialogHeader>
+            <div className="flex h-11 w-11 items-center justify-center rounded-full bg-primary/10 text-primary"><CircleDollarSign className="h-5 w-5" /></div>
+            <DialogTitle className="font-heading text-xl">Cash out</DialogTitle>
+            <DialogDescription>Record an urgent business purchase now. Staff-paid purchases become an open reimbursement owed by the business.</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-5 py-2">
+            <div className="grid grid-cols-2 gap-2">
+              <Button type="button" variant={cashOutFundingSource === "REGISTER" ? "default" : "outline"} className="h-auto min-h-16 whitespace-normal" onClick={() => setCashOutFundingSource("REGISTER")}>Register cash</Button>
+              <Button type="button" variant={cashOutFundingSource === "STAFF" ? "default" : "outline"} className="h-auto min-h-16 whitespace-normal" onClick={() => setCashOutFundingSource("STAFF")}>I paid personally</Button>
+            </div>
+            <div className="space-y-2"><Label htmlFor="cashOutAmount">Amount (IDR)</Label><Input id="cashOutAmount" type="number" min="1" step="1" inputMode="numeric" autoFocus value={cashOutAmount} onChange={(event) => setCashOutAmount(event.target.value)} placeholder="150000" className="h-12 text-lg font-semibold" /></div>
+            <div className="space-y-2"><Label htmlFor="cashOutDescription">What was purchased?</Label><Textarea id="cashOutDescription" value={cashOutDescription} onChange={(event) => setCashOutDescription(event.target.value)} maxLength={500} placeholder="Urgent gas refill, market supplies, courier fee…" /></div>
+            <p className="rounded-md bg-muted p-3 text-sm text-muted-foreground">{cashOutFundingSource === "REGISTER" ? "This reduces the expected cash in today’s register closeout." : `This records ${posOperator?.name || posOperator?.email || "the current staff member"} as the person the business must reimburse. It does not reduce register cash yet.`}</p>
+          </div>
+          <DialogFooter><Button type="button" variant="outline" onClick={() => setIsCashOutOpen(false)}>Cancel</Button><Button type="button" onClick={saveCashOut} disabled={savingCashOut || !cashOutAmount || cashOutDescription.trim().length < 3}>{savingCashOut && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}Record cash out</Button></DialogFooter>
         </DialogContent>
       </Dialog>
 

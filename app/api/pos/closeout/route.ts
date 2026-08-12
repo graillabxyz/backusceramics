@@ -94,6 +94,7 @@ export async function POST(req: NextRequest) {
       closingCash: parseCashAmount(data.closingCash ?? 0, "Closing cash"),
       cashExpenseItems: parseCashExpenses(data.cashExpenseItems),
       supplierCashPayments: report.supplierCashPayments,
+      registerCashOuts: report.registerCashOutTotal,
     })
   } catch (cashError) {
     return NextResponse.json(
@@ -124,6 +125,7 @@ export async function POST(req: NextRequest) {
       cashSales: cash.cashSales,
       cashExpenses: cash.cashExpenses,
       cashExpenseItems: JSON.stringify(cash.cashExpenseItems),
+      registerCashOuts: cash.registerCashOuts,
       expectedClosingCash: cash.expectedClosingCash,
       closingCash: cash.closingCash,
       cashVariance: cash.cashVariance,
@@ -155,6 +157,7 @@ export async function POST(req: NextRequest) {
       cashSales: cash.cashSales,
       cashExpenses: cash.cashExpenses,
       cashExpenseItems: JSON.stringify(cash.cashExpenseItems),
+      registerCashOuts: cash.registerCashOuts,
       expectedClosingCash: cash.expectedClosingCash,
       closingCash: cash.closingCash,
       cashVariance: cash.cashVariance,

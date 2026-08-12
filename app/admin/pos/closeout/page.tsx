@@ -84,6 +84,11 @@ interface CloseoutReport {
   supplierNetChange: number
   supplierOutstanding: number
   supplierBreakdown: Array<{ supplierId: string; supplierName: string; billCount: number; billsTotal: number; paymentCount: number; paymentsTotal: number; netChange: number }>
+  registerCashOutTotal: number
+  staffFundedTotal: number
+  staffReimbursedTotal: number
+  outstandingStaffDebt: number
+  cashOutEntries: Array<{ id: string; fundingSource: string; amount: number; businessDate: string; description: string; reimbursedAt: string | null; reimbursementMethod: string | null; createdBy: CloseoutUser | null; staffMember: CloseoutUser | null }>
   paidSales: CloseoutSale[]
   voidedSales: CloseoutSale[]
   pendingSales: CloseoutSale[]
@@ -189,10 +194,14 @@ function reportText(report: CloseoutReport, cash: ReturnType<typeof calculatePos
     `- Cash sales: ${formatPrice(cash.cashSales)}`,
     cashExpenseLines,
     `- Cash expenses total: -${formatPrice(cash.cashExpenses)}`,
+    `- Logged register cash outs: -${formatPrice(cash.registerCashOuts)}`,
     `- Cash supplier payments: -${formatPrice(cash.supplierCashPayments)}`,
     `- Expected closing cash: ${formatPrice(cash.expectedClosingCash)}`,
     `- Counted closing cash: ${formatPrice(cash.closingCash)}`,
     `- Over / short: ${cashVarianceLabel(cash.cashVariance)}`,
+    `- Staff-funded purchases: ${formatPrice(report.staffFundedTotal)}`,
+    `- Staff reimbursed: ${formatPrice(report.staffReimbursedTotal)}`,
+    `- Outstanding staff debt: ${formatPrice(report.outstandingStaffDebt)}`,
     ``,
     `Categories`,
     categoryLines || "- None",
@@ -273,7 +282,8 @@ export default function PosCloseoutPage() {
     closingCash: Math.max(0, Math.round(Number(closingCash) || 0)),
     cashExpenseItems: parsedCashExpenses,
     supplierCashPayments: report?.supplierCashPayments || 0,
-  }), [cashSales, closingCash, openingCash, parsedCashExpenses, report?.supplierCashPayments])
+    registerCashOuts: report?.registerCashOutTotal || 0,
+  }), [cashSales, closingCash, openingCash, parsedCashExpenses, report?.registerCashOutTotal, report?.supplierCashPayments])
   const hasInvalidExpense = cashExpenses.some((expense) => !expense.description.trim() && Number(expense.amount) > 0)
   const canClose = Boolean(report && !closing && !hasInvalidExpense)
   const reportCopy = useMemo(() => report ? reportText(report, cashReconciliation, notes) : "", [cashReconciliation, report, notes])
@@ -554,6 +564,11 @@ export default function PosCloseoutPage() {
               <BreakdownTable title="Operators" items={report.operatorBreakdown} countLabel="sales" />
 
               <Card>
+                <CardHeader className="flex flex-row items-start justify-between gap-3"><div><CardTitle className="font-heading text-xl">Cash Outs & Staff Debt</CardTitle><CardDescription>Entries recorded from the POS during this business date.</CardDescription></div><Button asChild size="sm" variant="outline"><Link href="/admin/pos/cash-outs?posFullscreen=1">Open ledger</Link></Button></CardHeader>
+                <CardContent className="space-y-3"><div className="grid grid-cols-3 gap-2 text-sm"><div className="rounded-md bg-muted p-3"><p className="text-xs text-muted-foreground">Register out</p><p className="font-semibold">{formatPrice(report.registerCashOutTotal)}</p></div><div className="rounded-md bg-muted p-3"><p className="text-xs text-muted-foreground">Staff funded</p><p className="font-semibold">{formatPrice(report.staffFundedTotal)}</p></div><div className="rounded-md bg-muted p-3"><p className="text-xs text-muted-foreground">Still owed</p><p className="font-semibold">{formatPrice(report.outstandingStaffDebt)}</p></div></div>{report.cashOutEntries.length ? <div className="divide-y divide-border">{report.cashOutEntries.map((entry) => <div key={entry.id} className="flex items-start justify-between gap-3 py-2 text-sm"><div><p className="font-medium">{entry.description}</p><p className="text-xs text-muted-foreground">{entry.fundingSource === "REGISTER" ? "Register cash" : `Staff paid · ${entry.staffMember?.name || entry.staffMember?.email || "Staff"}`}</p></div><p className="font-semibold">{formatPrice(entry.amount)}</p></div>)}</div> : <p className="text-sm text-muted-foreground">No cash outs for this date.</p>}</CardContent>
+              </Card>
+
+              <Card>
                 <CardHeader className="flex flex-row items-start justify-between gap-3"><div><CardTitle className="font-heading text-xl">Supplier Accounts</CardTitle><CardDescription>Bills and payments recorded on this business date.</CardDescription></div><Button asChild size="sm" variant="outline"><Link href="/admin/pos/suppliers?posFullscreen=1">Open ledger</Link></Button></CardHeader>
                 <CardContent className="space-y-3">
                   <div className="grid grid-cols-3 gap-2 text-sm"><div className="rounded-md bg-muted p-3"><p className="text-xs text-muted-foreground">Bills</p><p className="font-semibold">{formatPrice(report.supplierBillsTotal)}</p></div><div className="rounded-md bg-muted p-3"><p className="text-xs text-muted-foreground">Payments</p><p className="font-semibold">{formatPrice(report.supplierPaymentsTotal)}</p></div><div className="rounded-md bg-muted p-3"><p className="text-xs text-muted-foreground">Debt now</p><p className="font-semibold">{formatPrice(report.supplierOutstanding)}</p></div></div>
@@ -766,6 +781,10 @@ export default function PosCloseoutPage() {
                     <div className="flex items-center justify-between text-muted-foreground">
                       <span>Cash expenses</span>
                       <span>-{formatPrice(cashReconciliation.cashExpenses)}</span>
+                    </div>
+                    <div className="flex items-center justify-between text-muted-foreground">
+                      <span>Logged cash outs</span>
+                      <span>-{formatPrice(cashReconciliation.registerCashOuts)}</span>
                     </div>
                     <div className="flex items-center justify-between text-muted-foreground">
                       <span>Cash supplier payments</span>

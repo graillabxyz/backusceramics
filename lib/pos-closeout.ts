@@ -4,6 +4,7 @@ import { formatPrice, getProductCategoryLabel } from "@/lib/pos-catalog"
 import type { PosCashReconciliation } from "@/lib/pos-cash-reconciliation"
 import { getBaliBusinessWeek, getBaliDateKey } from "@/lib/pos-week"
 import { buildSupplierLedgerReport, type SupplierBreakdown } from "@/lib/supplier-ledger"
+import { summarizeCashOuts } from "@/lib/pos-cash-outs"
 
 const BALI_UTC_OFFSET_MS = 8 * 60 * 60 * 1000
 
@@ -45,6 +46,24 @@ export interface PosCloseoutReport {
   supplierNetChange: number
   supplierOutstanding: number
   supplierBreakdown: SupplierBreakdown[]
+  registerPurchaseTotal: number
+  registerReimbursementTotal: number
+  registerCashOutTotal: number
+  staffFundedTotal: number
+  staffReimbursedTotal: number
+  outstandingStaffDebt: number
+  cashOutEntries: Array<{
+    id: string
+    fundingSource: string
+    amount: number
+    businessDate: string
+    description: string
+    reimbursedAt: Date | null
+    reimbursedBusinessDate: string | null
+    reimbursementMethod: string | null
+    createdBy: { id: string; name: string | null; email: string } | null
+    staffMember: { id: string; name: string | null; email: string } | null
+  }>
   paidSales: SaleForCloseout[]
   voidedSales: SaleForCloseout[]
   pendingSales: SaleForCloseout[]
@@ -62,6 +81,7 @@ export interface PosWeeklyCashBreakdown {
   openingCash: number
   cashSales: number
   cashExpenses: number
+  registerCashOuts: number
   supplierCashPayments: number
   expectedClosingCash: number
   closingCash: number
@@ -177,10 +197,21 @@ async function loadCloseoutSales(rangeStart: Date, rangeEnd: Date) {
 
 async function buildReportForRange(businessDate: string, rangeStart: Date, rangeEnd: Date): Promise<PosCloseoutReport> {
   const endDate = getBaliDateKey(new Date(rangeEnd.getTime() - 1))
-  const [sales, supplierReport] = await Promise.all([
+  const [sales, supplierReport, cashOutEntries, openStaffEntries] = await Promise.all([
     loadCloseoutSales(rangeStart, rangeEnd),
     buildSupplierLedgerReport(businessDate, endDate),
+    prisma.posCashOut.findMany({
+      where: { voidedAt: null, OR: [{ businessDate: { gte: businessDate, lte: endDate } }, { reimbursedBusinessDate: { gte: businessDate, lte: endDate } }] },
+      orderBy: [{ businessDate: "asc" }, { createdAt: "asc" }],
+      include: { createdBy: { select: { id: true, name: true, email: true } }, staffMember: { select: { id: true, name: true, email: true } } },
+    }),
+    prisma.posCashOut.findMany({
+      where: { fundingSource: "STAFF", reimbursedAt: null, voidedAt: null },
+      select: { fundingSource: true, amount: true, businessDate: true, reimbursedAt: true, reimbursedBusinessDate: true, reimbursementMethod: true, voidedAt: true },
+    }),
   ])
+  const cashOutSummary = summarizeCashOuts(cashOutEntries, businessDate, endDate)
+  const outstandingStaffDebt = summarizeCashOuts(openStaffEntries, "0000-01-01", "9999-12-31").outstandingStaffDebt
   const createdToday = sales.filter((sale) => isInRange(sale.createdAt, rangeStart, rangeEnd))
   const paidSales = createdToday.filter((sale) => sale.status === "PAID")
   const pendingSales = createdToday.filter((sale) => sale.status === "PENDING_PAYMENT")
@@ -247,6 +278,9 @@ async function buildReportForRange(businessDate: string, rangeStart: Date, range
     supplierNetChange: supplierReport.netChange,
     supplierOutstanding: supplierReport.outstanding,
     supplierBreakdown: supplierReport.breakdown,
+    ...cashOutSummary,
+    outstandingStaffDebt,
+    cashOutEntries,
     paidSales,
     voidedSales,
     pendingSales,
@@ -289,6 +323,7 @@ export async function buildPosWeeklyCloseoutReport(anchorDate?: string | null): 
     openingCash: closeout.openingCash,
     cashSales: closeout.cashSales,
     cashExpenses: closeout.cashExpenses,
+    registerCashOuts: closeout.registerCashOuts,
     supplierCashPayments: closeout.supplierCashPayments,
     expectedClosingCash: closeout.expectedClosingCash,
     closingCash: closeout.closingCash,
@@ -333,6 +368,9 @@ function buildCloseoutHtml(report: PosCloseoutReport, cash: PosCashReconciliatio
   const expenseRows = cash.cashExpenseItems.map((expense) => `
     <tr><td style="padding:6px 0;color:#777;">${escapeHtml(expense.description)}</td><td style="padding:6px 0;text-align:right;">-${formatPrice(expense.amount)}</td></tr>
   `).join("")
+  const cashOutRows = report.cashOutEntries.map((entry) => `
+    <tr><td style="padding:6px 0;color:#777;">${escapeHtml(entry.description)} · ${entry.fundingSource === "STAFF" ? `staff paid (${escapeHtml(entry.staffMember?.name || entry.staffMember?.email || "staff")})` : "register cash"}</td><td style="padding:6px 0;text-align:right;">${formatPrice(entry.amount)}</td></tr>
+  `).join("")
 
   return `
     <div style="font-family:Inter,Arial,sans-serif;max-width:720px;margin:0 auto;color:#1f1f1f;">
@@ -366,13 +404,23 @@ function buildCloseoutHtml(report: PosCloseoutReport, cash: PosCashReconciliatio
             <tr><td style="padding:6px 0;color:#777;">Opening register cash</td><td style="padding:6px 0;text-align:right;">${formatPrice(cash.openingCash)}</td></tr>
             <tr><td style="padding:6px 0;color:#777;">Cash sales</td><td style="padding:6px 0;text-align:right;">${formatPrice(cash.cashSales)}</td></tr>
             ${expenseRows}
+            ${cashOutRows}
             <tr><td style="padding:6px 0;color:#777;">Cash expenses total</td><td style="padding:6px 0;text-align:right;">-${formatPrice(cash.cashExpenses)}</td></tr>
+            <tr><td style="padding:6px 0;color:#777;">Logged register cash outs</td><td style="padding:6px 0;text-align:right;">-${formatPrice(cash.registerCashOuts)}</td></tr>
             <tr><td style="padding:6px 0;color:#777;">Cash supplier payments</td><td style="padding:6px 0;text-align:right;">-${formatPrice(cash.supplierCashPayments)}</td></tr>
             <tr><td style="padding:10px 0;font-weight:700;border-top:1px solid #eee;">Expected closing cash</td><td style="padding:10px 0;text-align:right;font-weight:700;border-top:1px solid #eee;">${formatPrice(cash.expectedClosingCash)}</td></tr>
             <tr><td style="padding:6px 0;color:#777;">Counted closing cash</td><td style="padding:6px 0;text-align:right;">${formatPrice(cash.closingCash)}</td></tr>
             <tr><td style="padding:6px 0;font-weight:700;">Over / short</td><td style="padding:6px 0;text-align:right;font-weight:700;">${cash.cashVariance > 0 ? "+" : cash.cashVariance < 0 ? "-" : ""}${formatPrice(Math.abs(cash.cashVariance))}</td></tr>
           </tbody>
         </table>
+      </div>
+      <div style="padding:8px 0 24px;">
+        <h2 style="margin:0 0 12px;font-size:18px;">Staff reimbursements</h2>
+        <table style="width:100%;border-collapse:collapse;"><tbody>
+          <tr><td style="padding:6px 0;color:#777;">Staff-funded purchases</td><td style="padding:6px 0;text-align:right;">${formatPrice(report.staffFundedTotal)}</td></tr>
+          <tr><td style="padding:6px 0;color:#777;">Reimbursed in period</td><td style="padding:6px 0;text-align:right;">${formatPrice(report.staffReimbursedTotal)}</td></tr>
+          <tr><td style="padding:10px 0;font-weight:700;border-top:1px solid #eee;">Outstanding staff debt</td><td style="padding:10px 0;text-align:right;font-weight:700;border-top:1px solid #eee;">${formatPrice(report.outstandingStaffDebt)}</td></tr>
+        </tbody></table>
       </div>
       <div style="padding:8px 0 24px;">
         <h2 style="margin:0 0 12px;font-size:18px;">Categories</h2>
@@ -444,6 +492,10 @@ function buildWeeklyCloseoutHtml(report: PosWeeklyCloseoutReport, notes?: string
         <tr><td style="padding:6px 0;color:#777;">Items sold</td><td style="text-align:right;">${report.itemCount}</td></tr>
         <tr><td style="padding:6px 0;color:#777;">Discounts</td><td style="text-align:right;">-${formatPrice(report.discountTotal)}</td></tr>
         <tr><td style="padding:6px 0;color:#777;">Tax</td><td style="text-align:right;">${formatPrice(report.taxTotal)}</td></tr>
+        <tr><td style="padding:6px 0;color:#777;">Register cash outs</td><td style="text-align:right;">-${formatPrice(report.registerCashOutTotal)}</td></tr>
+        <tr><td style="padding:6px 0;color:#777;">Staff-funded purchases</td><td style="text-align:right;">${formatPrice(report.staffFundedTotal)}</td></tr>
+        <tr><td style="padding:6px 0;color:#777;">Staff reimbursements</td><td style="text-align:right;">${formatPrice(report.staffReimbursedTotal)}</td></tr>
+        <tr><td style="padding:6px 0;color:#777;">Outstanding staff debt</td><td style="text-align:right;font-weight:700;">${formatPrice(report.outstandingStaffDebt)}</td></tr>
         <tr><td style="padding:10px 0;font-weight:700;border-top:1px solid #eee;">Net collected</td><td style="padding:10px 0;text-align:right;font-weight:700;border-top:1px solid #eee;">${formatPrice(report.netTotal)}</td></tr>
       </tbody></table>
     </div>

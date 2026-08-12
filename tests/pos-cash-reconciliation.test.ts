@@ -50,3 +50,17 @@ test("cash supplier payments reduce expected register cash without becoming gene
   assert.equal(result.expectedClosingCash, 1_000_000)
   assert.equal(result.cashVariance, 0)
 })
+
+test("logged register cash outs and cash reimbursements reduce expected drawer cash", () => {
+  const result = calculatePosCashReconciliation({
+    openingCash: 500_000,
+    cashSales: 800_000,
+    closingCash: 1_050_000,
+    cashExpenseItems: [],
+    registerCashOuts: 250_000,
+  })
+
+  assert.equal(result.registerCashOuts, 250_000)
+  assert.equal(result.expectedClosingCash, 1_050_000)
+  assert.equal(result.cashVariance, 0)
+})

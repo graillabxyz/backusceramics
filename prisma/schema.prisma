@@ -37,6 +37,10 @@ model User {
   createdSuppliers            Supplier[]                  @relation("SupplierCreator")
   supplierLedgerEntries       SupplierLedgerEntry[]       @relation("SupplierLedgerCreator")
   voidedSupplierLedgerEntries SupplierLedgerEntry[]       @relation("SupplierLedgerVoider")
+  createdCashOuts             PosCashOut[]                 @relation("PosCashOutCreator")
+  staffFundedCashOuts         PosCashOut[]                 @relation("PosCashOutStaffMember")
+  reimbursedCashOuts          PosCashOut[]                 @relation("PosCashOutReimburser")
+  voidedCashOuts              PosCashOut[]                 @relation("PosCashOutVoider")
   createdPromoCodes           PromoCode[]                 @relation("PromoCodeCreator")
   promoRedemptions            PromoRedemption[]
   analyticsEvents             AnalyticsEvent[]
@@ -419,6 +423,7 @@ model PosCloseout {
   cashSales             Int     @default(0)
   cashExpenses          Int     @default(0)
   cashExpenseItems      String  @default("[]")
+  registerCashOuts      Int     @default(0)
   expectedClosingCash   Int     @default(0)
   closingCash           Int     @default(0)
   cashVariance          Int     @default(0)
@@ -462,6 +467,10 @@ model PosWeeklyCloseout {
   operatorBreakdown     String?
   dailyBreakdown        String  @default("[]")
   dailyCashBreakdown    String  @default("[]")
+  registerCashOuts      Int     @default(0)
+  staffFundedPurchases  Int     @default(0)
+  staffReimbursements   Int     @default(0)
+  outstandingStaffDebt Int     @default(0)
   missingDailyCloseouts String  @default("[]")
   supplierBillsTotal    Int     @default(0)
   supplierPaymentsTotal Int     @default(0)
@@ -519,6 +528,42 @@ model SupplierLedgerEntry {
 
   @@index([supplierId, businessDate])
   @@index([businessDate, entryType])
+  @@index([createdById])
+  @@index([voidedAt])
+}
+
+model PosCashOut {
+  id             String  @id @default(cuid())
+  fundingSource  String
+  // Funding sources: REGISTER, STAFF
+  amount         Int
+  businessDate   String
+  description    String
+
+  createdById String
+  createdBy   User   @relation("PosCashOutCreator", fields: [createdById], references: [id])
+
+  staffMemberId String?
+  staffMember   User?   @relation("PosCashOutStaffMember", fields: [staffMemberId], references: [id])
+
+  reimbursedAt           DateTime?
+  reimbursedBusinessDate String?
+  reimbursementMethod    String?
+  reimbursementNote      String?
+  reimbursedById         String?
+  reimbursedBy           User?     @relation("PosCashOutReimburser", fields: [reimbursedById], references: [id])
+
+  voidedAt    DateTime?
+  voidReason  String?
+  voidedById String?
+  voidedBy   User?     @relation("PosCashOutVoider", fields: [voidedById], references: [id])
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([businessDate, fundingSource])
+  @@index([staffMemberId, reimbursedAt, voidedAt])
+  @@index([reimbursedBusinessDate, reimbursementMethod])
   @@index([createdById])
   @@index([voidedAt])
 }
