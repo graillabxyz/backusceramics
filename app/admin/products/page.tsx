@@ -298,6 +298,56 @@ export default function AdminProductsPage() {
     return data as { url: string; size?: number; originalSize?: number }
   }
 
+  const updateProductInCatalog = (product: PosProduct) => {
+    setProducts((current) => {
+      const exists = current.some((item) => item.id === product.id)
+      if (!exists) return [product, ...current]
+      return current.map((item) => item.id === product.id ? product : item)
+    })
+    setEditingProduct(product)
+  }
+
+  const ensureProductForImages = async () => {
+    if (editingProduct) return editingProduct
+
+    const name = formData.name.trim()
+    if (!name) {
+      throw new Error("Add a product name first so the images can be saved to a draft.")
+    }
+
+    const res = await fetch("/api/pos/products", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        name,
+        category: normalizeProductCategory(formData.category),
+        status: "DRAFT",
+      }),
+    })
+    const data = await res.json().catch(() => ({}))
+    if (!res.ok) {
+      throw new Error(data.error || "Could not create a draft for these images.")
+    }
+
+    updateProductInCatalog(data)
+    return data as PosProduct
+  }
+
+  const persistProductImages = async (product: PosProduct, images: string[]) => {
+    const res = await fetch(`/api/pos/products/${product.id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ imageUrls: images }),
+    })
+    const data = await res.json().catch(() => ({}))
+    if (!res.ok) {
+      throw new Error(data.error || "The image uploaded, but could not be attached to the product.")
+    }
+
+    updateProductInCatalog(data)
+    return data as PosProduct
+  }
+
   const handleUpload = async (event: ChangeEvent<HTMLInputElement>, replaceIndex?: number) => {
     const input = event.currentTarget
     const selectedFiles = Array.from(input.files || [])
@@ -316,55 +366,90 @@ export default function AdminProductsPage() {
     setImageUploadError("")
 
     try {
+      const product = await ensureProductForImages()
       const uploaded: Array<{ url: string; size?: number; originalSize?: number }> = []
       for (const file of files) uploaded.push(await uploadProductImage(file))
 
-      setFormData((current) => ({
-        ...current,
-        imageUrls: (() => {
-          const currentImages = parseProductImageUrls(current.imageUrls)
-          if (typeof replaceIndex === "number" && currentImages[replaceIndex]) {
-            currentImages[replaceIndex] = uploaded[0].url
-            return currentImages.join("\n")
-          }
-          return Array.from(new Set([...currentImages, ...uploaded.map((image) => image.url)])).slice(0, 8).join("\n")
-        })(),
-      }))
+      const currentImages = parseProductImageUrls(formData.imageUrls)
+      let nextImages: string[]
+      if (typeof replaceIndex === "number" && currentImages[replaceIndex]) {
+        nextImages = [...currentImages]
+        nextImages[replaceIndex] = uploaded[0].url
+      } else {
+        nextImages = Array.from(new Set([...currentImages, ...uploaded.map((image) => image.url)])).slice(0, 8)
+      }
+
+      await persistProductImages(product, nextImages)
+      setFormData((current) => ({ ...current, imageUrls: nextImages.join("\n") }))
       setImageUploadNotice(
         typeof replaceIndex === "number"
-          ? "Image replaced. Save the product to apply this change."
-          : `${uploaded.length} ${uploaded.length === 1 ? "image" : "images"} uploaded as WebP and added below.`
+          ? "Image replaced and saved."
+          : `${uploaded.length} ${uploaded.length === 1 ? "image" : "images"} uploaded as WebP and saved to this product.`
       )
     } catch (uploadError) {
       console.error("Product image upload failed", uploadError)
-      setImageUploadError("That image could not be uploaded. Try a smaller JPG, PNG, WebP, HEIC, or HEIF.")
+      setImageUploadError(
+        uploadError instanceof Error
+          ? uploadError.message
+          : "That image could not be uploaded. Try a smaller JPG, PNG, WebP, HEIC, or HEIF."
+      )
     } finally {
       setUploading(false)
       input.value = ""
     }
   }
 
-  const removeFormImage = (index: number) => {
-    setFormData((current) => ({
-      ...current,
-      imageUrls: parseProductImageUrls(current.imageUrls).filter((_, imageIndex) => imageIndex !== index).join("\n"),
-    }))
+  const removeFormImage = async (index: number) => {
+    const previousImages = parseProductImageUrls(formData.imageUrls)
+    const nextImages = previousImages.filter((_, imageIndex) => imageIndex !== index)
+    setFormData((current) => ({ ...current, imageUrls: nextImages.join("\n") }))
     setImageUploadError("")
-    setImageUploadNotice("Image removed. Save the product to apply this change.")
+    setImageUploadNotice("")
+
+    if (!editingProduct) {
+      setImageUploadNotice("Image removed. Save the product to apply this change.")
+      return
+    }
+
+    setUploading(true)
+    try {
+      await persistProductImages(editingProduct, nextImages)
+      setImageUploadNotice("Image removed and the product was updated.")
+    } catch (removeError) {
+      console.error("Product image removal failed", removeError)
+      setFormData((current) => ({ ...current, imageUrls: previousImages.join("\n") }))
+      setImageUploadError(removeError instanceof Error ? removeError.message : "The image could not be removed.")
+    } finally {
+      setUploading(false)
+    }
   }
 
-  const makePrimaryImage = (index: number) => {
-    setFormData((current) => {
-      const images = parseProductImageUrls(current.imageUrls)
-      const selected = images[index]
-      if (!selected) return current
-      return {
-        ...current,
-        imageUrls: [selected, ...images.filter((_, imageIndex) => imageIndex !== index)].join("\n"),
-      }
-    })
+  const makePrimaryImage = async (index: number) => {
+    const previousImages = parseProductImageUrls(formData.imageUrls)
+    const selected = previousImages[index]
+    if (!selected) return
+
+    const nextImages = [selected, ...previousImages.filter((_, imageIndex) => imageIndex !== index)]
+    setFormData((current) => ({ ...current, imageUrls: nextImages.join("\n") }))
     setImageUploadError("")
-    setImageUploadNotice("Primary image updated. Save the product to apply this change.")
+    setImageUploadNotice("")
+
+    if (!editingProduct) {
+      setImageUploadNotice("Primary image updated. Save the product to apply this change.")
+      return
+    }
+
+    setUploading(true)
+    try {
+      await persistProductImages(editingProduct, nextImages)
+      setImageUploadNotice("Primary image updated and saved.")
+    } catch (primaryError) {
+      console.error("Primary product image update failed", primaryError)
+      setFormData((current) => ({ ...current, imageUrls: previousImages.join("\n") }))
+      setImageUploadError(primaryError instanceof Error ? primaryError.message : "The primary image could not be changed.")
+    } finally {
+      setUploading(false)
+    }
   }
 
   const exitPosFullscreen = () => {
