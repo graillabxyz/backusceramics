@@ -2,9 +2,9 @@
 
 import { useState } from "react"
 import Link from "next/link"
-import Image from "next/image"
 import { Check, ShoppingCart } from "lucide-react"
 import { Button } from "@/components/ui/button"
+import { ProductImage } from "@/components/shop/product-image"
 import { formatPrice } from "@/lib/pos-catalog"
 import { upsertShopCartItem } from "@/lib/shop-cart"
 import { trackAnalyticsEvent } from "@/lib/client-analytics"
@@ -47,17 +47,14 @@ export function WallOfCupsGrid({ cups }: { cups: WallCup[] }) {
           <article key={cup.id} className="group relative overflow-hidden rounded-sm bg-muted">
             <Link href={`/shop/${cup.slug}`} className="block" aria-label={`View ${cup.name}`}>
               <div className="relative aspect-square">
-                {cup.image ? (
-                  <Image
-                    src={cup.image}
-                    alt={cup.name}
-                    fill
-                    sizes="(min-width: 1280px) 25vw, (min-width: 1024px) 33vw, (min-width: 640px) 50vw, 100vw"
-                    className="object-cover transition duration-500 group-hover:scale-[1.03]"
-                  />
-                ) : (
-                  <div className="flex h-full w-full items-center justify-center text-sm text-muted-foreground">Image coming soon</div>
-                )}
+                <ProductImage
+                  src={cup.image}
+                  alt={cup.name}
+                  fill
+                  sizes="(min-width: 1280px) 25vw, (min-width: 1024px) 33vw, (min-width: 640px) 50vw, 100vw"
+                  className="object-cover transition duration-500 group-hover:scale-[1.03]"
+                  fallbackLabel={cup.image ? "Image temporarily unavailable" : "Image coming soon"}
+                />
               </div>
               <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/90 via-black/55 to-transparent p-4 pt-20 text-white">
                 <h2 className="break-words font-heading text-xl font-bold leading-tight">{cup.name}</h2>

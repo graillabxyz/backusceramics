@@ -116,6 +116,7 @@ async function uploadToSupabaseStorage(buffer: Buffer) {
   const filename = `products/${getUploadFilename(".webp")}`
   const { error } = await supabase.storage.from(bucket).upload(filename, buffer, {
     contentType: "image/webp",
+    cacheControl: "31536000",
     upsert: false,
   })
 

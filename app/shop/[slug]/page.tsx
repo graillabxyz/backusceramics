@@ -1,5 +1,4 @@
 import Link from "next/link"
-import Image from "next/image"
 import { notFound } from "next/navigation"
 import { ArrowLeft, ArrowRight } from "lucide-react"
 import { Navigation } from "@/components/navigation"
@@ -7,6 +6,7 @@ import { Footer } from "@/components/footer"
 import { Button } from "@/components/ui/button"
 import { ProductViewTracker } from "@/components/product-view-tracker"
 import { ProductPurchaseActions } from "@/components/shop/product-purchase-actions"
+import { ProductImage } from "@/components/shop/product-image"
 import { prisma } from "@/lib/prisma"
 import { formatPrice, parseProductImageUrls } from "@/lib/pos-catalog"
 
@@ -94,20 +94,15 @@ export default async function ProductPage({ params }: ProductPageProps) {
                 aria-label={mainImage ? `Open larger image of ${product.name}` : undefined}
               >
                 <div className="relative aspect-[4/5]">
-                  {mainImage ? (
-                    <Image
-                      src={mainImage}
-                      alt={product.name}
-                      fill
-                      priority
-                      sizes="(min-width: 1024px) 58vw, 100vw"
-                      className="object-cover"
-                    />
-                  ) : (
-                    <div className="flex h-full w-full items-center justify-center text-sm text-muted-foreground">
-                      Image coming soon
-                    </div>
-                  )}
+                  <ProductImage
+                    src={mainImage}
+                    alt={product.name}
+                    fill
+                    priority
+                    sizes="(min-width: 1024px) 58vw, 100vw"
+                    className="object-cover"
+                    fallbackLabel={mainImage ? "Image temporarily unavailable" : "Image coming soon"}
+                  />
                 </div>
               </a>
 
@@ -115,7 +110,7 @@ export default async function ProductPage({ params }: ProductPageProps) {
                 <div className="grid grid-cols-4 gap-3">
                   {images.slice(1, 5).map((image) => (
                     <a key={image} href={image} target="_blank" rel="noopener noreferrer" className="relative aspect-square overflow-hidden rounded-sm bg-muted">
-                      <Image src={image} alt="" fill sizes="15vw" className="object-cover" />
+                      <ProductImage src={image} alt={`${product.name} detail`} fill sizes="15vw" className="object-cover" />
                     </a>
                   ))}
                 </div>
@@ -179,19 +174,14 @@ export default async function ProductPage({ params }: ProductPageProps) {
                     className="group relative block overflow-hidden rounded-sm bg-muted"
                   >
                     <div className="relative aspect-[3/4]">
-                      {relatedImage ? (
-                        <Image
-                          src={relatedImage}
-                          alt={relatedProduct.name}
-                          fill
-                          sizes="(min-width: 1024px) 25vw, (min-width: 640px) 50vw, 100vw"
-                          className="object-cover transition duration-500 group-hover:scale-[1.03]"
-                        />
-                      ) : (
-                        <div className="flex h-full w-full items-center justify-center text-sm text-muted-foreground">
-                          Image coming soon
-                        </div>
-                      )}
+                      <ProductImage
+                        src={relatedImage}
+                        alt={relatedProduct.name}
+                        fill
+                        sizes="(min-width: 1024px) 25vw, (min-width: 640px) 50vw, 100vw"
+                        className="object-cover transition duration-500 group-hover:scale-[1.03]"
+                        fallbackLabel={relatedImage ? "Image temporarily unavailable" : "Image coming soon"}
+                      />
                     </div>
                     <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/85 via-black/35 to-transparent p-3 pt-14 text-white">
                       <h3 className="break-words font-heading text-lg font-bold leading-tight">{relatedProduct.name}</h3>
