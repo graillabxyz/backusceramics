@@ -22,7 +22,20 @@ export async function prepareImageForUpload(file: File) {
   const shouldPrepare = isHeicFile(file) || file.size > 4 * 1024 * 1024
   if (!shouldPrepare) return file
 
-  const image = await loadBrowserImage(file)
+  let image: HTMLImageElement
+  try {
+    image = await loadBrowserImage(file)
+  } catch (error) {
+    // iPad Safari can select HEIC photos that its canvas decoder cannot open.
+    // The upload API uses Sharp and can still convert the original safely.
+    console.warn("Browser image preparation skipped; using the original file", {
+      name: file.name,
+      type: file.type,
+      size: file.size,
+      error,
+    })
+    return file
+  }
   const longestSide = Math.max(image.naturalWidth, image.naturalHeight)
   const scale = Math.min(2400 / Math.max(longestSide, 1), 1)
   const width = Math.max(Math.round(image.naturalWidth * scale), 1)
