@@ -1,6 +1,6 @@
 "use client"
 
-import { ChangeEvent, FormEvent, useEffect, useMemo, useState } from "react"
+import { ChangeEvent, FormEvent, useEffect, useMemo, useRef, useState } from "react"
 import Link from "next/link"
 import { ArrowLeft, Banknote, Camera, CheckCircle2, FileText, Loader2, Plus, ReceiptText, RefreshCw, RotateCcw, Trash2, UsersRound, WalletCards, X } from "lucide-react"
 import { Badge } from "@/components/ui/badge"
@@ -89,6 +89,8 @@ export default function SupplierAccountsPage() {
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [uploading, setUploading] = useState(false)
+  const [imageUploadNotice, setImageUploadNotice] = useState("")
+  const [imageUploadError, setImageUploadError] = useState("")
   const [error, setError] = useState("")
   const [success, setSuccess] = useState("")
   const [entryOpen, setEntryOpen] = useState(false)
@@ -98,6 +100,7 @@ export default function SupplierAccountsPage() {
   const [supplierName, setSupplierName] = useState("")
   const [supplierNotes, setSupplierNotes] = useState("")
   const [form, setForm] = useState<EntryForm>(() => defaultEntryForm())
+  const imageInputRef = useRef<HTMLInputElement>(null)
 
   const selectedSupplier = useMemo(() => data?.suppliers.find((supplier) => supplier.id === form.supplierId) || null, [data, form.supplierId])
 
@@ -127,6 +130,8 @@ export default function SupplierAccountsPage() {
   const openEntry = (entryType: "BILL" | "PAYMENT", supplierId = "") => {
     setForm(defaultEntryForm(entryType, supplierId))
     setError("")
+    setImageUploadNotice("")
+    setImageUploadError("")
     setEntryOpen(true)
   }
 
@@ -154,8 +159,14 @@ export default function SupplierAccountsPage() {
   const uploadImages = async (event: ChangeEvent<HTMLInputElement>) => {
     const files = Array.from(event.target.files || [])
     if (!files.length) return
-    if (form.imageUrls.length + files.length > 6) { setError("Add no more than 6 supporting images."); event.target.value = ""; return }
-    setUploading(true); setError("")
+    if (form.imageUrls.length + files.length > 6) {
+      setImageUploadError("Add no more than 6 supporting images.")
+      event.target.value = ""
+      return
+    }
+    setUploading(true)
+    setImageUploadNotice("")
+    setImageUploadError("")
     try {
       const uploaded: string[] = []
       for (const file of files) {
@@ -167,9 +178,10 @@ export default function SupplierAccountsPage() {
         uploaded.push(result.url)
       }
       setForm((current) => ({ ...current, imageUrls: [...current.imageUrls, ...uploaded] }))
+      setImageUploadNotice(`${uploaded.length} ${uploaded.length === 1 ? "image" : "images"} added to this entry.`)
     } catch (uploadError) {
       console.error("Supplier document upload failed", uploadError)
-      setError(uploadError instanceof Error ? uploadError.message : "Could not upload that image.")
+      setImageUploadError(uploadError instanceof Error ? uploadError.message : "Could not upload that image.")
     } finally { setUploading(false); event.target.value = "" }
   }
 
@@ -288,7 +300,9 @@ export default function SupplierAccountsPage() {
             {form.entryType === "PAYMENT" && selectedSupplier && <div className="rounded-md bg-muted px-3 py-2 text-sm">Current balance: <strong>{formatPrice(selectedSupplier.balance)}</strong></div>}
             <div className="space-y-2"><Label htmlFor="entryDescription">Description</Label><Textarea id="entryDescription" value={form.description} onChange={(event) => setForm((current) => ({ ...current, description: event.target.value }))} placeholder={form.entryType === "BILL" ? "Invoice period, goods received, or useful details" : "Partial payment or account period"} /></div>
             <div className="space-y-2"><Label htmlFor="entryReference">Invoice or payment reference</Label><Input id="entryReference" value={form.reference} onChange={(event) => setForm((current) => ({ ...current, reference: event.target.value }))} placeholder="Optional" /></div>
-            <div className="space-y-3"><div className="flex items-center justify-between gap-3"><div><Label>Supporting images</Label><p className="text-xs text-muted-foreground">Photograph the bill or payment receipt. Up to 6 images.</p></div><Button type="button" variant="outline" size="sm" asChild className={uploading ? "pointer-events-none opacity-60" : ""}><label>{uploading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Camera className="mr-2 h-4 w-4" />}{uploading ? "Uploading" : "Add image"}<input type="file" accept="image/*,.heic,.heif,.avif" multiple className="hidden" onChange={uploadImages} disabled={uploading} /></label></Button></div>
+            <div className="space-y-3"><div className="flex items-center justify-between gap-3"><div><Label htmlFor="supplier-entry-images">Supporting images</Label><p className="text-xs text-muted-foreground">Photograph the bill or choose images from the device. Up to 6 images.</p></div><input ref={imageInputRef} id="supplier-entry-images" type="file" accept="image/*,.heic,.heif,.avif" multiple className="hidden" onChange={uploadImages} disabled={uploading} /><Button type="button" variant="outline" size="sm" disabled={uploading || form.imageUrls.length >= 6} onClick={() => imageInputRef.current?.click()}>{uploading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Camera className="mr-2 h-4 w-4" />}{uploading ? "Uploading" : "Add image"}</Button></div>
+              {imageUploadNotice && <p className="flex items-center gap-2 rounded-md border border-green-600/30 bg-green-600/10 px-3 py-2 text-sm text-green-800"><CheckCircle2 className="h-4 w-4" />{imageUploadNotice}</p>}
+              {imageUploadError && <p className="rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive">{imageUploadError}</p>}
               {form.imageUrls.length > 0 && <div className="grid grid-cols-3 gap-2 sm:grid-cols-4">{form.imageUrls.map((image, index) => <div key={image} className="group relative aspect-square overflow-hidden rounded-md border"><img src={image} alt={`Supporting document ${index + 1}`} className="h-full w-full object-cover" /><button type="button" aria-label="Remove image" className="absolute right-1 top-1 rounded bg-background/90 p-1 shadow" onClick={() => setForm((current) => ({ ...current, imageUrls: current.imageUrls.filter((_, imageIndex) => imageIndex !== index) }))}><X className="h-4 w-4" /></button></div>)}</div>}
             </div>
           </form>
