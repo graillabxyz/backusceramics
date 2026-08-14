@@ -1,9 +1,14 @@
 import assert from "node:assert/strict"
 import test from "node:test"
-import { normalizeSupplierName, summarizeSupplierLedger } from "../lib/supplier-ledger"
+import { normalizeSupplierName, summarizeSupplierLedger, supplierAccountLabel } from "../lib/supplier-ledger"
 
 test("normalizes supplier names for duplicate prevention", () => {
   assert.equal(normalizeSupplierName("  Bali   Fresh FOOD  "), "bali fresh food")
+})
+
+test("supplier accounts distinguish outlets without obscuring the supplier", () => {
+  assert.equal(supplierAccountLabel("Bali Fresh Food", "Sanur"), "Bali Fresh Food · Sanur")
+  assert.equal(supplierAccountLabel("Bali Fresh Food", "  "), "Bali Fresh Food")
 })
 
 test("supplier balances support accumulated bills and partial payments", () => {
@@ -35,4 +40,17 @@ test("empty supplier ledger returns zero accounting totals", () => {
     netChange: 0,
     breakdown: [],
   })
+})
+
+test("cumulative debt remains separate for each outlet", () => {
+  const summary = summarizeSupplierLedger([
+    { supplierId: "fresh-sanur", supplierName: "Fresh Foods · Sanur", entryType: "BILL", amount: 900_000 },
+    { supplierId: "fresh-sanur", supplierName: "Fresh Foods · Sanur", entryType: "PAYMENT", amount: 300_000 },
+    { supplierId: "fresh-ubud", supplierName: "Fresh Foods · Ubud", entryType: "BILL", amount: 250_000 },
+  ])
+
+  assert.deepEqual(summary.breakdown.map((item) => [item.supplierName, item.billsTotal, item.paymentsTotal, item.netChange]), [
+    ["Fresh Foods · Sanur", 900_000, 300_000, 600_000],
+    ["Fresh Foods · Ubud", 250_000, 0, 250_000],
+  ])
 })

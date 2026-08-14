@@ -20,6 +20,7 @@ const ENTRY_TYPES = { BILL: "Bill received", PAYMENT: "Payment to supplier" } as
 interface SupplierAccount {
   id: string
   name: string
+  outletName: string | null
   notes: string | null
   active: boolean
   billsTotal: number
@@ -41,7 +42,7 @@ interface LedgerEntry {
   createdAt: string
   voidedAt: string | null
   voidReason: string | null
-  supplier: { id: string; name: string }
+  supplier: { id: string; name: string; outletName: string | null }
   createdBy: { id: string; name: string | null; email: string } | null
   voidedBy: { id: string; name: string | null; email: string } | null
 }
@@ -80,6 +81,10 @@ function readableDate(value: string) {
   return new Date(`${value}T12:00:00Z`).toLocaleDateString(undefined, { weekday: "short", day: "numeric", month: "short", year: "numeric" })
 }
 
+function accountLabel(supplier: { name: string; outletName?: string | null }) {
+  return supplier.outletName ? `${supplier.name} · ${supplier.outletName}` : supplier.name
+}
+
 function defaultEntryForm(type: "BILL" | "PAYMENT" = "BILL", supplierId = ""): EntryForm {
   return { entryType: type, supplierId, amount: "", businessDate: todayBali(), description: "", reference: "", paymentMethod: "TRANSFER", imageUrls: [] }
 }
@@ -98,6 +103,7 @@ export default function SupplierAccountsPage() {
   const [voidEntry, setVoidEntry] = useState<LedgerEntry | null>(null)
   const [voidReason, setVoidReason] = useState("")
   const [supplierName, setSupplierName] = useState("")
+  const [supplierOutletName, setSupplierOutletName] = useState("")
   const [supplierNotes, setSupplierNotes] = useState("")
   const [form, setForm] = useState<EntryForm>(() => defaultEntryForm())
 
@@ -141,13 +147,13 @@ export default function SupplierAccountsPage() {
       const response = await fetch("/api/pos/suppliers", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name: supplierName, notes: supplierNotes }),
+        body: JSON.stringify({ name: supplierName, outletName: supplierOutletName, notes: supplierNotes }),
       })
       const result = await response.json().catch(() => ({}))
       if (response.status === 423) return handleLocked()
       if (!response.ok) throw new Error(result.error || "Could not add supplier.")
-      setSupplierOpen(false); setSupplierName(""); setSupplierNotes("")
-      setSuccess(`${result.name} is ready to use.`)
+      setSupplierOpen(false); setSupplierName(""); setSupplierOutletName(""); setSupplierNotes("")
+      setSuccess(`${accountLabel(result)} is ready to use.`)
       await loadAccounts()
     } catch (saveError) {
       console.error("Could not add supplier", saveError)
@@ -197,7 +203,7 @@ export default function SupplierAccountsPage() {
       if (response.status === 423) return handleLocked()
       if (!response.ok) throw new Error(result.error || "Could not save this supplier entry.")
       setEntryOpen(false)
-      setSuccess(`${ENTRY_TYPES[form.entryType]} recorded for ${result.supplier.name}.`)
+      setSuccess(`${ENTRY_TYPES[form.entryType]} recorded for ${accountLabel(result.supplier)}.`)
       await loadAccounts()
     } catch (saveError) {
       console.error("Could not save supplier ledger entry", saveError)
@@ -247,17 +253,24 @@ export default function SupplierAccountsPage() {
           <Card><CardHeader className="pb-2"><CardDescription>Outstanding debt</CardDescription><CardTitle className="text-xl sm:text-2xl">{formatPrice(data.summary.outstanding)}</CardTitle></CardHeader></Card>
           <Card><CardHeader className="pb-2"><CardDescription>Bills recorded</CardDescription><CardTitle className="text-xl sm:text-2xl">{formatPrice(data.summary.billsTotal)}</CardTitle></CardHeader></Card>
           <Card><CardHeader className="pb-2"><CardDescription>Payments recorded</CardDescription><CardTitle className="text-xl sm:text-2xl">{formatPrice(data.summary.paymentsTotal)}</CardTitle></CardHeader></Card>
-          <Card><CardHeader className="pb-2"><CardDescription>Active suppliers</CardDescription><CardTitle className="text-xl sm:text-2xl">{data.summary.supplierCount}</CardTitle></CardHeader></Card>
+          <Card><CardHeader className="pb-2"><CardDescription>Outlet accounts</CardDescription><CardTitle className="text-xl sm:text-2xl">{data.summary.supplierCount}</CardTitle></CardHeader></Card>
         </section>
 
         <div className="grid gap-5 xl:grid-cols-[minmax(320px,0.8fr)_minmax(0,1.6fr)]">
           <Card className="h-fit">
-            <CardHeader><CardTitle>Supplier balances</CardTitle><CardDescription>Choose a supplier to record a bill or payment.</CardDescription></CardHeader>
+            <CardHeader><CardTitle>Cumulative debt by outlet</CardTitle><CardDescription>Every outlet is reconciled independently across its full bill and payment history.</CardDescription></CardHeader>
             <CardContent className="space-y-2">
               {data.suppliers.length ? data.suppliers.map((supplier) => <div key={supplier.id} className="rounded-md border border-border p-3">
-                <div className="flex items-start justify-between gap-3"><div className="min-w-0"><p className="font-semibold">{supplier.name}</p><p className="text-xs text-muted-foreground">{supplier.billCount} bills · {supplier.paymentCount} payments</p></div><p className="shrink-0 font-semibold">{formatPrice(supplier.balance)}</p></div>
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0"><p className="font-semibold">{supplier.name}</p><p className="text-sm text-muted-foreground">{supplier.outletName || "Main account"}</p></div>
+                  <div className="shrink-0 text-right"><p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Cumulative debt</p><p className="font-semibold">{formatPrice(supplier.balance)}</p></div>
+                </div>
+                <div className="mt-3 grid grid-cols-2 gap-2 rounded-md bg-muted/60 p-2 text-xs">
+                  <div><p className="text-muted-foreground">All bills · {supplier.billCount}</p><p className="font-medium">{formatPrice(supplier.billsTotal)}</p></div>
+                  <div className="text-right"><p className="text-muted-foreground">All payments · {supplier.paymentCount}</p><p className="font-medium text-green-700">−{formatPrice(supplier.paymentsTotal)}</p></div>
+                </div>
                 <div className="mt-3 grid grid-cols-2 gap-2"><Button size="sm" variant="outline" onClick={() => openEntry("BILL", supplier.id)}><Plus className="mr-1 h-3.5 w-3.5" />Bill</Button><Button size="sm" variant="outline" disabled={supplier.balance <= 0} onClick={() => openEntry("PAYMENT", supplier.id)}><Banknote className="mr-1 h-3.5 w-3.5" />Payment</Button></div>
-              </div>) : <div className="rounded-md border border-dashed p-6 text-center text-sm text-muted-foreground"><UsersRound className="mx-auto mb-2 h-6 w-6" />Add your first supplier to begin.</div>}
+              </div>) : <div className="rounded-md border border-dashed p-6 text-center text-sm text-muted-foreground"><UsersRound className="mx-auto mb-2 h-6 w-6" />Add your first supplier outlet to begin.</div>}
             </CardContent>
           </Card>
 
@@ -268,7 +281,7 @@ export default function SupplierAccountsPage() {
                 const images = parseImages(entry.imageUrls)
                 return <div key={entry.id} className={`py-4 ${entry.voidedAt ? "opacity-55" : ""}`}>
                   <div className="flex items-start justify-between gap-3">
-                    <div className="min-w-0"><div className="flex flex-wrap items-center gap-2"><p className="font-semibold">{entry.supplier.name}</p><Badge variant={entry.entryType === "BILL" ? "secondary" : "outline"}>{ENTRY_TYPES[entry.entryType]}</Badge>{entry.voidedAt && <Badge variant="destructive">Voided</Badge>}</div><p className="mt-1 text-xs text-muted-foreground">{readableDate(entry.businessDate)} · {entry.createdBy?.name || entry.createdBy?.email || "Staff"}{entry.paymentMethod ? ` · ${entry.paymentMethod.replace(/_/g, " ")}` : ""}</p></div>
+                    <div className="min-w-0"><div className="flex flex-wrap items-center gap-2"><p className="font-semibold">{accountLabel(entry.supplier)}</p><Badge variant={entry.entryType === "BILL" ? "secondary" : "outline"}>{ENTRY_TYPES[entry.entryType]}</Badge>{entry.voidedAt && <Badge variant="destructive">Voided</Badge>}</div><p className="mt-1 text-xs text-muted-foreground">{readableDate(entry.businessDate)} · {entry.createdBy?.name || entry.createdBy?.email || "Staff"}{entry.paymentMethod ? ` · ${entry.paymentMethod.replace(/_/g, " ")}` : ""}</p></div>
                     <p className={`shrink-0 font-semibold ${entry.entryType === "PAYMENT" ? "text-green-700" : ""}`}>{entry.entryType === "PAYMENT" ? "−" : "+"}{formatPrice(entry.amount)}</p>
                   </div>
                   {(entry.description || entry.reference) && <p className="mt-2 text-sm text-muted-foreground">{entry.description}{entry.reference ? `${entry.description ? " · " : ""}Ref: ${entry.reference}` : ""}</p>}
@@ -283,9 +296,13 @@ export default function SupplierAccountsPage() {
 
       <Dialog open={supplierOpen} onOpenChange={setSupplierOpen}>
         <DialogContent className="max-w-[calc(100vw-1rem)] sm:max-w-lg"><form onSubmit={addSupplier}>
-          <DialogHeader><DialogTitle>Add supplier</DialogTitle><DialogDescription>Only the name is required. It will become available in the quick-select list.</DialogDescription></DialogHeader>
-          <div className="space-y-4 py-5"><div className="space-y-2"><Label htmlFor="supplierName">Supplier name</Label><Input id="supplierName" value={supplierName} onChange={(event) => setSupplierName(event.target.value)} autoFocus required /></div><div className="space-y-2"><Label htmlFor="supplierNotes">Notes</Label><Textarea id="supplierNotes" value={supplierNotes} onChange={(event) => setSupplierNotes(event.target.value)} placeholder="Contact or account notes (optional)" /></div></div>
-          <DialogFooter><Button type="button" variant="outline" onClick={() => setSupplierOpen(false)}>Cancel</Button><Button disabled={saving || supplierName.trim().length < 2}>{saving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}Add supplier</Button></DialogFooter>
+          <DialogHeader><DialogTitle>Add supplier outlet</DialogTitle><DialogDescription>Create a separate account for each outlet so its cumulative debt remains clear.</DialogDescription></DialogHeader>
+          <div className="space-y-4 py-5">
+            <div className="space-y-2"><Label htmlFor="supplierName">Supplier name</Label><Input id="supplierName" value={supplierName} onChange={(event) => setSupplierName(event.target.value)} autoFocus required /></div>
+            <div className="space-y-2"><Label htmlFor="supplierOutletName">Outlet or branch</Label><Input id="supplierOutletName" value={supplierOutletName} onChange={(event) => setSupplierOutletName(event.target.value)} placeholder="Sanur, Ubud, main account…" /><p className="text-xs text-muted-foreground">Optional when this supplier has only one account.</p></div>
+            <div className="space-y-2"><Label htmlFor="supplierNotes">Notes</Label><Textarea id="supplierNotes" value={supplierNotes} onChange={(event) => setSupplierNotes(event.target.value)} placeholder="Contact or account notes (optional)" /></div>
+          </div>
+          <DialogFooter><Button type="button" variant="outline" onClick={() => setSupplierOpen(false)}>Cancel</Button><Button disabled={saving || supplierName.trim().length < 2}>{saving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}Add outlet</Button></DialogFooter>
         </form></DialogContent>
       </Dialog>
 
@@ -294,7 +311,7 @@ export default function SupplierAccountsPage() {
           <DialogHeader className="border-b p-5"><DialogTitle>{ENTRY_TYPES[form.entryType]}</DialogTitle><DialogDescription>{form.entryType === "BILL" ? "Adds to the supplier balance and today’s report." : "Records a full or partial payment and reduces the supplier balance."}</DialogDescription></DialogHeader>
           <form id="supplier-entry-form" onSubmit={saveEntry} className="space-y-5 overflow-y-auto p-5">
             <div className="grid grid-cols-2 gap-2"><Button type="button" variant={form.entryType === "BILL" ? "default" : "outline"} onClick={() => setForm((current) => ({ ...current, entryType: "BILL" }))}><FileText className="mr-2 h-4 w-4" />Bill received</Button><Button type="button" variant={form.entryType === "PAYMENT" ? "default" : "outline"} onClick={() => setForm((current) => ({ ...current, entryType: "PAYMENT" }))}><WalletCards className="mr-2 h-4 w-4" />Payment</Button></div>
-            <div className="grid gap-4 sm:grid-cols-2"><div className="space-y-2"><Label>Supplier</Label><Select value={form.supplierId} onValueChange={(value) => setForm((current) => ({ ...current, supplierId: value }))}><SelectTrigger><SelectValue placeholder="Choose supplier" /></SelectTrigger><SelectContent>{data?.suppliers.map((supplier) => <SelectItem key={supplier.id} value={supplier.id}>{supplier.name} · {formatPrice(supplier.balance)}</SelectItem>)}</SelectContent></Select></div><div className="space-y-2"><Label htmlFor="entryDate">Accounting date</Label><Input id="entryDate" type="date" value={form.businessDate} onChange={(event) => setForm((current) => ({ ...current, businessDate: event.target.value }))} required /></div></div>
+            <div className="grid gap-4 sm:grid-cols-2"><div className="space-y-2"><Label>Supplier outlet</Label><Select value={form.supplierId} onValueChange={(value) => setForm((current) => ({ ...current, supplierId: value }))}><SelectTrigger><SelectValue placeholder="Choose outlet" /></SelectTrigger><SelectContent>{data?.suppliers.map((supplier) => <SelectItem key={supplier.id} value={supplier.id}>{accountLabel(supplier)} · {formatPrice(supplier.balance)}</SelectItem>)}</SelectContent></Select></div><div className="space-y-2"><Label htmlFor="entryDate">Accounting date</Label><Input id="entryDate" type="date" value={form.businessDate} onChange={(event) => setForm((current) => ({ ...current, businessDate: event.target.value }))} required /></div></div>
             <div className="grid gap-4 sm:grid-cols-2"><div className="space-y-2"><Label htmlFor="entryAmount">Amount (IDR)</Label><Input id="entryAmount" type="number" min="1" step="1" inputMode="numeric" value={form.amount} onChange={(event) => setForm((current) => ({ ...current, amount: event.target.value }))} required /></div>{form.entryType === "PAYMENT" && <div className="space-y-2"><Label>Paid by</Label><Select value={form.paymentMethod} onValueChange={(value) => setForm((current) => ({ ...current, paymentMethod: value }))}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="CASH">Cash</SelectItem><SelectItem value="TRANSFER">Transfer</SelectItem><SelectItem value="QRIS">QRIS</SelectItem><SelectItem value="CARD_MACHINE">Card machine</SelectItem><SelectItem value="OTHER">Other</SelectItem></SelectContent></Select></div>}</div>
             {form.entryType === "PAYMENT" && selectedSupplier && <div className="rounded-md bg-muted px-3 py-2 text-sm">Current balance: <strong>{formatPrice(selectedSupplier.balance)}</strong></div>}
             <div className="space-y-2"><Label htmlFor="entryDescription">Description</Label><Textarea id="entryDescription" value={form.description} onChange={(event) => setForm((current) => ({ ...current, description: event.target.value }))} placeholder={form.entryType === "BILL" ? "Invoice period, goods received, or useful details" : "Partial payment or account period"} /></div>

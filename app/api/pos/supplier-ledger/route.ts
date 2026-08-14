@@ -85,7 +85,7 @@ export async function POST(req: NextRequest) {
           reference: reference || null,
           createdById: operator.id,
         },
-        include: { supplier: { select: { id: true, name: true } }, createdBy: { select: { id: true, name: true, email: true } } },
+        include: { supplier: { select: { id: true, name: true, outletName: true } }, createdBy: { select: { id: true, name: true, email: true } } },
       })
     }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable })
 

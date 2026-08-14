@@ -26,7 +26,7 @@ export async function GET(req: NextRequest) {
     prisma.supplier.findMany({
       where: includeInactive ? undefined : { active: true },
       orderBy: { name: "asc" },
-      select: { id: true, name: true, notes: true, active: true, createdAt: true, updatedAt: true },
+      select: { id: true, name: true, outletName: true, notes: true, active: true, createdAt: true, updatedAt: true },
     }),
     prisma.supplierLedgerEntry.groupBy({
       by: ["supplierId", "entryType"],
@@ -38,7 +38,7 @@ export async function GET(req: NextRequest) {
       orderBy: [{ businessDate: "desc" }, { createdAt: "desc" }],
       take: 200,
       include: {
-        supplier: { select: { id: true, name: true } },
+        supplier: { select: { id: true, name: true, outletName: true } },
         createdBy: { select: { id: true, name: true, email: true } },
         voidedBy: { select: { id: true, name: true, email: true } },
       },
@@ -61,7 +61,7 @@ export async function GET(req: NextRequest) {
   const accounts = suppliers.map((supplier) => {
     const account = totals.get(supplier.id) || { billsTotal: 0, paymentsTotal: 0, billCount: 0, paymentCount: 0 }
     return { ...supplier, ...account, balance: account.billsTotal - account.paymentsTotal }
-  })
+  }).sort((a, b) => b.balance - a.balance || a.name.localeCompare(b.name) || (a.outletName || "").localeCompare(b.outletName || ""))
   const response = NextResponse.json({
     suppliers: accounts,
     recentEntries,
@@ -83,18 +83,26 @@ export async function POST(req: NextRequest) {
 
   const data = await req.json().catch(() => ({}))
   const name = typeof data.name === "string" ? cleanString(data.name, 120) : ""
+  const outletName = typeof data.outletName === "string" ? cleanString(data.outletName, 120) : ""
   const notes = typeof data.notes === "string" ? cleanString(data.notes, 1000) : ""
   if (name.length < 2) return NextResponse.json({ error: "Enter the supplier name." }, { status: 400 })
 
   try {
     const supplier = await prisma.supplier.create({
-      data: { name, normalizedName: normalizeSupplierName(name), notes: notes || null, createdById: access.operator.id },
+      data: {
+        name,
+        normalizedName: normalizeSupplierName(name),
+        outletName: outletName || null,
+        normalizedOutletName: normalizeSupplierName(outletName),
+        notes: notes || null,
+        createdById: access.operator.id,
+      },
     })
     const response = NextResponse.json(supplier, { status: 201 })
     setPosOperatorCookie(response, access.operator.id, POS_PIN_LOCK_SECONDS)
     return response
   } catch (error) {
     console.error("Could not add POS supplier", { error, operatorId: access.operator.id })
-    return NextResponse.json({ error: "That supplier already exists or could not be added." }, { status: 409 })
+    return NextResponse.json({ error: "That supplier outlet already exists or could not be added." }, { status: 409 })
   }
 }

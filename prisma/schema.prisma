@@ -489,20 +489,23 @@ model PosWeeklyCloseout {
 }
 
 model Supplier {
-  id             String                @id @default(cuid())
-  name           String
-  normalizedName String                @unique
-  active         Boolean               @default(true)
-  notes          String?
-  createdById    String?
-  createdBy      User?                 @relation("SupplierCreator", fields: [createdById], references: [id])
-  entries        SupplierLedgerEntry[]
+  id                   String                @id @default(cuid())
+  name                 String
+  normalizedName       String
+  outletName           String?
+  normalizedOutletName String                @default("")
+  active               Boolean               @default(true)
+  notes                String?
+  createdById          String?
+  createdBy            User?                 @relation("SupplierCreator", fields: [createdById], references: [id])
+  entries              SupplierLedgerEntry[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
   @@index([active, name])
   @@index([createdById])
+  @@unique([normalizedName, normalizedOutletName])
 }
 
 model SupplierLedgerEntry {

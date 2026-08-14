@@ -33,6 +33,11 @@ export function normalizeSupplierName(value: string) {
   return value.trim().replace(/\s+/g, " ").toLocaleLowerCase("en-US")
 }
 
+export function supplierAccountLabel(name: string, outletName?: string | null) {
+  const outlet = outletName?.trim()
+  return outlet ? `${name} · ${outlet}` : name
+}
+
 export function summarizeSupplierLedger(entries: SupplierLedgerValue[]): SupplierLedgerSummary {
   const suppliers = new Map<string, SupplierBreakdown>()
   let billCount = 0
@@ -82,25 +87,25 @@ export async function buildSupplierLedgerReport(startDate: string, endDate: stri
       where: { businessDate: { gte: startDate, lte: endDate }, voidedAt: null },
       orderBy: [{ businessDate: "asc" }, { createdAt: "asc" }],
       include: {
-        supplier: { select: { id: true, name: true } },
+        supplier: { select: { id: true, name: true, outletName: true } },
         createdBy: { select: { id: true, name: true, email: true } },
       },
     }),
     prisma.supplierLedgerEntry.findMany({
       where: { businessDate: { lte: endDate }, voidedAt: null },
-      select: { supplierId: true, entryType: true, amount: true, supplier: { select: { name: true } } },
+      select: { supplierId: true, entryType: true, amount: true, supplier: { select: { name: true, outletName: true } } },
     }),
   ])
 
   const period = summarizeSupplierLedger(periodEntries.map((entry) => ({
     supplierId: entry.supplierId,
-    supplierName: entry.supplier.name,
+    supplierName: supplierAccountLabel(entry.supplier.name, entry.supplier.outletName),
     entryType: entry.entryType as SupplierEntryType,
     amount: entry.amount,
   })))
   const outstanding = summarizeSupplierLedger(outstandingEntries.map((entry) => ({
     supplierId: entry.supplierId,
-    supplierName: entry.supplier.name,
+    supplierName: supplierAccountLabel(entry.supplier.name, entry.supplier.outletName),
     entryType: entry.entryType as SupplierEntryType,
     amount: entry.amount,
   })))
