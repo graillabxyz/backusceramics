@@ -56,6 +56,7 @@ export function normalizeProductCategory(value: unknown): PosProductCategory {
 }
 
 export function getProductCategoryLabel(value: unknown) {
+  if (String(value || "").trim().toUpperCase() === "CLIENT_ORDERS") return "Client orders"
   const category = normalizeProductCategory(value)
   return POS_PRODUCT_CATEGORIES.find((item) => item.id === category)?.label || "Other"
 }

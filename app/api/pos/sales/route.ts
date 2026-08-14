@@ -10,6 +10,7 @@ import { recordAnalyticsEvent } from "@/lib/analytics-server"
 import { notifyCupSalePaid } from "@/lib/admin-notification-events"
 import { checkRateLimit, cleanString, isRequestBodyTooLarge, isValidEmailAddress, rateLimitHeaders, safeHeaderValue } from "@/lib/server-security"
 import { getPosOperatorFromRequest } from "@/lib/pos-operator-session"
+import { getPosCustomItemMetadata, normalizePosCustomItemType, type PosCustomItemType } from "@/lib/pos-custom-items"
 
 const MAX_POS_SALE_BODY_BYTES = 64 * 1024
 
@@ -19,7 +20,7 @@ interface SaleItemRequest {
   taxRate: ReturnType<typeof normalizePosTaxRate>
   discountType: ReturnType<typeof normalizePosDiscountType>
   discountValue: number
-  customItemType: "DISCOUNT_BOX" | null
+  customItemType: PosCustomItemType | null
   customName: string
   customUnitPrice: number
 }
@@ -120,21 +121,26 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Invalid payment method" }, { status: 400 })
   }
 
-  const saleItems: SaleItemRequest[] = items.map((item: RawSaleItemRequest) => ({
-    productId: typeof item.productId === "string" && item.productId ? item.productId : null,
-    quantity: Number(item.quantity || 0),
-    taxRate: normalizePosTaxRate(item.taxRate),
-    discountType: normalizePosDiscountType(item.discountType),
-    discountValue: Number(item.discountValue || 0),
-    customItemType: item.customItemType === "DISCOUNT_BOX" ? "DISCOUNT_BOX" : null,
-    customName: cleanString(item.customName, 160) || "Discount box ceramic",
-    customUnitPrice: Number(item.customUnitPrice || 0),
-  }))
+  const saleItems: SaleItemRequest[] = items.map((item: RawSaleItemRequest) => {
+    const customItemType = normalizePosCustomItemType(item.customItemType)
+    const metadata = customItemType ? getPosCustomItemMetadata(customItemType) : null
+    return {
+      productId: typeof item.productId === "string" && item.productId ? item.productId : null,
+      quantity: Number(item.quantity || 0),
+      taxRate: normalizePosTaxRate(item.taxRate),
+      discountType: normalizePosDiscountType(item.discountType),
+      discountValue: Number(item.discountValue || 0),
+      customItemType,
+      customName: cleanString(item.customName, 500) || metadata?.defaultName || "",
+      customUnitPrice: Number(item.customUnitPrice || 0),
+    }
+  })
 
   if (saleItems.length === 0 || saleItems.length > 100 || saleItems.some((item) => (
     !Number.isInteger(item.quantity) || item.quantity < 1 || item.quantity > 99 ||
-    (!item.productId && item.customItemType !== "DISCOUNT_BOX") ||
-    (item.customItemType === "DISCOUNT_BOX" && (!Number.isInteger(item.customUnitPrice) || item.customUnitPrice < 1 || item.customUnitPrice > 100_000_000))
+    (!item.productId && !item.customItemType) ||
+    (item.customItemType === "CLIENT_ORDER" && !item.customName) ||
+    (item.customItemType && (!Number.isInteger(item.customUnitPrice) || item.customUnitPrice < 1 || item.customUnitPrice > 100_000_000))
   ))) {
     return NextResponse.json({ error: "Sale needs at least one valid item" }, { status: 400 })
   }
@@ -148,7 +154,8 @@ export async function POST(req: NextRequest) {
       let total = 0
 
       for (const item of saleItems) {
-        if (item.customItemType === "DISCOUNT_BOX") {
+        if (item.customItemType) {
+          const metadata = getPosCustomItemMetadata(item.customItemType)
           const lineTotals = calculatePosLineTotals({
             unitPrice: item.customUnitPrice,
             quantity: item.quantity,
@@ -163,8 +170,8 @@ export async function POST(req: NextRequest) {
           snapshots.push({
             productId: null,
             nameSnapshot: item.customName,
-            skuSnapshot: "DISCOUNT-BOX",
-            categorySnapshot: "OTHER",
+            skuSnapshot: metadata.sku,
+            categorySnapshot: metadata.category,
             unitPrice: item.customUnitPrice,
             quantity: item.quantity,
             subtotal: lineTotals.subtotal,

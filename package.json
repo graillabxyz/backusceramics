@@ -10,7 +10,7 @@
     "lint": "eslint . --quiet",
     "test": "npm run test:seats && npm run test:commerce && npm run test:notifications && npm run test:closeout",
     "test:closeout": "node --import tsx --test tests/pos-cash-reconciliation.test.ts tests/pos-cash-outs.test.ts tests/pos-week.test.ts tests/supplier-ledger.test.ts",
-    "test:commerce": "tsx --test tests/commerce-payment.test.ts",
+    "test:commerce": "tsx --test tests/commerce-payment.test.ts tests/pos-custom-items.test.ts",
     "test:seats": "tsx --test tests/class-seat-accounting.test.ts",
     "test:notifications": "tsx --test tests/store-hours.test.ts",
     "typecheck": "tsc --noEmit --incremental false",

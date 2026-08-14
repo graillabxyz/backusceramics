@@ -43,6 +43,7 @@ import {
   CheckCircle2,
   ClipboardCheck,
   CreditCard,
+  FileText,
   LayoutDashboard,
   ImagePlus,
   Loader2,
@@ -103,7 +104,7 @@ interface CartItem {
   taxRate: PosTaxRate
   discountType: PosDiscountType
   discountValue: string
-  customItemType?: "DISCOUNT_BOX"
+  customItemType?: "DISCOUNT_BOX" | "CLIENT_ORDER"
 }
 
 interface QuickProductForm {
@@ -218,6 +219,7 @@ function PosWorkspace() {
   const [isQuickAddOpen, setIsQuickAddOpen] = useState(false)
   const [isQuickEditOpen, setIsQuickEditOpen] = useState(false)
   const [isDiscountBoxOpen, setIsDiscountBoxOpen] = useState(false)
+  const [isClientOrderOpen, setIsClientOrderOpen] = useState(false)
   const [isCashOutOpen, setIsCashOutOpen] = useState(false)
   const [cashOutFundingSource, setCashOutFundingSource] = useState<"REGISTER" | "STAFF">("REGISTER")
   const [cashOutAmount, setCashOutAmount] = useState("")
@@ -226,6 +228,10 @@ function PosWorkspace() {
   const [discountBoxPrice, setDiscountBoxPrice] = useState("")
   const [discountBoxName, setDiscountBoxName] = useState("")
   const [discountBoxError, setDiscountBoxError] = useState("")
+  const [clientOrderName, setClientOrderName] = useState("")
+  const [clientOrderDetails, setClientOrderDetails] = useState("")
+  const [clientOrderPrice, setClientOrderPrice] = useState("")
+  const [clientOrderError, setClientOrderError] = useState("")
   const [savingProduct, setSavingProduct] = useState(false)
   const [uploadingImage, setUploadingImage] = useState(false)
   const [imageUploadNotice, setImageUploadNotice] = useState("")
@@ -842,6 +848,65 @@ function PosWorkspace() {
     setPosStep("CATEGORIES")
   }
 
+  const addClientOrderItem = () => {
+    const name = clientOrderName.trim()
+    const details = clientOrderDetails.trim()
+    const price = Number(clientOrderPrice)
+
+    if (!name) {
+      setClientOrderError("Enter the client or order name.")
+      return
+    }
+    if (!details) {
+      setClientOrderError("Add enough detail to identify this order in reports.")
+      return
+    }
+    if (!Number.isInteger(price) || price < 1 || price > 100_000_000) {
+      setClientOrderError("Enter a valid price between Rp 1 and Rp 100,000,000.")
+      return
+    }
+
+    const id = `client-order-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`
+    const product: PosProduct = {
+      id,
+      name: `Client order - ${name}: ${details}`,
+      slug: id,
+      sku: null,
+      description: details,
+      volumeMl: null,
+      weightGrams: null,
+      lengthCm: null,
+      widthCm: null,
+      heightCm: null,
+      imageUrls: null,
+      price,
+      currency: "IDR",
+      category: "OTHER",
+      quantity: 99,
+      status: "AVAILABLE",
+      cafeOnly: false,
+      showInShop: false,
+      featured: false,
+      createdAt: new Date().toISOString(),
+    }
+
+    setCart((current) => [...current, {
+      product,
+      quantity: 1,
+      taxRate: 10,
+      discountType: "NONE",
+      discountValue: "",
+      customItemType: "CLIENT_ORDER",
+    }])
+    setClientOrderName("")
+    setClientOrderDetails("")
+    setClientOrderPrice("")
+    setClientOrderError("")
+    setIsClientOrderOpen(false)
+    setError("")
+    setPosStep("CATEGORIES")
+  }
+
   const updateCartQuantity = (productId: string, quantity: number) => {
     setCart((current) => {
       if (quantity <= 0) {
@@ -1308,6 +1373,10 @@ function PosWorkspace() {
                   <Tag className="mr-2 h-4 w-4" />
                   Discount box
                 </DropdownMenuItem>
+                <DropdownMenuItem onClick={() => setIsClientOrderOpen(true)}>
+                  <FileText className="mr-2 h-4 w-4" />
+                  Client order
+                </DropdownMenuItem>
                 <DropdownMenuItem onClick={openCashOut} className="sm:hidden">
                   <CircleDollarSign className="mr-2 h-4 w-4" />
                   Cash out
@@ -1455,6 +1524,24 @@ function PosWorkspace() {
                   <span>
                     <span className="block font-heading text-xl font-semibold text-foreground">Discount box</span>
                     <span className="mt-1 block text-sm text-muted-foreground">Enter a price on the fly</span>
+                  </span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setError("")
+                    setClientOrderName("")
+                    setClientOrderDetails("")
+                    setClientOrderPrice("")
+                    setClientOrderError("")
+                    setIsClientOrderOpen(true)
+                  }}
+                  className="flex min-h-32 flex-col justify-between rounded-md border border-primary/30 bg-primary/5 p-5 text-left transition hover:border-primary hover:bg-primary/10 hover:shadow-sm"
+                >
+                  <span className="flex h-10 w-10 items-center justify-center rounded-full bg-primary text-primary-foreground"><FileText className="h-5 w-5" /></span>
+                  <span>
+                    <span className="block font-heading text-xl font-semibold text-foreground">Client order</span>
+                    <span className="mt-1 block text-sm text-muted-foreground">Record details and an agreed price</span>
                   </span>
                 </button>
                 {POS_PRODUCT_CATEGORIES.map((category) => {
@@ -1925,6 +2012,69 @@ function PosWorkspace() {
           <DialogFooter>
             <Button type="button" variant="outline" onClick={() => setIsDiscountBoxOpen(false)}>Cancel</Button>
             <Button type="button" onClick={addDiscountBoxItem} disabled={!discountBoxPrice}>Add to bill</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={isClientOrderOpen} onOpenChange={(open) => {
+        setIsClientOrderOpen(open)
+        if (!open) setClientOrderError("")
+      }}>
+        <DialogContent className="max-w-[calc(100vw-1rem)] sm:max-w-lg">
+          <DialogHeader>
+            <div className="flex h-11 w-11 items-center justify-center rounded-full bg-primary/10 text-primary"><FileText className="h-5 w-5" /></div>
+            <DialogTitle className="font-heading text-xl">Client order</DialogTitle>
+            <DialogDescription>Record a one-off client order without creating an inventory product. Its details and value will be included in sales and closeout reports.</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-2">
+            <div className="space-y-2">
+              <Label htmlFor="clientOrderName">Client or order name</Label>
+              <Input
+                id="clientOrderName"
+                autoFocus
+                value={clientOrderName}
+                onChange={(event) => {
+                  setClientOrderName(event.target.value)
+                  setClientOrderError("")
+                }}
+                maxLength={80}
+                placeholder="Maria - custom dinner set"
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="clientOrderDetails">Order details</Label>
+              <Textarea
+                id="clientOrderDetails"
+                value={clientOrderDetails}
+                onChange={(event) => {
+                  setClientOrderDetails(event.target.value)
+                  setClientOrderError("")
+                }}
+                maxLength={300}
+                rows={4}
+                placeholder="Six dinner plates, satin white glaze, delivery in September"
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="clientOrderPrice">Agreed price (IDR)</Label>
+              <Input
+                id="clientOrderPrice"
+                inputMode="numeric"
+                value={clientOrderPrice}
+                onChange={(event) => {
+                  setClientOrderPrice(event.target.value.replace(/\D/g, ""))
+                  setClientOrderError("")
+                }}
+                placeholder="3500000"
+                className="h-12 text-lg font-semibold"
+              />
+            </div>
+            <p className="text-sm text-muted-foreground">Ceramic tax defaults to 10%. You can change tax, quantity, or discount in checkout.</p>
+            {clientOrderError && <p className="rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive">{clientOrderError}</p>}
+          </div>
+          <DialogFooter>
+            <Button type="button" variant="outline" onClick={() => setIsClientOrderOpen(false)}>Cancel</Button>
+            <Button type="button" onClick={addClientOrderItem} disabled={!clientOrderName.trim() || !clientOrderDetails.trim() || !clientOrderPrice}>Add to bill</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
