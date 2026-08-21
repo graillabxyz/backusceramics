@@ -106,6 +106,12 @@ function statusLabel(status: SaleStatus) {
   return status.charAt(0) + status.slice(1).toLowerCase()
 }
 
+function fulfillmentLabel(method: string) {
+  if (method === "SHIPPING") return "Protected shipping"
+  if (method === "CUSTOM_PAYMENT") return "Payment link"
+  return "Shop pickup"
+}
+
 function totalFor(
   totals: SalesResponse["totals"],
   status: SaleStatus,
@@ -323,7 +329,7 @@ export default function WebsiteSalesPage() {
                   <div className="min-w-0">
                     <div className="flex flex-wrap items-center gap-2">
                       <Badge variant="outline" className={statusStyles[sale.status]}>{statusLabel(sale.status)}</Badge>
-                      {sale.status === "PAID" && (
+                      {sale.status === "PAID" && sale.fulfillmentMethod !== "CUSTOM_PAYMENT" && (
                         <Badge variant={sale.fulfilledAt ? "secondary" : "outline"}>{sale.fulfilledAt ? "Fulfilled" : "Needs fulfillment"}</Badge>
                       )}
                       <span className="text-xs text-muted-foreground">{formatDateTime(sale.createdAt)}</span>
@@ -337,7 +343,7 @@ export default function WebsiteSalesPage() {
                   </div>
                   <div className="text-sm">
                     <p className="font-medium text-foreground">
-                      {sale.fulfillmentMethod === "SHIPPING" ? "Protected shipping" : "Shop pickup"}
+                      {fulfillmentLabel(sale.fulfillmentMethod)}
                     </p>
                     <p className="mt-0.5 text-muted-foreground">{itemCount} {itemCount === 1 ? "item" : "items"}</p>
                   </div>
@@ -393,7 +399,7 @@ export default function WebsiteSalesPage() {
                         <p className="mt-2 text-xs text-muted-foreground">
                           Receipt {sale.receiptSentAt ? `sent ${formatDateTime(sale.receiptSentAt)}` : "not sent yet"}
                         </p>
-                        {sale.status === "PAID" && (
+                        {sale.status === "PAID" && sale.fulfillmentMethod !== "CUSTOM_PAYMENT" && (
                           <Button
                             type="button"
                             variant={sale.fulfilledAt ? "outline" : "default"}

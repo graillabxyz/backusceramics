@@ -37,11 +37,12 @@ model User {
   createdSuppliers            Supplier[]                  @relation("SupplierCreator")
   supplierLedgerEntries       SupplierLedgerEntry[]       @relation("SupplierLedgerCreator")
   voidedSupplierLedgerEntries SupplierLedgerEntry[]       @relation("SupplierLedgerVoider")
-  createdCashOuts             PosCashOut[]                 @relation("PosCashOutCreator")
-  staffFundedCashOuts         PosCashOut[]                 @relation("PosCashOutStaffMember")
-  reimbursedCashOuts          PosCashOut[]                 @relation("PosCashOutReimburser")
-  voidedCashOuts              PosCashOut[]                 @relation("PosCashOutVoider")
+  createdCashOuts             PosCashOut[]                @relation("PosCashOutCreator")
+  staffFundedCashOuts         PosCashOut[]                @relation("PosCashOutStaffMember")
+  reimbursedCashOuts          PosCashOut[]                @relation("PosCashOutReimburser")
+  voidedCashOuts              PosCashOut[]                @relation("PosCashOutVoider")
   createdPromoCodes           PromoCode[]                 @relation("PromoCodeCreator")
+  createdPaymentLinks         CustomPaymentLink[]         @relation("CustomPaymentLinkCreator")
   menuWasteEntries            MenuWasteEntry[]            @relation("MenuWasteCreator")
   promoRedemptions            PromoRedemption[]
   analyticsEvents             AnalyticsEvent[]
@@ -245,7 +246,7 @@ model PosProduct {
   featured    Boolean @default(false)
   sortOrder   Int     @default(0)
 
-  saleItems PosSaleItem[]
+  saleItems         PosSaleItem[]
   recipeIngredients MenuRecipeIngredient[]
   wasteEntries      MenuWasteEntry[]
 
@@ -260,11 +261,13 @@ model PosProduct {
 }
 
 model PosSale {
-  id         String  @id @default(cuid())
-  operatorId String?
-  operator   User?   @relation("PosSaleOperator", fields: [operatorId], references: [id])
-  voidedById String?
-  voidedBy   User?   @relation("PosSaleVoider", fields: [voidedById], references: [id])
+  id            String             @id @default(cuid())
+  operatorId    String?
+  operator      User?              @relation("PosSaleOperator", fields: [operatorId], references: [id])
+  voidedById    String?
+  voidedBy      User?              @relation("PosSaleVoider", fields: [voidedById], references: [id])
+  paymentLinkId String?
+  paymentLink   CustomPaymentLink? @relation(fields: [paymentLinkId], references: [id], onDelete: SetNull)
 
   subtotal           Int       @default(0)
   discountTotal      Int       @default(0)
@@ -303,6 +306,34 @@ model PosSale {
   @@index([paymentReference])
   @@index([paymentSessionId])
   @@index([promoCodeSnapshot])
+  @@index([paymentLinkId])
+}
+
+model CustomPaymentLink {
+  id            String    @id @default(cuid())
+  token         String    @unique
+  title         String
+  description   String?
+  amount        Int
+  purpose       String    @default("CUSTOM_ORDER")
+  // Purpose values: CUSTOM_ORDER, SHIPPING, DEPOSIT, OTHER
+  customerName  String?
+  customerEmail String?
+  customerPhone String?
+  checkoutUrl   String
+  status        String    @default("ACTIVE")
+  // Status values: ACTIVE, CANCELLED
+  expiresAt     DateTime
+  openedAt      DateTime?
+  createdById   String
+  createdBy     User      @relation("CustomPaymentLinkCreator", fields: [createdById], references: [id])
+  sales         PosSale[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([status, expiresAt])
+  @@index([createdById, createdAt])
 }
 
 model PromoCode {
@@ -522,7 +553,7 @@ model PosWeeklyCloseout {
   registerCashOuts      Int     @default(0)
   staffFundedPurchases  Int     @default(0)
   staffReimbursements   Int     @default(0)
-  outstandingStaffDebt Int     @default(0)
+  outstandingStaffDebt  Int     @default(0)
   missingDailyCloseouts String  @default("[]")
   supplierBillsTotal    Int     @default(0)
   supplierPaymentsTotal Int     @default(0)
@@ -555,9 +586,9 @@ model Supplier {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
+  @@unique([normalizedName, normalizedOutletName])
   @@index([active, name])
   @@index([createdById])
-  @@unique([normalizedName, normalizedOutletName])
 }
 
 model SupplierLedgerEntry {
@@ -588,12 +619,12 @@ model SupplierLedgerEntry {
 }
 
 model PosCashOut {
-  id             String  @id @default(cuid())
-  fundingSource  String
+  id            String @id @default(cuid())
+  fundingSource String
   // Funding sources: REGISTER, STAFF
-  amount         Int
-  businessDate   String
-  description    String
+  amount        Int
+  businessDate  String
+  description   String
 
   createdById String
   createdBy   User   @relation("PosCashOutCreator", fields: [createdById], references: [id])
@@ -608,8 +639,8 @@ model PosCashOut {
   reimbursedById         String?
   reimbursedBy           User?     @relation("PosCashOutReimburser", fields: [reimbursedById], references: [id])
 
-  voidedAt    DateTime?
-  voidReason  String?
+  voidedAt   DateTime?
+  voidReason String?
   voidedById String?
   voidedBy   User?     @relation("PosCashOutVoider", fields: [voidedById], references: [id])
 

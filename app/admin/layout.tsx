@@ -25,6 +25,8 @@ import {
   Users,
   X,
   Loader2,
+  Link2,
+  Plus,
 } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { useAuth } from "@/lib/auth-context"
@@ -48,6 +50,7 @@ const navSections = [
       { href: "/admin/bookings", label: "Class Bookings", shortLabel: "Classes", icon: GraduationCap, access: "admin" as NavAccess },
       { href: "/admin/applications", label: "Residency Apps", icon: CalendarDays, access: "admin" as NavAccess },
       { href: "/admin/sales", label: "Website Sales", icon: CircleDollarSign, access: "admin" as NavAccess },
+      { href: "/admin/payment-links", label: "Payment Links", icon: Link2, access: "promotions" as NavAccess },
       { href: "/admin/promotions", label: "Promo Codes", icon: TicketPercent, access: "promotions" as NavAccess },
       { href: "/admin/pos", label: "Point of Sale", shortLabel: "POS", icon: Store, exact: true, access: "pos" as NavAccess },
       { href: "/admin/pos/cash-outs", label: "Cash & Reimbursements", icon: Banknote, access: "pos" as NavAccess },
@@ -277,6 +280,14 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
           </Button>
         </div>
 
+        {canManagePromotions(user?.role) && (
+          <div className="px-3 pb-2">
+            <Link href="/admin/payment-links" className="flex min-h-10 items-center justify-center gap-2 rounded-md border border-border bg-muted/40 px-3 text-sm font-semibold transition hover:border-primary/30 hover:bg-muted">
+              <Plus className="h-4 w-4" /> New payment link
+            </Link>
+          </div>
+        )}
+
         <nav className="min-h-0 flex-1 overflow-y-auto px-3 py-3 lg:py-1">
           {visibleSections.map((section) => (
             <div key={section.label} className="mb-4">
@@ -335,10 +346,13 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
       )}>
         {!isPosKioskRoute && !isPosRoute && (
           <div className="sticky top-0 z-30 hidden h-14 items-center justify-between border-b border-border bg-background/90 px-6 backdrop-blur lg:flex">
-            <div>
-              <p className="text-sm font-semibold text-foreground">{currentPageLabel}</p>
+            <p className="text-sm font-semibold text-foreground">{currentPageLabel}</p>
+            <div className="flex items-center gap-2">
+              {canManagePromotions(user?.role) && pathname !== "/admin/payment-links" && (
+                <Button variant="ghost" size="sm" asChild className="gap-2 text-muted-foreground"><Link href="/admin/payment-links"><Link2 className="h-4 w-4" /> Payment link</Link></Button>
+              )}
+              <AdminNotifications enabled={isFullAdminRole(user?.role)} />
             </div>
-            <AdminNotifications enabled={isFullAdminRole(user?.role)} />
           </div>
         )}
         <div className={cn(isPosKioskRoute ? "p-0" : isPosRoute ? "p-2 sm:p-3 lg:p-4" : "p-4 sm:p-6 lg:p-7 xl:p-8")}>

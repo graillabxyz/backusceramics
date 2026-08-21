@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from "react"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
-import { GraduationCap, ShoppingBag, ClipboardList, Users, Calendar, Loader2, BarChart3, Store } from "lucide-react"
+import { ArrowRight, GraduationCap, ShoppingBag, ClipboardList, Users, Calendar, Loader2, BarChart3, Store, Link2 } from "lucide-react"
 import Link from "next/link"
 import { useAuth } from "@/lib/auth-context"
 import { canManageAdmins, canUsePos, canViewAnalytics, isFullAdminRole } from "@/lib/permissions"
@@ -59,17 +59,19 @@ export default function AdminDashboard() {
   const canOpenAnalytics = canViewAnalytics(user?.role)
 
   return (
-    <div className="space-y-8">
-      <div>
-        <h1 className="font-heading font-bold text-3xl font-medium text-foreground">Dashboard</h1>
-        <p className="text-muted-foreground mt-1">
-          Welcome back! Here&apos;s an overview of your studio.
-        </p>
+    <div className="mx-auto w-full max-w-[1500px] space-y-6">
+      <div className="flex flex-col gap-4 border-b border-border pb-6 sm:flex-row sm:items-end sm:justify-between">
+        <div>
+          <p className="text-xs font-semibold uppercase tracking-[0.14em] text-muted-foreground">Studio overview</p>
+          <h1 className="mt-2 text-3xl font-semibold tracking-normal text-foreground">Good to see you, {user?.name?.split(" ")[0] || "there"}.</h1>
+          <p className="mt-2 text-sm text-muted-foreground">Bookings, orders, sales, and the work that needs attention today.</p>
+        </div>
+        {canOpenAnalytics && <Link href="/admin/analytics" className="inline-flex min-h-10 items-center gap-2 text-sm font-semibold text-foreground hover:text-primary">Open analytics <ArrowRight className="h-4 w-4" /></Link>}
       </div>
 
       {/* Stats Grid */}
-      <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-6">
-        <Card>
+      <div className="grid overflow-hidden rounded-md border border-border bg-border sm:grid-cols-2 lg:grid-cols-4">
+        <Card className="rounded-none border-0 shadow-none">
           <CardHeader className="flex flex-row items-center justify-between pb-2">
             <CardTitle className="text-sm font-medium text-muted-foreground">
               Total Orders
@@ -84,7 +86,7 @@ export default function AdminDashboard() {
           </CardContent>
         </Card>
 
-        <Card>
+        <Card className="rounded-none border-0 shadow-none">
           <CardHeader className="flex flex-row items-center justify-between pb-2">
             <CardTitle className="text-sm font-medium text-muted-foreground">
               Class Bookings
@@ -99,7 +101,7 @@ export default function AdminDashboard() {
           </CardContent>
         </Card>
 
-        <Card>
+        <Card className="rounded-none border-0 shadow-none">
           <CardHeader className="flex flex-row items-center justify-between pb-2">
             <CardTitle className="text-sm font-medium text-muted-foreground">
               Residency Apps
@@ -114,7 +116,7 @@ export default function AdminDashboard() {
           </CardContent>
         </Card>
 
-        <Card>
+        <Card className="rounded-none border-0 shadow-none">
           <CardHeader className="flex flex-row items-center justify-between pb-2">
             <CardTitle className="text-sm font-medium text-muted-foreground">
               Registered Users
@@ -133,16 +135,16 @@ export default function AdminDashboard() {
       {canOpenAnalytics && <MenuPerformanceSummary />}
 
       {/* Quick Actions */}
-      <div className="grid md:grid-cols-2 xl:grid-cols-3 gap-4 sm:gap-6">
+      <section>
+        <div className="mb-3 flex items-center justify-between"><div><h2 className="text-lg font-semibold">Workspaces</h2><p className="text-sm text-muted-foreground">Go straight to the task at hand.</p></div></div>
+      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
         {canOpenAdminTools && (
           <>
             <Link href="/admin/orders">
-              <Card className="hover:shadow-md transition-shadow cursor-pointer h-full">
-                <CardHeader>
-                  <div className="w-12 h-12 rounded-full bg-primary/10 flex items-center justify-center mb-2">
-                    <ClipboardList className="h-6 w-6 text-primary" />
-                  </div>
-                  <CardTitle className="font-heading font-bold text-xl">Manage Orders</CardTitle>
+              <Card className="h-full cursor-pointer transition-colors hover:border-primary/35 hover:bg-muted/20">
+                <CardHeader className="p-5">
+                  <div className="mb-1 flex items-center justify-between"><ClipboardList className="h-5 w-5 text-primary" /><ArrowRight className="h-4 w-4 text-muted-foreground" /></div>
+                  <CardTitle className="text-base font-semibold">Manage Orders</CardTitle>
                   <CardDescription>
                     View inquiries, update statuses, and add progress updates
                   </CardDescription>
@@ -151,12 +153,10 @@ export default function AdminDashboard() {
             </Link>
 
             <Link href="/admin/bookings">
-              <Card className="hover:shadow-md transition-shadow cursor-pointer h-full">
-                <CardHeader>
-                  <div className="w-12 h-12 rounded-full bg-primary/10 flex items-center justify-center mb-2">
-                    <GraduationCap className="h-6 w-6 text-primary" />
-                  </div>
-                  <CardTitle className="font-heading font-bold text-xl">Class Bookings</CardTitle>
+              <Card className="h-full cursor-pointer transition-colors hover:border-primary/35 hover:bg-muted/20">
+                <CardHeader className="p-5">
+                  <div className="mb-1 flex items-center justify-between"><GraduationCap className="h-5 w-5 text-primary" /><ArrowRight className="h-4 w-4 text-muted-foreground" /></div>
+                  <CardTitle className="text-base font-semibold">Class Bookings</CardTitle>
                   <CardDescription>
                     Confirm workshop bookings and manage the class schedule
                   </CardDescription>
@@ -165,12 +165,10 @@ export default function AdminDashboard() {
             </Link>
 
             <Link href="/admin/products">
-              <Card className="hover:shadow-md transition-shadow cursor-pointer h-full">
-                <CardHeader>
-                  <div className="w-12 h-12 rounded-full bg-primary/10 flex items-center justify-center mb-2">
-                    <ShoppingBag className="h-6 w-6 text-primary" />
-                  </div>
-                  <CardTitle className="font-heading font-bold text-xl">Products</CardTitle>
+              <Card className="h-full cursor-pointer transition-colors hover:border-primary/35 hover:bg-muted/20">
+                <CardHeader className="p-5">
+                  <div className="mb-1 flex items-center justify-between"><ShoppingBag className="h-5 w-5 text-primary" /><ArrowRight className="h-4 w-4 text-muted-foreground" /></div>
+                  <CardTitle className="text-base font-semibold">Products</CardTitle>
                   <CardDescription>
                     Add wares, cafe items, prices, inventory, and sales visibility
                   </CardDescription>
@@ -182,13 +180,23 @@ export default function AdminDashboard() {
         )}
 
         {canOpenAnalytics && (
+          <Link href="/admin/payment-links">
+            <Card className="h-full cursor-pointer transition-colors hover:border-primary/35 hover:bg-muted/20">
+              <CardHeader className="p-5">
+                <div className="mb-1 flex items-center justify-between"><Link2 className="h-5 w-5 text-primary" /><ArrowRight className="h-4 w-4 text-muted-foreground" /></div>
+                <CardTitle className="text-base font-semibold">Payment Links</CardTitle>
+                <CardDescription>Create a secure custom-order, shipping, or deposit payment link</CardDescription>
+              </CardHeader>
+            </Card>
+          </Link>
+        )}
+
+        {canOpenAnalytics && (
           <Link href="/admin/analytics">
-            <Card className="hover:shadow-md transition-shadow cursor-pointer h-full">
-              <CardHeader>
-                <div className="w-12 h-12 rounded-full bg-primary/10 flex items-center justify-center mb-2">
-                  <BarChart3 className="h-6 w-6 text-primary" />
-                </div>
-                <CardTitle className="font-heading font-bold text-xl">Analytics</CardTitle>
+            <Card className="h-full cursor-pointer transition-colors hover:border-primary/35 hover:bg-muted/20">
+              <CardHeader className="p-5">
+                <div className="mb-1 flex items-center justify-between"><BarChart3 className="h-5 w-5 text-primary" /><ArrowRight className="h-4 w-4 text-muted-foreground" /></div>
+                <CardTitle className="text-base font-semibold">Analytics</CardTitle>
                 <CardDescription>
                   View trends, status breakdowns, and activity metrics
                 </CardDescription>
@@ -199,12 +207,10 @@ export default function AdminDashboard() {
 
         {canOpenPos && (
           <Link href="/admin/pos">
-            <Card className="hover:shadow-md transition-shadow cursor-pointer h-full">
-              <CardHeader>
-                <div className="w-12 h-12 rounded-full bg-primary/10 flex items-center justify-center mb-2">
-                  <Store className="h-6 w-6 text-primary" />
-                </div>
-                <CardTitle className="font-heading font-bold text-xl">Point of Sale</CardTitle>
+            <Card className="h-full cursor-pointer transition-colors hover:border-primary/35 hover:bg-muted/20">
+              <CardHeader className="p-5">
+                <div className="mb-1 flex items-center justify-between"><Store className="h-5 w-5 text-primary" /><ArrowRight className="h-4 w-4 text-muted-foreground" /></div>
+                <CardTitle className="text-base font-semibold">Point of Sale</CardTitle>
                 <CardDescription>
                   Open the cashier register, add quick products, and record sales
                 </CardDescription>
@@ -215,12 +221,10 @@ export default function AdminDashboard() {
 
         {canOpenUserRoles && (
           <Link href="/admin/users">
-            <Card className="hover:shadow-md transition-shadow cursor-pointer h-full">
-              <CardHeader>
-                <div className="w-12 h-12 rounded-full bg-primary/10 flex items-center justify-center mb-2">
-                  <Users className="h-6 w-6 text-primary" />
-                </div>
-                <CardTitle className="font-heading font-bold text-xl">Users & Roles</CardTitle>
+            <Card className="h-full cursor-pointer transition-colors hover:border-primary/35 hover:bg-muted/20">
+              <CardHeader className="p-5">
+                <div className="mb-1 flex items-center justify-between"><Users className="h-5 w-5 text-primary" /><ArrowRight className="h-4 w-4 text-muted-foreground" /></div>
+                <CardTitle className="text-base font-semibold">Users & Roles</CardTitle>
                 <CardDescription>
                   See every auth user and assign manager, admin, owner, or POS access
                 </CardDescription>
@@ -229,6 +233,7 @@ export default function AdminDashboard() {
           </Link>
         )}
       </div>
+      </section>
 
       {/* Recent Activity */}
       <Card>
