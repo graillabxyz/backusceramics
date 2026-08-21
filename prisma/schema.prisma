@@ -42,6 +42,7 @@ model User {
   reimbursedCashOuts          PosCashOut[]                 @relation("PosCashOutReimburser")
   voidedCashOuts              PosCashOut[]                 @relation("PosCashOutVoider")
   createdPromoCodes           PromoCode[]                 @relation("PromoCodeCreator")
+  menuWasteEntries            MenuWasteEntry[]            @relation("MenuWasteCreator")
   promoRedemptions            PromoRedemption[]
   analyticsEvents             AnalyticsEvent[]
   residencyApps               ResidencyApplication[]
@@ -245,6 +246,8 @@ model PosProduct {
   sortOrder   Int     @default(0)
 
   saleItems PosSaleItem[]
+  recipeIngredients MenuRecipeIngredient[]
+  wasteEntries      MenuWasteEntry[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -377,9 +380,58 @@ model PosSaleItem {
   taxRate          Int     @default(0)
   taxAmount        Int     @default(0)
   lineTotal        Int
+  unitCostSnapshot Int     @default(0)
+  costTotal        Int     @default(0)
 
   @@index([saleId])
   @@index([productId])
+}
+
+model MenuIngredient {
+  id              String                 @id @default(cuid())
+  name            String
+  normalizedName  String                 @unique
+  packageCost     Int
+  packageQuantity Float
+  unit            String
+  active          Boolean                @default(true)
+  recipeLines     MenuRecipeIngredient[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([active, name])
+}
+
+model MenuRecipeIngredient {
+  id           String         @id @default(cuid())
+  productId    String
+  product      PosProduct     @relation(fields: [productId], references: [id], onDelete: Cascade)
+  ingredientId String
+  ingredient   MenuIngredient @relation(fields: [ingredientId], references: [id], onDelete: Restrict)
+  quantity     Float
+
+  @@unique([productId, ingredientId])
+  @@index([ingredientId])
+}
+
+model MenuWasteEntry {
+  id               String     @id @default(cuid())
+  productId        String
+  product          PosProduct @relation(fields: [productId], references: [id], onDelete: Restrict)
+  quantity         Int
+  unitCostSnapshot Int
+  totalCost        Int
+  businessDate     String
+  reason           String?
+  createdById      String?
+  createdBy        User?      @relation("MenuWasteCreator", fields: [createdById], references: [id])
+
+  createdAt DateTime @default(now())
+
+  @@index([businessDate])
+  @@index([productId, businessDate])
+  @@index([createdById])
 }
 
 model PaymentWebhookEvent {

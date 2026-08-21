@@ -16,6 +16,7 @@ import { checkRateLimit, cleanString, isRequestBodyTooLarge, isValidEmailAddress
 import { getPosOperatorFromRequest } from "@/lib/pos-operator-session"
 import { getTrustedRequestOrigin } from "@/lib/request-origin"
 import { getPosCustomItemMetadata, normalizePosCustomItemType, type PosCustomItemType } from "@/lib/pos-custom-items"
+import { calculateRecipeUnitCost } from "@/lib/menu-costing"
 
 const MAX_POS_ONLINE_SALE_BODY_BYTES = 64 * 1024
 
@@ -176,7 +177,10 @@ export async function POST(req: NextRequest) {
 
         const productId = item.productId
         if (!productId) throw new PosOnlineSaleValidationError("Sale item is missing its product")
-        const product = await tx.posProduct.findUnique({ where: { id: productId } })
+        const product = await tx.posProduct.findUnique({
+          where: { id: productId },
+          include: { recipeIngredients: { include: { ingredient: true } } },
+        })
         if (!product || product.status !== "AVAILABLE") {
           throw new PosOnlineSaleValidationError(`${product?.name || "Product"} is not available`)
         }
@@ -215,6 +219,11 @@ export async function POST(req: NextRequest) {
           discountType: item.discountType,
           discountValue: item.discountValue,
         })
+        const unitCostSnapshot = calculateRecipeUnitCost(product.recipeIngredients.map((line) => ({
+          packageCost: line.ingredient.packageCost,
+          packageQuantity: line.ingredient.packageQuantity,
+          quantity: line.quantity,
+        })))
         subtotal += lineTotals.subtotal
         discountTotal += lineTotals.discountAmount
         taxTotal += lineTotals.taxAmount
@@ -231,6 +240,8 @@ export async function POST(req: NextRequest) {
           taxRate: lineTotals.taxRate,
           taxAmount: lineTotals.taxAmount,
           lineTotal: lineTotals.total,
+          unitCostSnapshot,
+          costTotal: unitCostSnapshot * item.quantity,
         })
       }
 

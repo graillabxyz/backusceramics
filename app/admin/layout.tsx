@@ -21,6 +21,7 @@ import {
   ShoppingBag,
   Store,
   TicketPercent,
+  UtensilsCrossed,
   Users,
   X,
   Loader2,
@@ -65,6 +66,7 @@ const navSections = [
     items: [
       { href: "/admin/users", label: "Users", icon: Users, access: "admin" as NavAccess },
       { href: "/admin/analytics", label: "Analytics", icon: BarChart3, access: "analytics" as NavAccess },
+      { href: "/admin/menu-performance", label: "Menu Performance", icon: UtensilsCrossed, access: "analytics" as NavAccess },
       { href: "/admin/settings", label: "Settings", icon: Settings, access: "admin" as NavAccess },
     ],
   },

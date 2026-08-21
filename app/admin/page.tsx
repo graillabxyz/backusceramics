@@ -6,6 +6,7 @@ import { GraduationCap, ShoppingBag, ClipboardList, Users, Calendar, Loader2, Ba
 import Link from "next/link"
 import { useAuth } from "@/lib/auth-context"
 import { canManageAdmins, canUsePos, canViewAnalytics, isFullAdminRole } from "@/lib/permissions"
+import { MenuPerformanceSummary } from "@/components/admin/menu-performance-summary"
 
 interface DashboardStats {
   totalOrders: number
@@ -128,6 +129,8 @@ export default function AdminDashboard() {
           </CardContent>
         </Card>
       </div>
+
+      {canOpenAnalytics && <MenuPerformanceSummary />}
 
       {/* Quick Actions */}
       <div className="grid md:grid-cols-2 xl:grid-cols-3 gap-4 sm:gap-6">
