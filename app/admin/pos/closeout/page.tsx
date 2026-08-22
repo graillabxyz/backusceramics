@@ -83,7 +83,9 @@ interface CloseoutReport {
   supplierCashPayments: number
   supplierNetChange: number
   supplierOutstanding: number
+  supplierCredit: number
   supplierBreakdown: Array<{ supplierId: string; supplierName: string; billCount: number; billsTotal: number; paymentCount: number; paymentsTotal: number; netChange: number }>
+  supplierOutstandingBreakdown: Array<{ supplierId: string; supplierName: string; billCount: number; billsTotal: number; paymentCount: number; paymentsTotal: number; netChange: number; outstandingDebt: number; supplierCredit: number }>
   registerCashOutTotal: number
   staffFundedTotal: number
   staffReimbursedTotal: number
@@ -163,13 +165,20 @@ function cashVarianceLabel(value: number) {
   return formatPrice(0)
 }
 
+function supplierBalanceLabel(item: CloseoutReport["supplierOutstandingBreakdown"][number]) {
+  if (item.outstandingDebt > 0) return `${formatPrice(item.outstandingDebt)} owed`
+  if (item.supplierCredit > 0) return `${formatPrice(item.supplierCredit)} credit`
+  return "Settled"
+}
+
 function reportText(report: CloseoutReport, cash: ReturnType<typeof calculatePosCashReconciliation>, notes: string) {
   const paymentLines = report.paymentBreakdown.map((item) => `- ${item.label}: ${formatPrice(item.total)} (${item.count} sales)`).join("\n")
   const categoryLines = report.categoryBreakdown.map((item) => `- ${item.label}: ${formatPrice(item.total)} (${item.quantity} items)`).join("\n")
   const operatorLines = report.operatorBreakdown.map((item) => `- ${item.label}: ${formatPrice(item.total)} (${item.count} sales)`).join("\n")
   const saleLines = detailedSaleLines(report.paidSales)
   const cashExpenseLines = cash.cashExpenseItems.map((expense) => `- ${expense.description}: -${formatPrice(expense.amount)}`).join("\n")
-  const supplierLines = report.supplierBreakdown.map((item) => `- ${item.supplierName}: bills ${formatPrice(item.billsTotal)}, payments -${formatPrice(item.paymentsTotal)}, change ${formatPrice(item.netChange)}`).join("\n")
+  const supplierBalanceLines = report.supplierOutstandingBreakdown.map((item) => `- ${item.supplierName}: ${supplierBalanceLabel(item)}`).join("\n")
+  const supplierActivityLines = report.supplierBreakdown.map((item) => `- ${item.supplierName}: bills ${formatPrice(item.billsTotal)}, payments -${formatPrice(item.paymentsTotal)}, net change ${formatPrice(item.netChange)}`).join("\n")
 
   return [
     `Backus Ceramics POS closeout`,
@@ -209,8 +218,11 @@ function reportText(report: CloseoutReport, cash: ReturnType<typeof calculatePos
     `Supplier accounts`,
     `- Bills received: ${report.supplierBillCount} / ${formatPrice(report.supplierBillsTotal)}`,
     `- Payments made: ${report.supplierPaymentCount} / ${formatPrice(report.supplierPaymentsTotal)}`,
-    `- Total outstanding debt: ${formatPrice(report.supplierOutstanding)}`,
-    supplierLines || "- No supplier activity",
+    `- Current supplier debt: ${formatPrice(report.supplierOutstanding)}`,
+    report.supplierCredit > 0 ? `- Supplier credit: ${formatPrice(report.supplierCredit)}` : "",
+    supplierBalanceLines || "- No supplier balances",
+    `Activity this day`,
+    supplierActivityLines || "- No supplier activity",
     ``,
     `Operators`,
     operatorLines || "- None",
@@ -571,8 +583,9 @@ export default function PosCloseoutPage() {
               <Card>
                 <CardHeader className="flex flex-row items-start justify-between gap-3"><div><CardTitle className="font-heading text-xl">Supplier Accounts</CardTitle><CardDescription>Bills and payments recorded on this business date.</CardDescription></div><Button asChild size="sm" variant="outline"><Link href="/admin/pos/suppliers?posFullscreen=1">Open ledger</Link></Button></CardHeader>
                 <CardContent className="space-y-3">
-                  <div className="grid grid-cols-3 gap-2 text-sm"><div className="rounded-md bg-muted p-3"><p className="text-xs text-muted-foreground">Bills</p><p className="font-semibold">{formatPrice(report.supplierBillsTotal)}</p></div><div className="rounded-md bg-muted p-3"><p className="text-xs text-muted-foreground">Payments</p><p className="font-semibold">{formatPrice(report.supplierPaymentsTotal)}</p></div><div className="rounded-md bg-muted p-3"><p className="text-xs text-muted-foreground">Debt now</p><p className="font-semibold">{formatPrice(report.supplierOutstanding)}</p></div></div>
-                  {report.supplierBreakdown.length ? <div className="divide-y divide-border">{report.supplierBreakdown.map((supplier) => <div key={supplier.supplierId} className="grid grid-cols-[minmax(0,1fr)_auto] gap-3 py-2 text-sm"><div><p className="font-medium">{supplier.supplierName}</p><p className="text-xs text-muted-foreground">Bills {formatPrice(supplier.billsTotal)} · Payments {formatPrice(supplier.paymentsTotal)}</p></div><p className="font-semibold">{formatPrice(supplier.netChange)}</p></div>)}</div> : <p className="text-sm text-muted-foreground">No supplier activity for this date.</p>}
+                  <div className="grid grid-cols-2 gap-2 text-sm sm:grid-cols-4"><div className="rounded-md bg-muted p-3"><p className="text-xs text-muted-foreground">Bills today</p><p className="font-semibold">{formatPrice(report.supplierBillsTotal)}</p></div><div className="rounded-md bg-muted p-3"><p className="text-xs text-muted-foreground">Payments today</p><p className="font-semibold">{formatPrice(report.supplierPaymentsTotal)}</p></div><div className="rounded-md bg-muted p-3"><p className="text-xs text-muted-foreground">Current debt</p><p className="font-semibold">{formatPrice(report.supplierOutstanding)}</p></div><div className="rounded-md bg-muted p-3"><p className="text-xs text-muted-foreground">Supplier credit</p><p className="font-semibold">{formatPrice(report.supplierCredit)}</p></div></div>
+                  {report.supplierOutstandingBreakdown.length ? <div><p className="pb-1 text-xs font-semibold uppercase tracking-wide text-muted-foreground">Current balance by outlet</p><div className="divide-y divide-border">{report.supplierOutstandingBreakdown.map((supplier) => <div key={supplier.supplierId} className="grid grid-cols-[minmax(0,1fr)_auto] gap-3 py-2 text-sm"><div><p className="font-medium">{supplier.supplierName}</p><p className="text-xs text-muted-foreground">All bills {formatPrice(supplier.billsTotal)} · All payments {formatPrice(supplier.paymentsTotal)}</p></div><p className="font-semibold">{supplierBalanceLabel(supplier)}</p></div>)}</div></div> : <p className="text-sm text-muted-foreground">No supplier balances recorded.</p>}
+                  {report.supplierBreakdown.length > 0 && <p className="text-xs text-muted-foreground">Today: {report.supplierBreakdown.map((supplier) => `${supplier.supplierName} ${supplier.netChange >= 0 ? "+" : "-"}${formatPrice(Math.abs(supplier.netChange))}`).join(" · ")}</p>}
                 </CardContent>
               </Card>
 

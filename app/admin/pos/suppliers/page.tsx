@@ -50,7 +50,7 @@ interface LedgerEntry {
 interface SupplierResponse {
   suppliers: SupplierAccount[]
   recentEntries: LedgerEntry[]
-  summary: { supplierCount: number; billsTotal: number; paymentsTotal: number; outstanding: number }
+  summary: { supplierCount: number; billsTotal: number; paymentsTotal: number; outstanding: number; supplierCredit: number; netBalance: number }
 }
 
 interface EntryForm {
@@ -250,20 +250,20 @@ export default function SupplierAccountsPage() {
 
       {loading || !data ? <div className="flex min-h-64 items-center justify-center"><Loader2 className="h-7 w-7 animate-spin" /></div> : <>
         <section className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-          <Card><CardHeader className="pb-2"><CardDescription>Outstanding debt</CardDescription><CardTitle className="text-xl sm:text-2xl">{formatPrice(data.summary.outstanding)}</CardTitle></CardHeader></Card>
+          <Card><CardHeader className="pb-2"><CardDescription>Outstanding debt</CardDescription><CardTitle className="text-xl sm:text-2xl">{formatPrice(data.summary.outstanding)}</CardTitle></CardHeader><CardContent className="pt-0 text-xs text-muted-foreground">Total still owed, without subtracting supplier credits.</CardContent></Card>
           <Card><CardHeader className="pb-2"><CardDescription>Bills recorded</CardDescription><CardTitle className="text-xl sm:text-2xl">{formatPrice(data.summary.billsTotal)}</CardTitle></CardHeader></Card>
           <Card><CardHeader className="pb-2"><CardDescription>Payments recorded</CardDescription><CardTitle className="text-xl sm:text-2xl">{formatPrice(data.summary.paymentsTotal)}</CardTitle></CardHeader></Card>
-          <Card><CardHeader className="pb-2"><CardDescription>Outlet accounts</CardDescription><CardTitle className="text-xl sm:text-2xl">{data.summary.supplierCount}</CardTitle></CardHeader></Card>
+          <Card><CardHeader className="pb-2"><CardDescription>Supplier credit</CardDescription><CardTitle className="text-xl sm:text-2xl">{formatPrice(data.summary.supplierCredit)}</CardTitle></CardHeader><CardContent className="pt-0 text-xs text-muted-foreground">Overpayments or credit held on supplier accounts.</CardContent></Card>
         </section>
 
         <div className="grid gap-5 xl:grid-cols-[minmax(320px,0.8fr)_minmax(0,1.6fr)]">
           <Card className="h-fit">
-            <CardHeader><CardTitle>Cumulative debt by outlet</CardTitle><CardDescription>Every outlet is reconciled independently across its full bill and payment history.</CardDescription></CardHeader>
+            <CardHeader><CardTitle>Current balance by outlet</CardTitle><CardDescription>Exact amount owed or credit for every outlet, reconciled across its full bill and payment history.</CardDescription></CardHeader>
             <CardContent className="space-y-2">
               {data.suppliers.length ? data.suppliers.map((supplier) => <div key={supplier.id} className="rounded-md border border-border p-3">
                 <div className="flex items-start justify-between gap-3">
                   <div className="min-w-0"><p className="font-semibold">{supplier.name}</p><p className="text-sm text-muted-foreground">{supplier.outletName || "Main account"}</p></div>
-                  <div className="shrink-0 text-right"><p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Cumulative debt</p><p className="font-semibold">{formatPrice(supplier.balance)}</p></div>
+                  <div className="shrink-0 text-right"><p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">{supplier.balance > 0 ? "Amount owed" : supplier.balance < 0 ? "Supplier credit" : "Balance"}</p><p className="font-semibold">{supplier.balance > 0 ? formatPrice(supplier.balance) : supplier.balance < 0 ? formatPrice(Math.abs(supplier.balance)) : "Settled"}</p></div>
                 </div>
                 <div className="mt-3 grid grid-cols-2 gap-2 rounded-md bg-muted/60 p-2 text-xs">
                   <div><p className="text-muted-foreground">All bills · {supplier.billCount}</p><p className="font-medium">{formatPrice(supplier.billsTotal)}</p></div>
@@ -313,7 +313,7 @@ export default function SupplierAccountsPage() {
             <div className="grid grid-cols-2 gap-2"><Button type="button" variant={form.entryType === "BILL" ? "default" : "outline"} onClick={() => setForm((current) => ({ ...current, entryType: "BILL" }))}><FileText className="mr-2 h-4 w-4" />Bill received</Button><Button type="button" variant={form.entryType === "PAYMENT" ? "default" : "outline"} onClick={() => setForm((current) => ({ ...current, entryType: "PAYMENT" }))}><WalletCards className="mr-2 h-4 w-4" />Payment</Button></div>
             <div className="grid gap-4 sm:grid-cols-2"><div className="space-y-2"><Label>Supplier outlet</Label><Select value={form.supplierId} onValueChange={(value) => setForm((current) => ({ ...current, supplierId: value }))}><SelectTrigger><SelectValue placeholder="Choose outlet" /></SelectTrigger><SelectContent>{data?.suppliers.map((supplier) => <SelectItem key={supplier.id} value={supplier.id}>{accountLabel(supplier)} · {formatPrice(supplier.balance)}</SelectItem>)}</SelectContent></Select></div><div className="space-y-2"><Label htmlFor="entryDate">Accounting date</Label><Input id="entryDate" type="date" value={form.businessDate} onChange={(event) => setForm((current) => ({ ...current, businessDate: event.target.value }))} required /></div></div>
             <div className="grid gap-4 sm:grid-cols-2"><div className="space-y-2"><Label htmlFor="entryAmount">Amount (IDR)</Label><Input id="entryAmount" type="number" min="1" step="1" inputMode="numeric" value={form.amount} onChange={(event) => setForm((current) => ({ ...current, amount: event.target.value }))} required /></div>{form.entryType === "PAYMENT" && <div className="space-y-2"><Label>Paid by</Label><Select value={form.paymentMethod} onValueChange={(value) => setForm((current) => ({ ...current, paymentMethod: value }))}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="CASH">Cash</SelectItem><SelectItem value="TRANSFER">Transfer</SelectItem><SelectItem value="QRIS">QRIS</SelectItem><SelectItem value="CARD_MACHINE">Card machine</SelectItem><SelectItem value="OTHER">Other</SelectItem></SelectContent></Select></div>}</div>
-            {form.entryType === "PAYMENT" && selectedSupplier && <div className="rounded-md bg-muted px-3 py-2 text-sm">Current balance: <strong>{formatPrice(selectedSupplier.balance)}</strong></div>}
+            {form.entryType === "PAYMENT" && selectedSupplier && <div className="rounded-md bg-muted px-3 py-2 text-sm">{selectedSupplier.balance > 0 ? "Currently owed" : selectedSupplier.balance < 0 ? "Supplier credit" : "Current balance"}: <strong>{selectedSupplier.balance > 0 ? formatPrice(selectedSupplier.balance) : selectedSupplier.balance < 0 ? formatPrice(Math.abs(selectedSupplier.balance)) : "Settled"}</strong></div>}
             <div className="space-y-2"><Label htmlFor="entryDescription">Description</Label><Textarea id="entryDescription" value={form.description} onChange={(event) => setForm((current) => ({ ...current, description: event.target.value }))} placeholder={form.entryType === "BILL" ? "Invoice period, goods received, or useful details" : "Partial payment or account period"} /></div>
             <div className="space-y-2"><Label htmlFor="entryReference">Invoice or payment reference</Label><Input id="entryReference" value={form.reference} onChange={(event) => setForm((current) => ({ ...current, reference: event.target.value }))} placeholder="Optional" /></div>
             <div className="space-y-3">

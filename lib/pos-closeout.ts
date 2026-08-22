@@ -3,8 +3,9 @@ import { prisma } from "@/lib/prisma"
 import { formatPrice, getProductCategoryLabel } from "@/lib/pos-catalog"
 import type { PosCashReconciliation } from "@/lib/pos-cash-reconciliation"
 import { getBaliBusinessWeek, getBaliDateKey } from "@/lib/pos-week"
-import { buildSupplierLedgerReport, type SupplierBreakdown } from "@/lib/supplier-ledger"
+import { buildSupplierLedgerReport, type SupplierAccountBalance, type SupplierBreakdown } from "@/lib/supplier-ledger"
 import { summarizeCashOuts } from "@/lib/pos-cash-outs"
+import { getPosSaleAttribution } from "@/lib/pos-sale-attribution"
 
 const BALI_UTC_OFFSET_MS = 8 * 60 * 60 * 1000
 
@@ -45,7 +46,9 @@ export interface PosCloseoutReport {
   supplierCashPayments: number
   supplierNetChange: number
   supplierOutstanding: number
+  supplierCredit: number
   supplierBreakdown: SupplierBreakdown[]
+  supplierOutstandingBreakdown: SupplierAccountBalance[]
   registerPurchaseTotal: number
   registerReimbursementTotal: number
   registerCashOutTotal: number
@@ -126,10 +129,6 @@ function formatPaymentMethod(value: string) {
   if (value === "ONLINE") return "Online payment"
   if (value === "QRIS") return "QRIS"
   return value.toLowerCase().replace(/_/g, " ").replace(/^\w/, (char) => char.toUpperCase())
-}
-
-function operatorLabel(sale: SaleForCloseout) {
-  return sale.operator?.name || sale.operator?.email || "Unknown operator"
 }
 
 function createBreakdown(key: string, label: string): Breakdown {
@@ -233,7 +232,8 @@ async function buildReportForRange(businessDate: string, rangeStart: Date, range
       tax: sale.taxTotal,
       total: sale.total,
     })
-    addToBreakdown(operatorMap, sale.operatorId || "unknown", operatorLabel(sale), {
+    const attribution = getPosSaleAttribution(sale)
+    addToBreakdown(operatorMap, attribution.key, attribution.label, {
       count: 1,
       quantity,
       subtotal: sale.subtotal,
@@ -277,7 +277,9 @@ async function buildReportForRange(businessDate: string, rangeStart: Date, range
     supplierCashPayments: supplierReport.entries.reduce((total, entry) => total + (entry.entryType === "PAYMENT" && entry.paymentMethod === "CASH" ? entry.amount : 0), 0),
     supplierNetChange: supplierReport.netChange,
     supplierOutstanding: supplierReport.outstanding,
+    supplierCredit: supplierReport.supplierCredit,
     supplierBreakdown: supplierReport.breakdown,
+    supplierOutstandingBreakdown: supplierReport.outstandingBreakdown,
     ...cashOutSummary,
     outstandingStaffDebt,
     cashOutEntries,
@@ -364,6 +366,20 @@ function supplierRows(items: SupplierBreakdown[]) {
   `).join("")
 }
 
+function supplierBalanceRows(items: SupplierAccountBalance[]) {
+  return items.map((item) => {
+    const balance = item.outstandingDebt > 0
+      ? `${formatPrice(item.outstandingDebt)} owed`
+      : item.supplierCredit > 0
+        ? `${formatPrice(item.supplierCredit)} credit`
+        : "Settled"
+    return `<tr>
+      <td style="padding:8px 0;border-bottom:1px solid #eee;">${escapeHtml(item.supplierName)}</td>
+      <td style="padding:8px 0;border-bottom:1px solid #eee;text-align:right;font-weight:600;">${balance}</td>
+    </tr>`
+  }).join("")
+}
+
 function buildCloseoutHtml(report: PosCloseoutReport, cash: PosCashReconciliation, notes?: string | null) {
   const expenseRows = cash.cashExpenseItems.map((expense) => `
     <tr><td style="padding:6px 0;color:#777;">${escapeHtml(expense.description)}</td><td style="padding:6px 0;text-align:right;">-${formatPrice(expense.amount)}</td></tr>
@@ -432,10 +448,12 @@ function buildCloseoutHtml(report: PosCloseoutReport, cash: PosCashReconciliatio
           <tbody>
             <tr><td style="padding:6px 0;color:#777;">Bills received</td><td style="padding:6px 0;text-align:right;">${report.supplierBillCount} / ${formatPrice(report.supplierBillsTotal)}</td></tr>
             <tr><td style="padding:6px 0;color:#777;">Payments made</td><td style="padding:6px 0;text-align:right;">${report.supplierPaymentCount} / ${formatPrice(report.supplierPaymentsTotal)}</td></tr>
-            <tr><td style="padding:10px 0;font-weight:700;border-top:1px solid #eee;">Total supplier debt</td><td style="padding:10px 0;text-align:right;font-weight:700;border-top:1px solid #eee;">${formatPrice(report.supplierOutstanding)}</td></tr>
+            <tr><td style="padding:10px 0;font-weight:700;border-top:1px solid #eee;">Current supplier debt</td><td style="padding:10px 0;text-align:right;font-weight:700;border-top:1px solid #eee;">${formatPrice(report.supplierOutstanding)}</td></tr>
+            ${report.supplierCredit > 0 ? `<tr><td style="padding:6px 0;color:#777;">Supplier credit</td><td style="padding:6px 0;text-align:right;">${formatPrice(report.supplierCredit)}</td></tr>` : ""}
           </tbody>
         </table>
-        ${report.supplierBreakdown.length ? `<table style="width:100%;border-collapse:collapse;margin-top:12px;">${supplierRows(report.supplierBreakdown)}</table>` : ""}
+        ${report.supplierOutstandingBreakdown.length ? `<h3 style="margin:16px 0 4px;font-size:14px;">Current balance by outlet</h3><table style="width:100%;border-collapse:collapse;">${supplierBalanceRows(report.supplierOutstandingBreakdown)}</table>` : ""}
+        ${report.supplierBreakdown.length ? `<h3 style="margin:16px 0 4px;font-size:14px;">Activity this period</h3><table style="width:100%;border-collapse:collapse;">${supplierRows(report.supplierBreakdown)}</table>` : ""}
       </div>
       ${notes ? `<div style="padding:16px 0;border-top:1px solid #e8e1d8;"><strong>Notes</strong><p style="white-space:pre-line;color:#555;">${escapeHtml(notes)}</p></div>` : ""}
     </div>
@@ -506,8 +524,9 @@ function buildWeeklyCloseoutHtml(report: PosWeeklyCloseoutReport, notes?: string
     <div style="padding:8px 0 24px;"><h2 style="font-size:18px;">Supplier accounts</h2><table style="width:100%;border-collapse:collapse;"><tbody>
       <tr><td style="padding:6px 0;color:#777;">Bills received</td><td style="text-align:right;">${report.supplierBillCount} / ${formatPrice(report.supplierBillsTotal)}</td></tr>
       <tr><td style="padding:6px 0;color:#777;">Payments made</td><td style="text-align:right;">${report.supplierPaymentCount} / ${formatPrice(report.supplierPaymentsTotal)}</td></tr>
-      <tr><td style="padding:10px 0;font-weight:700;border-top:1px solid #eee;">Total supplier debt</td><td style="padding:10px 0;text-align:right;font-weight:700;border-top:1px solid #eee;">${formatPrice(report.supplierOutstanding)}</td></tr>
-    </tbody></table>${report.supplierBreakdown.length ? `<table style="width:100%;border-collapse:collapse;margin-top:12px;">${supplierRows(report.supplierBreakdown)}</table>` : ""}</div>
+      <tr><td style="padding:10px 0;font-weight:700;border-top:1px solid #eee;">Current supplier debt</td><td style="padding:10px 0;text-align:right;font-weight:700;border-top:1px solid #eee;">${formatPrice(report.supplierOutstanding)}</td></tr>
+      ${report.supplierCredit > 0 ? `<tr><td style="padding:6px 0;color:#777;">Supplier credit</td><td style="text-align:right;">${formatPrice(report.supplierCredit)}</td></tr>` : ""}
+    </tbody></table>${report.supplierOutstandingBreakdown.length ? `<h3 style="margin:16px 0 4px;font-size:14px;">Current balance by outlet</h3><table style="width:100%;border-collapse:collapse;">${supplierBalanceRows(report.supplierOutstandingBreakdown)}</table>` : ""}${report.supplierBreakdown.length ? `<h3 style="margin:16px 0 4px;font-size:14px;">Activity this week</h3><table style="width:100%;border-collapse:collapse;">${supplierRows(report.supplierBreakdown)}</table>` : ""}</div>
     ${notes ? `<div style="padding:16px 0;border-top:1px solid #e8e1d8;"><strong>Notes</strong><p style="white-space:pre-line;color:#555;">${escapeHtml(notes)}</p></div>` : ""}
   </div>`
 }

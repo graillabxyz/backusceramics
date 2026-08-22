@@ -29,6 +29,11 @@ export interface SupplierLedgerSummary {
   breakdown: SupplierBreakdown[]
 }
 
+export interface SupplierAccountBalance extends SupplierBreakdown {
+  outstandingDebt: number
+  supplierCredit: number
+}
+
 export function normalizeSupplierName(value: string) {
   return value.trim().replace(/\s+/g, " ").toLocaleLowerCase("en-US")
 }
@@ -81,6 +86,14 @@ export function summarizeSupplierLedger(entries: SupplierLedgerValue[]): Supplie
   }
 }
 
+export function buildSupplierAccountBalances(summary: SupplierLedgerSummary): SupplierAccountBalance[] {
+  return summary.breakdown.map((supplier) => ({
+    ...supplier,
+    outstandingDebt: Math.max(supplier.netChange, 0),
+    supplierCredit: Math.max(-supplier.netChange, 0),
+  }))
+}
+
 export async function buildSupplierLedgerReport(startDate: string, endDate: string) {
   const [periodEntries, outstandingEntries] = await Promise.all([
     prisma.supplierLedgerEntry.findMany({
@@ -110,5 +123,13 @@ export async function buildSupplierLedgerReport(startDate: string, endDate: stri
     amount: entry.amount,
   })))
 
-  return { ...period, outstanding: outstanding.netChange, entries: periodEntries }
+  const outstandingBreakdown = buildSupplierAccountBalances(outstanding)
+
+  return {
+    ...period,
+    outstanding: outstandingBreakdown.reduce((total, supplier) => total + supplier.outstandingDebt, 0),
+    supplierCredit: outstandingBreakdown.reduce((total, supplier) => total + supplier.supplierCredit, 0),
+    outstandingBreakdown,
+    entries: periodEntries,
+  }
 }

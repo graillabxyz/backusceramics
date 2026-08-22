@@ -7,6 +7,7 @@ import {
   normalizeProductCategory,
   POS_PRODUCT_CATEGORIES,
 } from "@/lib/pos-catalog"
+import { getPosSaleAttribution } from "@/lib/pos-sale-attribution"
 
 type EventTypeCount = { type: string; _count: { type: number } }
 type TopPageCount = { path: string | null; _count: { path: number } }
@@ -23,8 +24,12 @@ type EventLocation = {
 }
 type SalesAnalyticsSale = {
   id: string
+  operatorId: string | null
   status: string
   paymentMethod: string
+  paymentReference: string | null
+  paymentSessionId: string | null
+  notes: string | null
   subtotal: number
   discountTotal: number
   taxTotal: number
@@ -430,8 +435,12 @@ export async function GET() {
       take: 1000,
       select: {
         id: true,
+        operatorId: true,
         status: true,
         paymentMethod: true,
+        paymentReference: true,
+        paymentSessionId: true,
+        notes: true,
         subtotal: true,
         discountTotal: true,
         taxTotal: true,
@@ -920,7 +929,7 @@ export async function GET() {
       itemCount: sum(sale.items.map((item) => item.quantity)),
       createdAt: sale.createdAt,
       voidedAt: sale.voidedAt,
-      operatorName: sale.operator?.name || sale.operator?.email || "Unknown operator",
+      operatorName: getPosSaleAttribution(sale).label,
       receiptEmail: sale.receiptEmail,
     })),
     eventCounts,

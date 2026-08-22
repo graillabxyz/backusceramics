@@ -69,7 +69,9 @@ export async function GET(req: NextRequest) {
       supplierCount: accounts.length,
       billsTotal: accounts.reduce((sum, item) => sum + item.billsTotal, 0),
       paymentsTotal: accounts.reduce((sum, item) => sum + item.paymentsTotal, 0),
-      outstanding: accounts.reduce((sum, item) => sum + item.balance, 0),
+      outstanding: accounts.reduce((sum, item) => sum + Math.max(item.balance, 0), 0),
+      supplierCredit: accounts.reduce((sum, item) => sum + Math.max(-item.balance, 0), 0),
+      netBalance: accounts.reduce((sum, item) => sum + item.balance, 0),
     },
   })
   setPosOperatorCookie(response, access.operator.id, POS_PIN_LOCK_SECONDS)

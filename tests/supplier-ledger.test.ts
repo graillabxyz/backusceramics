@@ -1,6 +1,6 @@
 import assert from "node:assert/strict"
 import test from "node:test"
-import { normalizeSupplierName, summarizeSupplierLedger, supplierAccountLabel } from "../lib/supplier-ledger"
+import { buildSupplierAccountBalances, normalizeSupplierName, summarizeSupplierLedger, supplierAccountLabel } from "../lib/supplier-ledger"
 
 test("normalizes supplier names for duplicate prevention", () => {
   assert.equal(normalizeSupplierName("  Bali   Fresh FOOD  "), "bali fresh food")
@@ -53,4 +53,21 @@ test("cumulative debt remains separate for each outlet", () => {
     ["Fresh Foods · Sanur", 900_000, 300_000, 600_000],
     ["Fresh Foods · Ubud", 250_000, 0, 250_000],
   ])
+})
+
+test("supplier debt and credit remain explicit instead of cancelling each other", () => {
+  const summary = summarizeSupplierLedger([
+    { supplierId: "produce", supplierName: "Produce", entryType: "BILL", amount: 500_000 },
+    { supplierId: "produce", supplierName: "Produce", entryType: "PAYMENT", amount: 200_000 },
+    { supplierId: "milk", supplierName: "Milk", entryType: "BILL", amount: 100_000 },
+    { supplierId: "milk", supplierName: "Milk", entryType: "PAYMENT", amount: 150_000 },
+  ])
+  const balances = buildSupplierAccountBalances(summary)
+
+  assert.deepEqual(balances.map((item) => [item.supplierName, item.outstandingDebt, item.supplierCredit]), [
+    ["Produce", 300_000, 0],
+    ["Milk", 0, 50_000],
+  ])
+  assert.equal(balances.reduce((total, item) => total + item.outstandingDebt, 0), 300_000)
+  assert.equal(balances.reduce((total, item) => total + item.supplierCredit, 0), 50_000)
 })
