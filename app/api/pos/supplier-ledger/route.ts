@@ -1,11 +1,8 @@
 import { Prisma } from "@prisma/client"
 import { NextRequest, NextResponse } from "next/server"
-import { auth } from "@/lib/auth"
 import { prisma } from "@/lib/prisma"
-import { canUsePos } from "@/lib/permissions"
-import { POS_PIN_LOCK_SECONDS } from "@/lib/pos-pin"
-import { getPosOperatorFromRequest, setPosOperatorCookie } from "@/lib/pos-operator-session"
 import { cleanString, isRequestBodyTooLarge } from "@/lib/server-security"
+import { authorizeSupplierAccess, refreshSupplierAccess } from "@/lib/supplier-access"
 import { SUPPLIER_ENTRY_TYPES, type SupplierEntryType } from "@/lib/supplier-ledger"
 
 const MAX_BODY_BYTES = 24 * 1024
@@ -30,10 +27,8 @@ function isValidBusinessDate(value: string) {
 }
 
 export async function POST(req: NextRequest) {
-  const session = await auth()
-  if (!session || !canUsePos(session.user.role)) return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
-  const operator = await getPosOperatorFromRequest(req)
-  if (!operator) return NextResponse.json({ error: "Unlock the POS with a cashier PIN before recording supplier activity.", code: "POS_PIN_LOCKED" }, { status: 423 })
+  const access = await authorizeSupplierAccess(req)
+  if ("error" in access) return NextResponse.json({ error: access.error, code: access.status === 423 ? "POS_PIN_LOCKED" : undefined }, { status: access.status })
   if (isRequestBodyTooLarge(req, MAX_BODY_BYTES)) return NextResponse.json({ error: "Supplier entry is too large." }, { status: 413 })
 
   const data = await req.json().catch(() => ({}))
@@ -83,15 +78,14 @@ export async function POST(req: NextRequest) {
           imageUrls: JSON.stringify(imageUrls),
           paymentMethod: entryType === "PAYMENT" ? paymentMethod || "OTHER" : null,
           reference: reference || null,
-          createdById: operator.id,
+          createdById: access.actorId,
         },
         include: { supplier: { select: { id: true, name: true, outletName: true } }, createdBy: { select: { id: true, name: true, email: true } } },
       })
     }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable })
 
     const response = NextResponse.json(entry, { status: 201 })
-    setPosOperatorCookie(response, operator.id, POS_PIN_LOCK_SECONDS)
-    return response
+    return refreshSupplierAccess(response, access)
   } catch (error) {
     if (error instanceof Error && error.message === "PAYMENT_EXCEEDS_BALANCE") {
       return NextResponse.json({ error: "This payment is greater than the supplier balance. Check the amount or add the missing bill first." }, { status: 409 })
@@ -99,7 +93,7 @@ export async function POST(req: NextRequest) {
     if (error instanceof Error && error.message === "SUPPLIER_NOT_AVAILABLE") {
       return NextResponse.json({ error: "That supplier is not available." }, { status: 404 })
     }
-    console.error("Could not record supplier ledger entry", { error, supplierId, entryType, operatorId: operator.id })
+    console.error("Could not record supplier ledger entry", { error, supplierId, entryType, actorId: access.actorId })
     return NextResponse.json({ error: "Could not record this supplier entry. Please try again." }, { status: 500 })
   }
 }

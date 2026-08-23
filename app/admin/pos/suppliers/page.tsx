@@ -2,7 +2,7 @@
 
 import { ChangeEvent, FormEvent, useEffect, useMemo, useState } from "react"
 import Link from "next/link"
-import { ArrowLeft, Banknote, Camera, CheckCircle2, FileText, Loader2, Plus, ReceiptText, RefreshCw, RotateCcw, Trash2, UsersRound, WalletCards, X } from "lucide-react"
+import { ArrowLeft, Banknote, Camera, CheckCircle2, FileText, Loader2, Pencil, Plus, ReceiptText, RefreshCw, RotateCcw, Trash2, UsersRound, WalletCards, X } from "lucide-react"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
@@ -50,6 +50,7 @@ interface LedgerEntry {
 interface SupplierResponse {
   suppliers: SupplierAccount[]
   recentEntries: LedgerEntry[]
+  permissions: { canEditSuppliers: boolean }
   summary: { supplierCount: number; billsTotal: number; paymentsTotal: number; outstanding: number; supplierCredit: number; netBalance: number }
 }
 
@@ -100,6 +101,7 @@ export default function SupplierAccountsPage() {
   const [success, setSuccess] = useState("")
   const [entryOpen, setEntryOpen] = useState(false)
   const [supplierOpen, setSupplierOpen] = useState(false)
+  const [editingSupplier, setEditingSupplier] = useState<SupplierAccount | null>(null)
   const [voidEntry, setVoidEntry] = useState<LedgerEntry | null>(null)
   const [voidReason, setVoidReason] = useState("")
   const [supplierName, setSupplierName] = useState("")
@@ -140,24 +142,42 @@ export default function SupplierAccountsPage() {
     setEntryOpen(true)
   }
 
-  const addSupplier = async (event: FormEvent) => {
+  const openSupplierEditor = (supplier?: SupplierAccount) => {
+    setEditingSupplier(supplier || null)
+    setSupplierName(supplier?.name || "")
+    setSupplierOutletName(supplier?.outletName || "")
+    setSupplierNotes(supplier?.notes || "")
+    setError("")
+    setSupplierOpen(true)
+  }
+
+  const closeSupplierEditor = () => {
+    setSupplierOpen(false)
+    setEditingSupplier(null)
+    setSupplierName("")
+    setSupplierOutletName("")
+    setSupplierNotes("")
+  }
+
+  const saveSupplier = async (event: FormEvent) => {
     event.preventDefault()
     setSaving(true); setError(""); setSuccess("")
     try {
-      const response = await fetch("/api/pos/suppliers", {
-        method: "POST",
+      const response = await fetch(editingSupplier ? `/api/pos/suppliers/${editingSupplier.id}` : "/api/pos/suppliers", {
+        method: editingSupplier ? "PATCH" : "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ name: supplierName, outletName: supplierOutletName, notes: supplierNotes }),
       })
       const result = await response.json().catch(() => ({}))
       if (response.status === 423) return handleLocked()
-      if (!response.ok) throw new Error(result.error || "Could not add supplier.")
-      setSupplierOpen(false); setSupplierName(""); setSupplierOutletName(""); setSupplierNotes("")
-      setSuccess(`${accountLabel(result)} is ready to use.`)
+      if (!response.ok) throw new Error(result.error || `Could not ${editingSupplier ? "update" : "add"} supplier.`)
+      const message = editingSupplier ? `${accountLabel(result)} was updated.` : `${accountLabel(result)} is ready to use.`
+      closeSupplierEditor()
+      setSuccess(message)
       await loadAccounts()
     } catch (saveError) {
-      console.error("Could not add supplier", saveError)
-      setError(saveError instanceof Error ? saveError.message : "Could not add supplier.")
+      console.error("Could not save supplier", saveError)
+      setError(saveError instanceof Error ? saveError.message : "Could not save supplier.")
     } finally { setSaving(false) }
   }
 
@@ -240,7 +260,7 @@ export default function SupplierAccountsPage() {
         <div className="flex flex-wrap gap-2">
           <Button asChild variant="outline"><Link href="/admin/pos?posFullscreen=1"><ArrowLeft className="mr-2 h-4 w-4" />POS</Link></Button>
           <Button variant="outline" onClick={() => void loadAccounts()}><RefreshCw className="mr-2 h-4 w-4" />Refresh</Button>
-          <Button variant="outline" onClick={() => setSupplierOpen(true)}><UsersRound className="mr-2 h-4 w-4" />Add supplier</Button>
+          <Button variant="outline" onClick={() => openSupplierEditor()}><UsersRound className="mr-2 h-4 w-4" />Add supplier</Button>
           <Button onClick={() => openEntry("BILL")}><ReceiptText className="mr-2 h-4 w-4" />New bill</Button>
         </div>
       </header>
@@ -269,7 +289,7 @@ export default function SupplierAccountsPage() {
                   <div><p className="text-muted-foreground">All bills · {supplier.billCount}</p><p className="font-medium">{formatPrice(supplier.billsTotal)}</p></div>
                   <div className="text-right"><p className="text-muted-foreground">All payments · {supplier.paymentCount}</p><p className="font-medium text-green-700">−{formatPrice(supplier.paymentsTotal)}</p></div>
                 </div>
-                <div className="mt-3 grid grid-cols-2 gap-2"><Button size="sm" variant="outline" onClick={() => openEntry("BILL", supplier.id)}><Plus className="mr-1 h-3.5 w-3.5" />Bill</Button><Button size="sm" variant="outline" disabled={supplier.balance <= 0} onClick={() => openEntry("PAYMENT", supplier.id)}><Banknote className="mr-1 h-3.5 w-3.5" />Payment</Button></div>
+                <div className={`mt-3 grid gap-2 ${data.permissions.canEditSuppliers ? "grid-cols-3" : "grid-cols-2"}`}><Button size="sm" variant="outline" onClick={() => openEntry("BILL", supplier.id)}><Plus className="mr-1 h-3.5 w-3.5" />Bill</Button><Button size="sm" variant="outline" disabled={supplier.balance <= 0} onClick={() => openEntry("PAYMENT", supplier.id)}><Banknote className="mr-1 h-3.5 w-3.5" />Payment</Button>{data.permissions.canEditSuppliers && <Button size="sm" variant="outline" onClick={() => openSupplierEditor(supplier)}><Pencil className="mr-1 h-3.5 w-3.5" />Edit</Button>}</div>
               </div>) : <div className="rounded-md border border-dashed p-6 text-center text-sm text-muted-foreground"><UsersRound className="mx-auto mb-2 h-6 w-6" />Add your first supplier outlet to begin.</div>}
             </CardContent>
           </Card>
@@ -294,15 +314,15 @@ export default function SupplierAccountsPage() {
         </div>
       </>}
 
-      <Dialog open={supplierOpen} onOpenChange={setSupplierOpen}>
-        <DialogContent className="max-w-[calc(100vw-1rem)] sm:max-w-lg"><form onSubmit={addSupplier}>
-          <DialogHeader><DialogTitle>Add supplier outlet</DialogTitle><DialogDescription>Create a separate account for each outlet so its cumulative debt remains clear.</DialogDescription></DialogHeader>
+      <Dialog open={supplierOpen} onOpenChange={(open) => { if (!open) closeSupplierEditor() }}>
+        <DialogContent className="max-w-[calc(100vw-1rem)] sm:max-w-lg"><form onSubmit={saveSupplier}>
+          <DialogHeader><DialogTitle>{editingSupplier ? "Edit supplier outlet" : "Add supplier outlet"}</DialogTitle><DialogDescription>{editingSupplier ? "Update the supplier name, outlet, or account notes. Existing bills and payments remain attached." : "Create a separate account for each outlet so its cumulative debt remains clear."}</DialogDescription></DialogHeader>
           <div className="space-y-4 py-5">
             <div className="space-y-2"><Label htmlFor="supplierName">Supplier name</Label><Input id="supplierName" value={supplierName} onChange={(event) => setSupplierName(event.target.value)} autoFocus required /></div>
             <div className="space-y-2"><Label htmlFor="supplierOutletName">Outlet or branch</Label><Input id="supplierOutletName" value={supplierOutletName} onChange={(event) => setSupplierOutletName(event.target.value)} placeholder="Sanur, Ubud, main account…" /><p className="text-xs text-muted-foreground">Optional when this supplier has only one account.</p></div>
             <div className="space-y-2"><Label htmlFor="supplierNotes">Notes</Label><Textarea id="supplierNotes" value={supplierNotes} onChange={(event) => setSupplierNotes(event.target.value)} placeholder="Contact or account notes (optional)" /></div>
           </div>
-          <DialogFooter><Button type="button" variant="outline" onClick={() => setSupplierOpen(false)}>Cancel</Button><Button disabled={saving || supplierName.trim().length < 2}>{saving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}Add outlet</Button></DialogFooter>
+          <DialogFooter><Button type="button" variant="outline" onClick={closeSupplierEditor}>Cancel</Button><Button disabled={saving || supplierName.trim().length < 2}>{saving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}{editingSupplier ? "Save changes" : "Add outlet"}</Button></DialogFooter>
         </form></DialogContent>
       </Dialog>
 

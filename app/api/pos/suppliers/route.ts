@@ -1,24 +1,13 @@
 import { NextRequest, NextResponse } from "next/server"
-import { auth } from "@/lib/auth"
 import { prisma } from "@/lib/prisma"
-import { canUsePos } from "@/lib/permissions"
-import { POS_PIN_LOCK_SECONDS } from "@/lib/pos-pin"
-import { getPosOperatorFromRequest, setPosOperatorCookie } from "@/lib/pos-operator-session"
 import { cleanString, isRequestBodyTooLarge } from "@/lib/server-security"
+import { authorizeSupplierAccess, refreshSupplierAccess } from "@/lib/supplier-access"
 import { normalizeSupplierName } from "@/lib/supplier-ledger"
 
 const MAX_BODY_BYTES = 8 * 1024
 
-async function authorize(req: NextRequest) {
-  const session = await auth()
-  if (!session || !canUsePos(session.user.role)) return { error: "Unauthorized", status: 401 as const }
-  const operator = await getPosOperatorFromRequest(req)
-  if (!operator) return { error: "Unlock the POS with a cashier PIN to use supplier accounts.", status: 423 as const }
-  return { session, operator }
-}
-
 export async function GET(req: NextRequest) {
-  const access = await authorize(req)
+  const access = await authorizeSupplierAccess(req)
   if ("error" in access) return NextResponse.json({ error: access.error, code: access.status === 423 ? "POS_PIN_LOCKED" : undefined }, { status: access.status })
 
   const includeInactive = req.nextUrl.searchParams.get("includeInactive") === "1"
@@ -65,6 +54,7 @@ export async function GET(req: NextRequest) {
   const response = NextResponse.json({
     suppliers: accounts,
     recentEntries,
+    permissions: { canEditSuppliers: access.canEditSuppliers },
     summary: {
       supplierCount: accounts.length,
       billsTotal: accounts.reduce((sum, item) => sum + item.billsTotal, 0),
@@ -74,12 +64,11 @@ export async function GET(req: NextRequest) {
       netBalance: accounts.reduce((sum, item) => sum + item.balance, 0),
     },
   })
-  setPosOperatorCookie(response, access.operator.id, POS_PIN_LOCK_SECONDS)
-  return response
+  return refreshSupplierAccess(response, access)
 }
 
 export async function POST(req: NextRequest) {
-  const access = await authorize(req)
+  const access = await authorizeSupplierAccess(req)
   if ("error" in access) return NextResponse.json({ error: access.error, code: access.status === 423 ? "POS_PIN_LOCKED" : undefined }, { status: access.status })
   if (isRequestBodyTooLarge(req, MAX_BODY_BYTES)) return NextResponse.json({ error: "Supplier request is too large." }, { status: 413 })
 
@@ -97,14 +86,13 @@ export async function POST(req: NextRequest) {
         outletName: outletName || null,
         normalizedOutletName: normalizeSupplierName(outletName),
         notes: notes || null,
-        createdById: access.operator.id,
+        createdById: access.actorId,
       },
     })
     const response = NextResponse.json(supplier, { status: 201 })
-    setPosOperatorCookie(response, access.operator.id, POS_PIN_LOCK_SECONDS)
-    return response
+    return refreshSupplierAccess(response, access)
   } catch (error) {
-    console.error("Could not add POS supplier", { error, operatorId: access.operator.id })
+    console.error("Could not add POS supplier", { error, actorId: access.actorId })
     return NextResponse.json({ error: "That supplier outlet already exists or could not be added." }, { status: 409 })
   }
 }

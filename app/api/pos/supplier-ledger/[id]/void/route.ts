@@ -1,16 +1,11 @@
 import { NextRequest, NextResponse } from "next/server"
-import { auth } from "@/lib/auth"
 import { prisma } from "@/lib/prisma"
-import { canUsePos } from "@/lib/permissions"
-import { POS_PIN_LOCK_SECONDS } from "@/lib/pos-pin"
-import { getPosOperatorFromRequest, setPosOperatorCookie } from "@/lib/pos-operator-session"
 import { cleanString, isRequestBodyTooLarge } from "@/lib/server-security"
+import { authorizeSupplierAccess, refreshSupplierAccess } from "@/lib/supplier-access"
 
 export async function POST(req: NextRequest, context: { params: Promise<{ id: string }> }) {
-  const session = await auth()
-  if (!session || !canUsePos(session.user.role)) return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
-  const operator = await getPosOperatorFromRequest(req)
-  if (!operator) return NextResponse.json({ error: "Unlock the POS before voiding supplier activity.", code: "POS_PIN_LOCKED" }, { status: 423 })
+  const access = await authorizeSupplierAccess(req)
+  if ("error" in access) return NextResponse.json({ error: access.error, code: access.status === 423 ? "POS_PIN_LOCKED" : undefined }, { status: access.status })
   if (isRequestBodyTooLarge(req, 8 * 1024)) return NextResponse.json({ error: "Void request is too large." }, { status: 413 })
 
   const { id } = await context.params
@@ -20,11 +15,10 @@ export async function POST(req: NextRequest, context: { params: Promise<{ id: st
 
   const updated = await prisma.supplierLedgerEntry.updateMany({
     where: { id, voidedAt: null },
-    data: { voidedAt: new Date(), voidedById: operator.id, voidReason: reason },
+    data: { voidedAt: new Date(), voidedById: access.actorId, voidReason: reason },
   })
   if (updated.count !== 1) return NextResponse.json({ error: "This entry was already voided or no longer exists." }, { status: 409 })
 
   const response = NextResponse.json({ ok: true })
-  setPosOperatorCookie(response, operator.id, POS_PIN_LOCK_SECONDS)
-  return response
+  return refreshSupplierAccess(response, access)
 }

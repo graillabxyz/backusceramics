@@ -73,3 +73,8 @@ export function canManagePromotions(role?: string | null) {
   const normalized = normalizeRole(role)
   return normalized === "OWNER" || normalized === "ADMIN" || normalized === "MANAGER"
 }
+
+export function canManageSupplierAccounts(role?: string | null) {
+  const normalized = normalizeRole(role)
+  return normalized === "OWNER" || normalized === "ADMIN" || normalized === "MANAGER"
+}
