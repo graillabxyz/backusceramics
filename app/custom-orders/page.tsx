@@ -71,7 +71,7 @@ const colorOptions = [
   { value: "open", label: "Open to Suggestions" },
 ]
 
-const CUSTOM_ORDER_MINIMUM_IDR = 3500000
+const CUSTOM_ORDER_MINIMUM_IDR = 6000000
 
 
 
@@ -632,7 +632,7 @@ export default function CustomOrdersPage() {
                 <div className="space-y-2">
                   <Label htmlFor="budget">Approximate Budget (IDR)</Label>
                   <div className="rounded-lg border border-primary/20 bg-primary/5 p-3 text-sm leading-relaxed text-muted-foreground">
-                    <strong className="text-foreground">Minimum custom order: Rp 3.500.000.</strong> This helps cover design time,
+                    <strong className="text-foreground">Minimum custom order: Rp 6.000.000.</strong> This helps cover design time,
                     setup, making, glazing, firing, and packing for custom work.
                   </div>
                   <Select
@@ -643,8 +643,7 @@ export default function CustomOrdersPage() {
                       <SelectValue placeholder="Select budget range" />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="3_5m-5m">3,500,000 - 5,000,000</SelectItem>
-                      <SelectItem value="5m-10m">5,000,000 - 10,000,000</SelectItem>
+                      <SelectItem value="6m-10m">6,000,000 - 10,000,000</SelectItem>
                       <SelectItem value="10m-20m">10,000,000 - 20,000,000</SelectItem>
                       <SelectItem value="20m-50m">20,000,000 - 50,000,000</SelectItem>
                       <SelectItem value="50m+">50,000,000+</SelectItem>
@@ -751,7 +750,7 @@ export default function CustomOrdersPage() {
                       </span>
                     </div>
                     <div className="mt-3 rounded-lg bg-background/70 p-3 text-xs leading-relaxed text-muted-foreground">
-                      Custom orders begin at <strong className="text-foreground">Rp 3.500.000</strong>. We will confirm the final quote before any payment is requested.
+                      Custom orders begin at <strong className="text-foreground">Rp 6.000.000</strong>. We will confirm the final quote before any payment is requested.
                     </div>
                   </div>
                 </div>
@@ -785,7 +784,7 @@ export default function CustomOrdersPage() {
         <div className="mx-auto flex max-w-xl items-center gap-3">
           <div className="min-w-0 flex-1">
             <p className="truncate text-sm font-semibold text-foreground">Custom order request</p>
-            <p className="mt-0.5 truncate text-xs text-muted-foreground">Rp 3.500.000 minimum</p>
+            <p className="mt-0.5 truncate text-xs text-muted-foreground">Rp 6.000.000 minimum</p>
           </div>
           <Button type="submit" form="custom-order-form" className="h-11 px-4 text-sm" disabled={isSubmitting}>
             {isSubmitting ? "Submitting" : "Submit"}

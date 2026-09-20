@@ -15,7 +15,7 @@ import {
 
 const resend = new Resend(process.env.RESEND_API_KEY || "re_placeholder")
 const MAX_ORDER_BODY_BYTES = 128 * 1024
-const CUSTOM_ORDER_MINIMUM_IDR = 3_500_000
+const CUSTOM_ORDER_MINIMUM_IDR = 6_000_000
 
 export async function GET() {
   const session = await auth()
