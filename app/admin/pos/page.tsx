@@ -133,6 +133,25 @@ interface PosOperator {
   role: string
 }
 
+interface PosPromoCode {
+  id: string
+  code: string
+  description: string | null
+  discountType: "PERCENT" | "FIXED"
+  discountValue: number
+  maxDiscount: number | null
+  minSubtotal: number
+  scope: "ALL" | "SHOP" | "CLASSES"
+  expiresAt: string | null
+}
+
+interface AppliedPosPromo {
+  code: string
+  discountAmount: number
+  discountedSubtotal: number
+  appliedSubtotal: number
+}
+
 const quickProductDefaults: QuickProductForm = {
   name: "",
   sku: "",
@@ -205,6 +224,10 @@ function PosWorkspace() {
   const lastPosActivityRef = useRef(Date.now())
   const lastPosSessionRefreshRef = useRef(0)
   const [products, setProducts] = useState<PosProduct[]>([])
+  const [availablePromos, setAvailablePromos] = useState<PosPromoCode[]>([])
+  const [appliedPromo, setAppliedPromo] = useState<AppliedPosPromo | null>(null)
+  const [applyingPromoCode, setApplyingPromoCode] = useState("")
+  const [promoError, setPromoError] = useState("")
   const [loading, setLoading] = useState(true)
   const [checkingOut, setCheckingOut] = useState(false)
   const [onlineLoading, setOnlineLoading] = useState(false)
@@ -288,6 +311,7 @@ function PosWorkspace() {
     }, { subtotal: 0, discountTotal: 0, taxTotal: 0, total: 0 }),
     [cart]
   )
+  const checkoutTotal = Math.max(cartSummary.total - (appliedPromo?.discountAmount || 0), 0)
 
   const cartCount = useMemo(
     () => cart.reduce((sum, item) => sum + item.quantity, 0),
@@ -342,7 +366,14 @@ function PosWorkspace() {
 
     setLoading(true)
     void fetchProducts()
+    void fetchPromos()
   }, [posPinUnlocked])
+
+  useEffect(() => {
+    if (!appliedPromo || appliedPromo.appliedSubtotal === cartSummary.total) return
+    setAppliedPromo(null)
+    setPromoError("The cart changed. Select the promotion again to recalculate it.")
+  }, [appliedPromo, cartSummary.total])
 
   useEffect(() => {
     if (!posPinUnlocked || typeof window === "undefined") return
@@ -492,6 +523,46 @@ function PosWorkspace() {
       setError("Could not load POS products.")
     } finally {
       setLoading(false)
+    }
+  }
+
+  const fetchPromos = async () => {
+    try {
+      const res = await fetch("/api/pos/promos", { cache: "no-store" })
+      const data = await res.json().catch(() => ({}))
+      if (res.status === 423) { lockPos(data.error); return }
+      if (!res.ok) throw new Error(data.error || "Could not load promotions")
+      setAvailablePromos(data.promoCodes || [])
+    } catch (loadError) {
+      console.error("POS promotions load failed", loadError)
+      setPromoError("Could not load available promotions.")
+    }
+  }
+
+  const applyPromo = async (promo: PosPromoCode) => {
+    if (appliedPromo?.code === promo.code) {
+      setAppliedPromo(null)
+      setPromoError("")
+      return
+    }
+
+    setApplyingPromoCode(promo.code)
+    setPromoError("")
+    try {
+      const response = await fetch("/api/pos/promos", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ code: promo.code, subtotal: cartSummary.total }),
+      })
+      const data = await response.json().catch(() => ({}))
+      if (response.status === 423) { lockPos(data.error); return }
+      if (!response.ok) throw new Error(data.error || "Could not apply promotion.")
+      setAppliedPromo({ ...data.promo, appliedSubtotal: cartSummary.total })
+    } catch (applyError) {
+      setAppliedPromo(null)
+      setPromoError(applyError instanceof Error ? applyError.message : "Could not apply promotion.")
+    } finally {
+      setApplyingPromoCode("")
     }
   }
 
@@ -928,6 +999,8 @@ function PosWorkspace() {
 
   const clearCheckoutState = () => {
     setCart([])
+    setAppliedPromo(null)
+    setPromoError("")
     setReceiptEmail("")
     setCustomerName("")
     setPaymentMethod("CARD_MACHINE")
@@ -950,6 +1023,7 @@ function PosWorkspace() {
     })),
     receiptEmail: receiptEmail.trim() || undefined,
     customerName: customerName.trim() || undefined,
+    promoCode: appliedPromo?.code || undefined,
   })
 
   const handleMachinePaid = async () => {
@@ -1330,7 +1404,7 @@ function PosWorkspace() {
             >
               <ShoppingCart className="h-4 w-4 sm:mr-2" />
               <span className="sr-only sm:not-sr-only">Checkout</span>
-              <span className="hidden min-[420px]:inline"> · {formatPrice(cartSummary.total)}</span>
+              <span className="hidden min-[420px]:inline"> · {formatPrice(checkoutTotal)}</span>
             </Button>
             )}
             <Button type="button" variant="outline" className="hidden h-10 px-3 sm:inline-flex" onClick={openQuickAdd}>
@@ -1446,7 +1520,7 @@ function PosWorkspace() {
         {cartCount > 0 && posStep === "CHECKOUT" && (
           <div className="mt-2 flex items-center justify-between rounded-md bg-background/70 px-3 py-2 text-sm sm:hidden">
             <span className="font-medium">{cartCount} item{cartCount === 1 ? "" : "s"}</span>
-            <span className="font-semibold">{formatPrice(cartSummary.total)}</span>
+            <span className="font-semibold">{formatPrice(checkoutTotal)}</span>
           </div>
         )}
       </div>
@@ -1838,11 +1912,44 @@ function PosWorkspace() {
                   <span>{formatPrice(cartSummary.taxTotal)}</span>
                 </div>
               )}
+              {appliedPromo && (
+                <div className="mt-1 flex items-center justify-between text-sm font-medium text-emerald-700">
+                  <span>Promo · {appliedPromo.code}</span>
+                  <span>-{formatPrice(appliedPromo.discountAmount)}</span>
+                </div>
+              )}
               <div className="mt-2 flex items-center justify-between text-xl font-bold text-foreground">
                 <span>Total</span>
-                <span>{formatPrice(cartSummary.total)}</span>
+                <span>{formatPrice(checkoutTotal)}</span>
               </div>
             </div>
+
+            {availablePromos.length > 0 && (
+              <div className="space-y-2 rounded-md border border-border p-3">
+                <div className="flex items-center gap-2"><Tag className="h-4 w-4" /><Label>Available promotions</Label></div>
+                <div className="grid gap-2 sm:grid-cols-2">
+                  {availablePromos.map((promo) => {
+                    const selected = appliedPromo?.code === promo.code
+                    const valueLabel = promo.discountType === "PERCENT" ? `${promo.discountValue}% off` : `${formatPrice(promo.discountValue)} off`
+                    return (
+                      <Button
+                        key={promo.id}
+                        type="button"
+                        variant={selected ? "default" : "outline"}
+                        className="h-auto min-h-12 justify-between gap-3 px-3 py-2 text-left"
+                        disabled={Boolean(applyingPromoCode) || cartSummary.total <= 0}
+                        onClick={() => void applyPromo(promo)}
+                      >
+                        <span className="min-w-0"><span className="block font-mono font-bold">{promo.code}</span><span className="block truncate text-xs opacity-75">{promo.description || valueLabel}</span></span>
+                        <span className="shrink-0 text-xs font-semibold">{selected ? "Applied" : valueLabel}</span>
+                      </Button>
+                    )
+                  })}
+                </div>
+                {promoError && <p className="text-xs text-destructive">{promoError}</p>}
+              </div>
+            )}
+            {availablePromos.length === 0 && promoError && <p className="text-xs text-destructive">{promoError}</p>}
 
             <div className="space-y-3">
               <div className="space-y-2">

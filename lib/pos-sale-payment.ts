@@ -127,12 +127,15 @@ export async function cancelPendingPosSalePayment(saleId: string) {
     return { updated: 1, sale }
   })
 
-  if (result.updated && isOnlineShopSale(result.sale?.notes)) {
+  if (result.updated && result.sale?.promoCodeSnapshot) {
     await settlePromoRedemption({
       paymentReference: result.sale?.paymentReference,
       paymentSessionId: result.sale?.paymentSessionId,
       status: "CANCELLED",
     })
+  }
+
+  if (result.updated && isOnlineShopSale(result.sale?.notes)) {
     revalidatePath("/wall-of-cups")
     revalidatePath("/shop")
   }

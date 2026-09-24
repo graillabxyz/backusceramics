@@ -1,8 +1,8 @@
 import type { Prisma, PromoCode } from "@prisma/client"
 import { prisma } from "@/lib/prisma"
 
-export const PROMO_CHANNELS = ["SHOP", "CLASSES"] as const
-export const PROMO_SCOPES = ["ALL", ...PROMO_CHANNELS] as const
+export const PROMO_CHANNELS = ["SHOP", "CLASSES", "POS"] as const
+export const PROMO_SCOPES = ["ALL", "SHOP", "CLASSES"] as const
 export const PROMO_DISCOUNT_TYPES = ["PERCENT", "FIXED"] as const
 export const MINIMUM_DISCOUNTED_PAYMENT_IDR = 10_000
 
@@ -59,13 +59,24 @@ function activeRedemptionWhere(now: Date) {
   } satisfies Prisma.PromoRedemptionWhereInput
 }
 
+export function promoSupportsChannel(
+  promo: Pick<PromoCode, "scope" | "posEnabled">,
+  channel: PromoChannel,
+) {
+  return channel === "POS"
+    ? promo.posEnabled
+    : promo.scope === "ALL" || promo.scope === channel
+}
+
 function validatePromoState(promo: PromoCode | null, channel: PromoChannel, subtotal: number, now: Date) {
   if (!promo || !promo.active) {
     throw new PromoCodeError("This promo code is not available.", "PROMO_NOT_AVAILABLE")
   }
-  if (promo.scope !== "ALL" && promo.scope !== channel) {
+  if (!promoSupportsChannel(promo, channel)) {
     throw new PromoCodeError(
-      promo.scope === "SHOP" ? "This code is only for shop purchases." : "This code is only for class bookings.",
+      channel === "POS"
+        ? "This promo code is not available in the POS."
+        : promo.scope === "SHOP" ? "This code is only for shop purchases." : "This code is only for class bookings.",
       "PROMO_WRONG_SCOPE",
     )
   }

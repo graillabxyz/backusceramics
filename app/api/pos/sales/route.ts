@@ -12,6 +12,7 @@ import { checkRateLimit, cleanString, isRequestBodyTooLarge, isValidEmailAddress
 import { getPosOperatorFromRequest } from "@/lib/pos-operator-session"
 import { getPosCustomItemMetadata, normalizePosCustomItemType, type PosCustomItemType } from "@/lib/pos-custom-items"
 import { calculateRecipeUnitCost } from "@/lib/menu-costing"
+import { normalizePromoCode, PromoCodeError, reservePromoCode } from "@/lib/promo-codes"
 
 const MAX_POS_SALE_BODY_BYTES = 64 * 1024
 
@@ -113,6 +114,7 @@ export async function POST(req: NextRequest) {
   if (!data || typeof data !== "object") return NextResponse.json({ error: "Sale request is not valid JSON" }, { status: 400 })
   const items = Array.isArray(data.items) ? data.items : []
   const paymentMethod = data.paymentMethod || "CARD_MACHINE"
+  const promoCode = normalizePromoCode(data.promoCode)
   const receiptEmail = typeof data.receiptEmail === "string" ? safeHeaderValue(data.receiptEmail, 254) : ""
   if (receiptEmail && !isValidEmailAddress(receiptEmail)) {
     return NextResponse.json({ error: "Enter a valid receipt email" }, { status: 400 })
@@ -256,15 +258,31 @@ export async function POST(req: NextRequest) {
         })
       }
 
-      return tx.posSale.create({
+      const paymentReference = `pos_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`
+      const promo = await reservePromoCode({
+        db: tx,
+        code: promoCode,
+        channel: "POS",
+        subtotal: total,
+        customerEmail: receiptEmail || null,
+        paymentReference,
+        expiresAt: new Date(Date.now() + 5 * 60_000),
+      })
+      const promoDiscount = promo?.discountAmount || 0
+      discountTotal += promoDiscount
+      total -= promoDiscount
+
+      const sale = await tx.posSale.create({
         data: {
           operatorId: posOperator.id,
           subtotal,
           discountTotal,
+          promoCodeSnapshot: promo?.promo.code || null,
           taxTotal,
           total,
           status: "PAID",
           paymentMethod,
+          paymentReference: promo ? paymentReference : null,
           receiptEmail: receiptEmail || null,
           notes: data.notes ? cleanString(data.notes, 1000) : null,
           items: {
@@ -273,6 +291,13 @@ export async function POST(req: NextRequest) {
         },
         include: { items: true },
       })
+      if (promo) {
+        await tx.promoRedemption.update({
+          where: { paymentReference },
+          data: { saleId: sale.id, status: "APPLIED", appliedAt: new Date() },
+        })
+      }
+      return sale
     })
 
     revalidatePath("/wall-of-cups")
@@ -298,6 +323,8 @@ export async function POST(req: NextRequest) {
         paymentMethod,
         itemCount: sale.items.length,
         receiptRequested: Boolean(receiptEmail),
+        promoCode: sale.promoCodeSnapshot,
+        discountAmount: sale.discountTotal,
       },
     }, req)
 
@@ -307,8 +334,8 @@ export async function POST(req: NextRequest) {
   } catch (error) {
     console.error("Could not complete POS sale", { error })
     return NextResponse.json(
-      { error: error instanceof PosSaleValidationError ? error.message : "Sale could not be completed. Please try again." },
-      { status: error instanceof PosSaleValidationError ? 409 : 500 }
+      { error: error instanceof PosSaleValidationError || error instanceof PromoCodeError ? error.message : "Sale could not be completed. Please try again." },
+      { status: error instanceof PromoCodeError ? 400 : error instanceof PosSaleValidationError ? 409 : 500 }
     )
   }
 }

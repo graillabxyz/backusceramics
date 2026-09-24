@@ -17,6 +17,8 @@ import { getPosOperatorFromRequest } from "@/lib/pos-operator-session"
 import { getTrustedRequestOrigin } from "@/lib/request-origin"
 import { getPosCustomItemMetadata, normalizePosCustomItemType, type PosCustomItemType } from "@/lib/pos-custom-items"
 import { calculateRecipeUnitCost } from "@/lib/menu-costing"
+import { getPaymentSessionExpiresAt } from "@/lib/payment-session"
+import { normalizePromoCode, PromoCodeError, reservePromoCode, setPromoPaymentSession } from "@/lib/promo-codes"
 
 const MAX_POS_ONLINE_SALE_BODY_BYTES = 64 * 1024
 
@@ -76,6 +78,10 @@ async function restorePendingSaleInventory(saleId: string) {
       where: { id: saleId },
       data: { status: "CANCELLED" },
     }),
+    prisma.promoRedemption.updateMany({
+      where: { saleId, status: "PENDING" },
+      data: { status: "CANCELLED", cancelledAt: new Date() },
+    }),
   ])
 }
 
@@ -110,6 +116,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Enter a valid receipt email" }, { status: 400 })
   }
   const customerName = typeof data.customerName === "string" ? cleanString(data.customerName, 160) : ""
+  const promoCode = normalizePromoCode(data.promoCode)
   const saleItems: SaleItemRequest[] = items.map((item: RawSaleItemRequest) => {
     const customItemType = normalizePosCustomItemType(item.customItemType)
     const metadata = customItemType ? getPosCustomItemMetadata(customItemType) : null
@@ -135,6 +142,7 @@ export async function POST(req: NextRequest) {
   }
 
   const paymentReference = sanitizeReference(`pos_${Date.now()}`)
+  const paymentExpiresAt = getPaymentSessionExpiresAt()
   let createdSaleId = ""
 
   try {
@@ -245,11 +253,25 @@ export async function POST(req: NextRequest) {
         })
       }
 
-      return tx.posSale.create({
+      const promo = await reservePromoCode({
+        db: tx,
+        code: promoCode,
+        channel: "POS",
+        subtotal: total,
+        customerEmail: receiptEmail || null,
+        paymentReference,
+        expiresAt: paymentExpiresAt,
+      })
+      const promoDiscount = promo?.discountAmount || 0
+      discountTotal += promoDiscount
+      total -= promoDiscount
+
+      const sale = await tx.posSale.create({
         data: {
           operatorId: posOperator.id,
           subtotal,
           discountTotal,
+          promoCodeSnapshot: promo?.promo.code || null,
           taxTotal,
           total,
           status: "PENDING_PAYMENT",
@@ -261,6 +283,13 @@ export async function POST(req: NextRequest) {
         },
         include: { items: true },
       })
+      if (promo) {
+        await tx.promoRedemption.update({
+          where: { paymentReference },
+          data: { saleId: sale.id },
+        })
+      }
+      return sale
     })
 
     createdSaleId = sale.id
@@ -276,6 +305,7 @@ export async function POST(req: NextRequest) {
       description: `Backus Ceramics POS sale ${sale.id} - ${formatPrice(sale.total)}`,
       allow_save_payment_method: "DISABLED",
       locale: "en",
+      expires_at: paymentExpiresAt.toISOString(),
       customer: {
         reference_id: createXenditCustomerReference(receiptEmail || sale.id, paymentReference),
         type: "INDIVIDUAL",
@@ -284,18 +314,20 @@ export async function POST(req: NextRequest) {
           given_names: sanitizeCustomerName(customerName || receiptEmail || "BackusCustomer"),
         },
       },
-      items: sale.items.map((item) => ({
-        reference_id: item.productId || item.id,
+      items: [{
+        reference_id: `pos_order_${sale.id}`,
         type: "PHYSICAL_PRODUCT",
-        name: item.quantity > 1 ? `${item.nameSnapshot} x ${item.quantity}` : item.nameSnapshot,
-        net_unit_amount: Math.max(item.lineTotal, 0),
+        name: sale.promoCodeSnapshot ? `Backus Ceramics POS sale (${sale.promoCodeSnapshot} applied)` : "Backus Ceramics POS sale",
+        net_unit_amount: sale.total,
         quantity: 1,
-        category: item.categorySnapshot,
-      })),
+        category: "POINT_OF_SALE",
+      }],
       metadata: {
         pos_sale_id: sale.id,
         pos_payment_reference: paymentReference,
         receipt_email: receiptEmail || undefined,
+        promo_code: sale.promoCodeSnapshot || undefined,
+        discount_amount: sale.discountTotal,
       },
       success_return_url: `${origin}/admin/pos?posPayment=success&sale=${sale.id}`,
       cancel_return_url: `${origin}/admin/pos?posPayment=cancelled&sale=${sale.id}`,
@@ -306,6 +338,7 @@ export async function POST(req: NextRequest) {
       data: { paymentSessionId: paymentSession.payment_session_id },
       include: { items: true },
     })
+    await setPromoPaymentSession(paymentReference, paymentSession.payment_session_id)
 
     await recordAnalyticsEvent({
       type: "pos_online_payment_started",
@@ -319,6 +352,8 @@ export async function POST(req: NextRequest) {
         paymentSessionId: paymentSession.payment_session_id,
         itemCount: updatedSale.items.length,
         receiptRequested: Boolean(receiptEmail),
+        promoCode: updatedSale.promoCodeSnapshot,
+        discountAmount: updatedSale.discountTotal,
       },
     }, req)
 
@@ -338,6 +373,7 @@ export async function POST(req: NextRequest) {
 
     const isXenditError = error instanceof XenditApiError
     const isConfigError = error instanceof XenditConfigurationError
+    const isPromoError = error instanceof PromoCodeError
     console.error("Could not start POS online payment", {
       error,
       xenditStatus: isXenditError ? error.status : undefined,
@@ -349,11 +385,11 @@ export async function POST(req: NextRequest) {
       {
         error: isConfigError
           ? "Online payment is not configured yet."
-          : error instanceof PosOnlineSaleValidationError
+          : error instanceof PosOnlineSaleValidationError || isPromoError
             ? error.message
             : "Online payment could not be started right now.",
       },
-      { status: isConfigError ? 503 : error instanceof PosOnlineSaleValidationError ? 409 : 502 }
+      { status: isConfigError ? 503 : isPromoError ? 400 : error instanceof PosOnlineSaleValidationError ? 409 : 502 }
     )
   }
 }

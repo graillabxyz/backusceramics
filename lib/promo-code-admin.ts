@@ -63,6 +63,7 @@ export function parsePromoInput(data: Record<string, unknown>) {
       maxDiscount: discountType === "PERCENT" ? maxDiscount.value : null,
       minSubtotal: minSubtotal.value,
       scope,
+      posEnabled: data.posEnabled !== false,
       active: data.active !== false,
       startsAt: startsAt.value,
       expiresAt: expiresAt.value,

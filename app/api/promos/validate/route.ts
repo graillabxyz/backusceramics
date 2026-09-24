@@ -1,9 +1,10 @@
 import { NextRequest, NextResponse } from "next/server"
 import { auth } from "@/lib/auth"
-import { previewPromoCode, PromoCodeError, PROMO_CHANNELS, type PromoChannel } from "@/lib/promo-codes"
+import { previewPromoCode, PromoCodeError, type PromoChannel } from "@/lib/promo-codes"
 import { checkRateLimit, isRequestBodyTooLarge, rateLimitHeaders } from "@/lib/server-security"
 
 const MAX_PROMO_BODY_BYTES = 8 * 1024
+const PUBLIC_PROMO_CHANNELS: PromoChannel[] = ["SHOP", "CLASSES"]
 
 export async function POST(req: NextRequest) {
   const rateLimit = checkRateLimit(req, { key: "promo-validate", limit: 20, windowMs: 10 * 60_000 })
@@ -20,7 +21,7 @@ export async function POST(req: NextRequest) {
   const data = await req.json().catch(() => null)
   const channel = String(data?.channel || "").toUpperCase() as PromoChannel
   const subtotal = Number(data?.subtotal)
-  if (!PROMO_CHANNELS.includes(channel) || !Number.isInteger(subtotal) || subtotal <= 0) {
+  if (!PUBLIC_PROMO_CHANNELS.includes(channel) || !Number.isInteger(subtotal) || subtotal <= 0) {
     return NextResponse.json({ error: "Promo request is invalid." }, { status: 400 })
   }
 

@@ -347,6 +347,7 @@ model PromoCode {
   minSubtotal           Int               @default(0)
   scope                 String            @default("ALL")
   // Scopes: ALL, SHOP, CLASSES
+  posEnabled            Boolean           @default(true)
   active                Boolean           @default(true)
   startsAt              DateTime?
   expiresAt             DateTime?

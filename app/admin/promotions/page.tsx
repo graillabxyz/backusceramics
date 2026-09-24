@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
+import { Switch } from "@/components/ui/switch"
 import { formatPrice } from "@/lib/pos-catalog"
 
 interface PromoCodeRecord {
@@ -18,6 +19,7 @@ interface PromoCodeRecord {
   maxDiscount: number | null
   minSubtotal: number
   scope: "ALL" | "SHOP" | "CLASSES"
+  posEnabled: boolean
   active: boolean
   startsAt: string | null
   expiresAt: string | null
@@ -39,6 +41,7 @@ const initialForm = {
   maxDiscount: "",
   minSubtotal: "",
   scope: "ALL" as "ALL" | "SHOP" | "CLASSES",
+  posEnabled: true,
   startsAt: "",
   expiresAt: "",
   maxRedemptions: "",
@@ -66,6 +69,7 @@ function formFromPromo(promo: PromoCodeRecord) {
     maxDiscount: promo.maxDiscount ? String(promo.maxDiscount) : "",
     minSubtotal: promo.minSubtotal ? String(promo.minSubtotal) : "",
     scope: promo.scope,
+    posEnabled: promo.posEnabled,
     startsAt: formatDateTimeInput(promo.startsAt),
     expiresAt: formatDateTimeInput(promo.expiresAt),
     maxRedemptions: promo.maxRedemptions ? String(promo.maxRedemptions) : "",
@@ -239,6 +243,7 @@ export default function PromotionsPage() {
                               {expired ? "Expired" : promo.active ? "Active" : "Paused"}
                             </Badge>
                             <Badge variant="outline">{promo.scope === "ALL" ? "Classes + shop" : promo.scope === "SHOP" ? "Shop" : "Classes"}</Badge>
+                            <Badge variant={promo.posEnabled ? "outline" : "secondary"}>{promo.posEnabled ? "POS enabled" : "Website only"}</Badge>
                           </div>
                           {promo.description && <p className="mt-2 text-sm text-muted-foreground">{promo.description}</p>}
                         </div>
@@ -297,6 +302,10 @@ export default function PromotionsPage() {
             <div className="grid grid-cols-2 gap-3">
               <div className="space-y-2"><Label>Applies to</Label><select value={form.scope} onChange={(event) => setForm({ ...form, scope: event.target.value as typeof form.scope })} className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm"><option value="ALL">Classes + shop</option><option value="CLASSES">Classes only</option><option value="SHOP">Shop only</option></select></div>
               <div className="space-y-2"><Label htmlFor="promo-minimum">Minimum subtotal</Label><Input id="promo-minimum" type="number" min="0" value={form.minSubtotal} onChange={(event) => setForm({ ...form, minSubtotal: event.target.value })} placeholder="0" /></div>
+            </div>
+            <div className="flex items-center justify-between gap-4 rounded-md border border-border p-3">
+              <div><Label htmlFor="promo-pos-enabled">Available in POS</Label><p className="mt-1 text-xs text-muted-foreground">Show this code at checkout so staff can apply it.</p></div>
+              <Switch id="promo-pos-enabled" checked={form.posEnabled} onCheckedChange={(checked) => setForm({ ...form, posEnabled: checked })} />
             </div>
             <div className="grid grid-cols-2 gap-3">
               <div className="space-y-2"><Label htmlFor="promo-total-limit">Total use limit</Label><Input id="promo-total-limit" type="number" min="1" value={form.maxRedemptions} onChange={(event) => setForm({ ...form, maxRedemptions: event.target.value })} placeholder="Unlimited" /></div>

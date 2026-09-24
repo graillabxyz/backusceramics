@@ -35,6 +35,7 @@ interface PosSale {
   id: string
   subtotal: number
   discountTotal: number
+  promoCodeSnapshot: string | null
   taxTotal: number
   shippingAmount: number
   total: number
@@ -235,7 +236,7 @@ export default function PosSalesPage() {
                         {sale.receiptEmail && <span>Receipt: {sale.receiptEmail}</span>}
                         {sale.taxTotal > 0 && <span>Tax: {formatPrice(sale.taxTotal)}</span>}
                         {sale.shippingAmount > 0 && <span>Shipping: {formatPrice(sale.shippingAmount)}</span>}
-                        {sale.discountTotal > 0 && <span>Discounts: {formatPrice(sale.discountTotal)}</span>}
+                        {sale.discountTotal > 0 && <span>Discounts{sale.promoCodeSnapshot ? ` · ${sale.promoCodeSnapshot}` : ""}: {formatPrice(sale.discountTotal)}</span>}
                       </div>
                       {sale.fulfillmentMethod === "SHIPPING" && (
                         <p className="mt-2 text-xs text-muted-foreground">

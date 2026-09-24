@@ -17,6 +17,7 @@ interface ReceiptSale {
   id: string
   subtotal?: number
   discountTotal?: number
+  promoCodeSnapshot?: string | null
   taxTotal?: number
   shippingAmount?: number
   total: number
@@ -90,7 +91,7 @@ function buildReceiptHtml(sale: ReceiptSale) {
       </table>
       <div style="padding:20px 0;text-align:right;">
         <div style="font-size:13px;color:#777;">Subtotal ${formatPrice(sale.subtotal ?? sale.total)}</div>
-        ${(sale.discountTotal || 0) > 0 ? `<div style="font-size:13px;color:#777;">Discount -${formatPrice(sale.discountTotal || 0)}</div>` : ""}
+        ${(sale.discountTotal || 0) > 0 ? `<div style="font-size:13px;color:#777;">Discount${sale.promoCodeSnapshot ? ` (${escapeHtml(sale.promoCodeSnapshot)})` : ""} -${formatPrice(sale.discountTotal || 0)}</div>` : ""}
         ${(sale.taxTotal || 0) > 0 ? `<div style="font-size:13px;color:#777;">Tax ${formatPrice(sale.taxTotal || 0)}</div>` : ""}
         ${(sale.shippingAmount || 0) > 0 ? `<div style="font-size:13px;color:#777;">Packing and shipping ${formatPrice(sale.shippingAmount || 0)}</div>` : ""}
         <div style="margin-top:8px;font-size:20px;font-weight:700;">${formatPrice(sale.total)}</div>

@@ -5,6 +5,7 @@ import {
   isValidPromoCodeFormat,
   MINIMUM_DISCOUNTED_PAYMENT_IDR,
   normalizePromoCode,
+  promoSupportsChannel,
 } from "../lib/promo-codes"
 import { parsePromoInput } from "../lib/promo-code-admin"
 
@@ -38,6 +39,21 @@ test("rejects invalid replacement promo codes", () => {
   })
 
   assert.match(String(parsed.error), /3–32 letters/)
+})
+
+test("makes website promotions available in POS unless explicitly disabled", () => {
+  assert.equal(promoSupportsChannel({ scope: "SHOP", posEnabled: true }, "POS"), true)
+  assert.equal(promoSupportsChannel({ scope: "CLASSES", posEnabled: true }, "POS"), true)
+  assert.equal(promoSupportsChannel({ scope: "ALL", posEnabled: false }, "POS"), false)
+  assert.equal(promoSupportsChannel({ scope: "CLASSES", posEnabled: true }, "SHOP"), false)
+})
+
+test("parses the independent POS availability toggle", () => {
+  const disabled = parsePromoInput({ code: "WEBONLY", discountType: "PERCENT", discountValue: 10, posEnabled: false })
+  const enabled = parsePromoInput({ code: "EVERYWHERE", discountType: "FIXED", discountValue: 25_000 })
+
+  assert.equal(disabled.values.posEnabled, false)
+  assert.equal(enabled.values.posEnabled, true)
 })
 
 test("calculates whole-rupiah percentage discounts", () => {
