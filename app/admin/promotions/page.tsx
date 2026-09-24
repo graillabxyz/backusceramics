@@ -7,7 +7,6 @@ import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
-import { Textarea } from "@/components/ui/textarea"
 import { formatPrice } from "@/lib/pos-catalog"
 
 interface PromoCodeRecord {
@@ -170,13 +169,13 @@ export default function PromotionsPage() {
                       <div className="flex items-start justify-between gap-3">
                         <div className="min-w-0">
                           <div className="flex flex-wrap items-center gap-2">
-                            <h3 className="font-mono text-lg font-bold tracking-wide">{promo.code}</h3>
+                            <h3 className="text-lg font-bold">{promo.description || promo.code}</h3>
                             <Badge variant={promo.active && !expired ? "default" : "secondary"}>
                               {expired ? "Expired" : promo.active ? "Active" : "Paused"}
                             </Badge>
                             <Badge variant="outline">{promo.scope === "ALL" ? "Classes + shop" : promo.scope === "SHOP" ? "Shop" : "Classes"}</Badge>
                           </div>
-                          {promo.description && <p className="mt-2 text-sm text-muted-foreground">{promo.description}</p>}
+                          {promo.description && <p className="mt-1 font-mono text-sm font-semibold tracking-wide text-muted-foreground">Code: {promo.code}</p>}
                         </div>
                         <Button
                           variant="outline"
@@ -212,10 +211,10 @@ export default function PromotionsPage() {
           <div className="space-y-4 rounded-md border border-border bg-background p-5">
             <div>
               <h2 className="font-heading text-xl font-bold">Create promo</h2>
-              <p className="mt-1 text-sm text-muted-foreground">Codes use uppercase automatically.</p>
+              <p className="mt-1 text-sm text-muted-foreground">Give the promotion any internal name, then choose the code customers will enter.</p>
             </div>
-            <div className="space-y-2"><Label htmlFor="promo-code">Code</Label><Input id="promo-code" value={form.code} onChange={(event) => setForm({ ...form, code: event.target.value.toUpperCase().replace(/\s/g, "") })} placeholder="WELCOME10" maxLength={32} /></div>
-            <div className="space-y-2"><Label htmlFor="promo-description">Internal description</Label><Textarea id="promo-description" rows={2} value={form.description} onChange={(event) => setForm({ ...form, description: event.target.value })} placeholder="New customer offer" /></div>
+            <div className="space-y-2"><Label htmlFor="promo-description">Promotion name</Label><Input id="promo-description" value={form.description} onChange={(event) => setForm({ ...form, description: event.target.value })} placeholder="September studio sale" maxLength={120} /></div>
+            <div className="space-y-2"><Label htmlFor="promo-code">Customer code</Label><Input id="promo-code" value={form.code} onChange={(event) => setForm({ ...form, code: event.target.value.toUpperCase().replace(/\s/g, "") })} placeholder="STUDIO20" maxLength={32} /><p className="text-xs text-muted-foreground">Customers enter this at checkout. Letters are automatically capitalized.</p></div>
             <div className="grid grid-cols-2 gap-3">
               <div className="space-y-2"><Label>Type</Label><select value={form.discountType} onChange={(event) => setForm({ ...form, discountType: event.target.value as "PERCENT" | "FIXED" })} className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm"><option value="PERCENT">Percent</option><option value="FIXED">Fixed IDR</option></select></div>
               <div className="space-y-2"><Label htmlFor="promo-value">{form.discountType === "PERCENT" ? "Percent" : "Amount (IDR)"}</Label><Input id="promo-value" type="number" min="1" max={form.discountType === "PERCENT" ? 100 : undefined} value={form.discountValue} onChange={(event) => setForm({ ...form, discountValue: event.target.value })} /></div>
