@@ -1,7 +1,7 @@
 "use client"
 
 import { useCallback, useEffect, useState } from "react"
-import { CalendarClock, CheckCircle2, Loader2, PauseCircle, Plus, RefreshCw, TicketPercent } from "lucide-react"
+import { CalendarClock, CheckCircle2, Loader2, PauseCircle, Pencil, Plus, RefreshCw, TicketPercent, Trash2, X } from "lucide-react"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
@@ -50,12 +50,37 @@ function formatDate(value: string | null) {
   return new Date(value).toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" })
 }
 
+function formatDateTimeInput(value: string | null) {
+  if (!value) return ""
+  const date = new Date(value)
+  const localDate = new Date(date.getTime() - date.getTimezoneOffset() * 60_000)
+  return localDate.toISOString().slice(0, 16)
+}
+
+function formFromPromo(promo: PromoCodeRecord) {
+  return {
+    code: promo.code,
+    description: promo.description || "",
+    discountType: promo.discountType,
+    discountValue: String(promo.discountValue),
+    maxDiscount: promo.maxDiscount ? String(promo.maxDiscount) : "",
+    minSubtotal: promo.minSubtotal ? String(promo.minSubtotal) : "",
+    scope: promo.scope,
+    startsAt: formatDateTimeInput(promo.startsAt),
+    expiresAt: formatDateTimeInput(promo.expiresAt),
+    maxRedemptions: promo.maxRedemptions ? String(promo.maxRedemptions) : "",
+    maxRedemptionsPerUser: String(promo.maxRedemptionsPerUser),
+  }
+}
+
 export default function PromotionsPage() {
   const [promoCodes, setPromoCodes] = useState<PromoCodeRecord[]>([])
   const [form, setForm] = useState(initialForm)
+  const [editingPromo, setEditingPromo] = useState<PromoCodeRecord | null>(null)
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [updatingId, setUpdatingId] = useState("")
+  const [deletingId, setDeletingId] = useState("")
   const [error, setError] = useState("")
   const [notice, setNotice] = useState("")
 
@@ -77,16 +102,30 @@ export default function PromotionsPage() {
     void loadPromoCodes()
   }, [loadPromoCodes])
 
-  const createPromo = async () => {
+  const resetForm = () => {
+    setForm(initialForm)
+    setEditingPromo(null)
+  }
+
+  const editPromo = (promo: PromoCodeRecord) => {
+    setForm(formFromPromo(promo))
+    setEditingPromo(promo)
+    setError("")
+    setNotice("")
+  }
+
+  const savePromo = async () => {
     setSaving(true)
     setError("")
     setNotice("")
     try {
       const response = await fetch("/api/admin/promo-codes", {
-        method: "POST",
+        method: editingPromo ? "PATCH" : "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
+          ...(editingPromo ? { id: editingPromo.id } : {}),
           ...form,
+          active: editingPromo?.active ?? true,
           discountValue: form.discountValue,
           maxDiscount: form.maxDiscount,
           minSubtotal: form.minSubtotal,
@@ -97,12 +136,15 @@ export default function PromotionsPage() {
         }),
       })
       const payload = await response.json().catch(() => ({}))
-      if (!response.ok) throw new Error(payload.error || "Could not create promo code.")
-      setForm(initialForm)
-      setNotice(`${payload.promoCode.code} is ready to use.`)
+      if (!response.ok) throw new Error(payload.error || `Could not ${editingPromo ? "update" : "create"} promo code.`)
+      const previousCode = editingPromo?.code
+      resetForm()
+      setNotice(previousCode && previousCode !== payload.promoCode.code
+        ? `${previousCode} was renamed to ${payload.promoCode.code}. Customers must now use the new code.`
+        : `${payload.promoCode.code} is ready to use.`)
       await loadPromoCodes()
-    } catch (createError) {
-      setError(createError instanceof Error ? createError.message : "Could not create promo code.")
+    } catch (saveError) {
+      setError(saveError instanceof Error ? saveError.message : `Could not ${editingPromo ? "update" : "create"} promo code.`)
     } finally {
       setSaving(false)
     }
@@ -124,6 +166,29 @@ export default function PromotionsPage() {
       setError(updateError instanceof Error ? updateError.message : "Could not update promo code.")
     } finally {
       setUpdatingId("")
+    }
+  }
+
+  const deletePromo = async (promo: PromoCodeRecord) => {
+    if (!window.confirm(`Delete promo code ${promo.code}? This cannot be undone.`)) return
+    setDeletingId(promo.id)
+    setError("")
+    setNotice("")
+    try {
+      const response = await fetch("/api/admin/promo-codes", {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id: promo.id }),
+      })
+      const payload = await response.json().catch(() => ({}))
+      if (!response.ok) throw new Error(payload.error || "Could not delete promo code.")
+      if (editingPromo?.id === promo.id) resetForm()
+      setPromoCodes((current) => current.filter((item) => item.id !== promo.id))
+      setNotice(`${promo.code} was deleted.`)
+    } catch (deleteError) {
+      setError(deleteError instanceof Error ? deleteError.message : "Could not delete promo code.")
+    } finally {
+      setDeletingId("")
     }
   }
 
@@ -169,23 +234,32 @@ export default function PromotionsPage() {
                       <div className="flex items-start justify-between gap-3">
                         <div className="min-w-0">
                           <div className="flex flex-wrap items-center gap-2">
-                            <h3 className="text-lg font-bold">{promo.description || promo.code}</h3>
+                            <h3 className="font-mono text-lg font-bold tracking-wide">{promo.code}</h3>
                             <Badge variant={promo.active && !expired ? "default" : "secondary"}>
                               {expired ? "Expired" : promo.active ? "Active" : "Paused"}
                             </Badge>
                             <Badge variant="outline">{promo.scope === "ALL" ? "Classes + shop" : promo.scope === "SHOP" ? "Shop" : "Classes"}</Badge>
                           </div>
-                          {promo.description && <p className="mt-1 font-mono text-sm font-semibold tracking-wide text-muted-foreground">Code: {promo.code}</p>}
+                          {promo.description && <p className="mt-2 text-sm text-muted-foreground">{promo.description}</p>}
                         </div>
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          disabled={updatingId === promo.id || expired}
-                          onClick={() => void setActive(promo, !promo.active)}
-                        >
-                          {updatingId === promo.id ? <Loader2 className="h-4 w-4 animate-spin" /> : promo.active ? <PauseCircle className="h-4 w-4" /> : <CheckCircle2 className="h-4 w-4" />}
-                          <span className="ml-2">{promo.active ? "Pause" : "Activate"}</span>
-                        </Button>
+                        <div className="flex shrink-0 flex-wrap justify-end gap-2">
+                          <Button variant="outline" size="sm" disabled={saving} onClick={() => editPromo(promo)}>
+                            <Pencil className="mr-2 h-4 w-4" />Edit
+                          </Button>
+                          <Button variant="outline" size="sm" disabled={deletingId === promo.id} onClick={() => void deletePromo(promo)}>
+                            {deletingId === promo.id ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />}
+                            <span className="sr-only">Delete {promo.code}</span>
+                          </Button>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            disabled={updatingId === promo.id || expired}
+                            onClick={() => void setActive(promo, !promo.active)}
+                          >
+                            {updatingId === promo.id ? <Loader2 className="h-4 w-4 animate-spin" /> : promo.active ? <PauseCircle className="h-4 w-4" /> : <CheckCircle2 className="h-4 w-4" />}
+                            <span className="ml-2">{promo.active ? "Pause" : "Activate"}</span>
+                          </Button>
+                        </div>
                       </div>
 
                       <div className="grid grid-cols-2 gap-3 text-sm">
@@ -210,11 +284,11 @@ export default function PromotionsPage() {
         <aside className="xl:sticky xl:top-24 xl:self-start">
           <div className="space-y-4 rounded-md border border-border bg-background p-5">
             <div>
-              <h2 className="font-heading text-xl font-bold">Create promo</h2>
-              <p className="mt-1 text-sm text-muted-foreground">Give the promotion any internal name, then choose the code customers will enter.</p>
+              <h2 className="font-heading text-xl font-bold">{editingPromo ? "Edit promo code" : "Create promo"}</h2>
+              <p className="mt-1 text-sm text-muted-foreground">The promo code is the actual name customers enter at checkout.</p>
             </div>
-            <div className="space-y-2"><Label htmlFor="promo-description">Promotion name</Label><Input id="promo-description" value={form.description} onChange={(event) => setForm({ ...form, description: event.target.value })} placeholder="September studio sale" maxLength={120} /></div>
-            <div className="space-y-2"><Label htmlFor="promo-code">Customer code</Label><Input id="promo-code" value={form.code} onChange={(event) => setForm({ ...form, code: event.target.value.toUpperCase().replace(/\s/g, "") })} placeholder="STUDIO20" maxLength={32} /><p className="text-xs text-muted-foreground">Customers enter this at checkout. Letters are automatically capitalized.</p></div>
+            <div className="space-y-2"><Label htmlFor="promo-code">Promo code</Label><Input id="promo-code" value={form.code} onChange={(event) => setForm({ ...form, code: event.target.value.toUpperCase().replace(/\s/g, "") })} placeholder="STUDIO20" maxLength={32} /><p className="text-xs text-muted-foreground">Use 3–32 letters, numbers, dashes, or underscores. {editingPromo ? "Changing this immediately replaces the old checkout code." : "Letters are automatically capitalized."}</p></div>
+            <div className="space-y-2"><Label htmlFor="promo-description">Internal note (optional)</Label><Input id="promo-description" value={form.description} onChange={(event) => setForm({ ...form, description: event.target.value })} placeholder="September studio sale" maxLength={120} /></div>
             <div className="grid grid-cols-2 gap-3">
               <div className="space-y-2"><Label>Type</Label><select value={form.discountType} onChange={(event) => setForm({ ...form, discountType: event.target.value as "PERCENT" | "FIXED" })} className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm"><option value="PERCENT">Percent</option><option value="FIXED">Fixed IDR</option></select></div>
               <div className="space-y-2"><Label htmlFor="promo-value">{form.discountType === "PERCENT" ? "Percent" : "Amount (IDR)"}</Label><Input id="promo-value" type="number" min="1" max={form.discountType === "PERCENT" ? 100 : undefined} value={form.discountValue} onChange={(event) => setForm({ ...form, discountValue: event.target.value })} /></div>
@@ -232,10 +306,11 @@ export default function PromotionsPage() {
               <div className="space-y-2"><Label htmlFor="promo-start">Starts</Label><Input id="promo-start" type="datetime-local" value={form.startsAt} onChange={(event) => setForm({ ...form, startsAt: event.target.value })} /></div>
               <div className="space-y-2"><Label htmlFor="promo-end">Ends</Label><Input id="promo-end" type="datetime-local" value={form.expiresAt} onChange={(event) => setForm({ ...form, expiresAt: event.target.value })} /></div>
             </div>
-            <Button className="w-full" onClick={() => void createPromo()} disabled={saving}>
+            <Button className="w-full" onClick={() => void savePromo()} disabled={saving}>
               {saving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Plus className="mr-2 h-4 w-4" />}
-              Create promo code
+              {editingPromo ? "Save changes" : "Create promo code"}
             </Button>
+            {editingPromo && <Button className="w-full" variant="outline" onClick={resetForm} disabled={saving}><X className="mr-2 h-4 w-4" />Cancel editing</Button>}
           </div>
         </aside>
       </section>

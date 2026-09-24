@@ -6,12 +6,38 @@ import {
   MINIMUM_DISCOUNTED_PAYMENT_IDR,
   normalizePromoCode,
 } from "../lib/promo-codes"
+import { parsePromoInput } from "../lib/promo-code-admin"
 
 test("normalizes promo codes without accepting unsafe formats", () => {
   assert.equal(normalizePromoCode(" welcome 10 "), "WELCOME10")
   assert.equal(isValidPromoCodeFormat("WELCOME10"), true)
   assert.equal(isValidPromoCodeFormat("NO"), false)
   assert.equal(isValidPromoCodeFormat("BAD.CODE"), false)
+})
+
+test("includes a renamed customer code in admin updates", () => {
+  const parsed = parsePromoInput({
+    code: " studio-friends_25 ",
+    discountType: "PERCENT",
+    discountValue: 25,
+    scope: "SHOP",
+    maxRedemptionsPerUser: 1,
+  })
+
+  assert.equal(parsed.error, "")
+  assert.equal(parsed.values.code, "STUDIO-FRIENDS_25")
+  assert.equal(parsed.values.discountValue, 25)
+  assert.equal(parsed.values.scope, "SHOP")
+})
+
+test("rejects invalid replacement promo codes", () => {
+  const parsed = parsePromoInput({
+    code: "bad.code",
+    discountType: "FIXED",
+    discountValue: 50_000,
+  })
+
+  assert.match(String(parsed.error), /3–32 letters/)
 })
 
 test("calculates whole-rupiah percentage discounts", () => {
