@@ -3,7 +3,7 @@ import { auth } from "@/lib/auth"
 import { prisma } from "@/lib/prisma"
 import { canUsePos } from "@/lib/permissions"
 import { getPosOperatorFromRequest } from "@/lib/pos-operator-session"
-import { normalizeGiftVoucherLookup } from "@/lib/gift-vouchers"
+import { giftVoucherLockKey, normalizeGiftVoucherLookup } from "@/lib/gift-vouchers"
 import { findGiftVoucher, serializeGiftVoucher } from "@/lib/gift-voucher-service"
 import { isRequestBodyTooLarge } from "@/lib/server-security"
 
@@ -19,11 +19,13 @@ export async function POST(req: NextRequest) {
 
   try {
     const voucher = await prisma.$transaction(async (tx) => {
-      await tx.$queryRaw`SELECT pg_advisory_xact_lock(hashtext(${`gift:${lookup}`})::bigint)`
-      const current = await findGiftVoucher(tx, lookup)
-      if (!current) throw new Error("Gift voucher not found.")
-      if (current.type !== "CLASS") throw new Error("Cash vouchers are applied to a POS sale instead.")
-      if (current.status !== "ACTIVE" || current.remainingClassDays < 1) throw new Error("This class voucher has no remaining days.")
+      const found = await findGiftVoucher(tx, lookup)
+      if (!found) throw new GiftVoucherRedemptionError("Gift voucher not found.")
+      await tx.$queryRaw`SELECT pg_advisory_xact_lock(hashtext(${giftVoucherLockKey(found.id)})::bigint)`
+      const current = await tx.giftVoucher.findUnique({ where: { id: found.id } })
+      if (!current) throw new GiftVoucherRedemptionError("Gift voucher not found.")
+      if (current.type !== "CLASS") throw new GiftVoucherRedemptionError("Cash vouchers are applied to a POS sale instead.")
+      if (current.status !== "ACTIVE" || current.remainingClassDays < 1) throw new GiftVoucherRedemptionError("This class voucher has no remaining days.")
       const remainingClassDays = current.remainingClassDays - 1
       const updated = await tx.giftVoucher.update({
         where: { id: current.id },
@@ -36,6 +38,10 @@ export async function POST(req: NextRequest) {
     })
     return NextResponse.json({ voucher: serializeGiftVoucher(voucher), message: `Redeemed one class day for ${voucher.participants} ${voucher.participants === 1 ? "person" : "people"}.` })
   } catch (error) {
-    return NextResponse.json({ error: error instanceof Error ? error.message : "Voucher could not be redeemed." }, { status: 409 })
+    if (error instanceof GiftVoucherRedemptionError) return NextResponse.json({ error: error.message }, { status: 409 })
+    console.error("Gift voucher redemption failed", { error, operatorId: operator.id })
+    return NextResponse.json({ error: "Voucher could not be redeemed. Please try again." }, { status: 500 })
   }
 }
+
+class GiftVoucherRedemptionError extends Error {}

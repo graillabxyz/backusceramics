@@ -18,5 +18,5 @@ export async function POST(req: NextRequest) {
   if (!lookup) return NextResponse.json({ error: "Scan a QR code or enter a voucher code." }, { status: 400 })
   const voucher = await findGiftVoucher(prisma, lookup)
   if (!voucher) return NextResponse.json({ error: "Gift voucher not found." }, { status: 404 })
-  return NextResponse.json({ voucher: serializeGiftVoucher(voucher) })
+  return NextResponse.json({ voucher: serializeGiftVoucher(voucher) }, { headers: { "Cache-Control": "private, no-store" } })
 }

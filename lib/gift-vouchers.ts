@@ -46,6 +46,10 @@ export function giftVoucherQrPayload(origin: string, token: string) {
   return `${origin.replace(/\/$/, "")}/gift-cards/v/${encodeURIComponent(token)}`
 }
 
+export function giftVoucherLockKey(voucherId: string) {
+  return `gift:${voucherId}`
+}
+
 export function getGiftVoucherTitle(voucher: { type: string; classDays?: number | null; participants?: number }) {
   if (voucher.type === "CASH") return "Backus Ceramics Cash Gift Voucher"
   const days = Number(voucher.classDays || 1) as GiftVoucherClassDays

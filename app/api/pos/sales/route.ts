@@ -13,7 +13,7 @@ import { getPosOperatorFromRequest } from "@/lib/pos-operator-session"
 import { getPosCustomItemMetadata, normalizePosCustomItemType, type PosCustomItemType } from "@/lib/pos-custom-items"
 import { calculateRecipeUnitCost } from "@/lib/menu-costing"
 import { normalizePromoCode, PromoCodeError, reservePromoCode } from "@/lib/promo-codes"
-import { normalizeGiftVoucherLookup } from "@/lib/gift-vouchers"
+import { giftVoucherLockKey, normalizeGiftVoucherLookup } from "@/lib/gift-vouchers"
 import { findGiftVoucher } from "@/lib/gift-voucher-service"
 
 const MAX_POS_SALE_BODY_BYTES = 64 * 1024
@@ -278,8 +278,10 @@ export async function POST(req: NextRequest) {
       let giftVoucher = null
       let giftVoucherAmount = 0
       if (giftVoucherLookup) {
-        await tx.$queryRaw`SELECT pg_advisory_xact_lock(hashtext(${`gift:${giftVoucherLookup}`})::bigint)`
-        giftVoucher = await findGiftVoucher(tx, giftVoucherLookup)
+        const foundGiftVoucher = await findGiftVoucher(tx, giftVoucherLookup)
+        if (!foundGiftVoucher) throw new PosSaleValidationError("Gift voucher not found")
+        await tx.$queryRaw`SELECT pg_advisory_xact_lock(hashtext(${giftVoucherLockKey(foundGiftVoucher.id)})::bigint)`
+        giftVoucher = await tx.giftVoucher.findUnique({ where: { id: foundGiftVoucher.id } })
         if (!giftVoucher) throw new PosSaleValidationError("Gift voucher not found")
         if (giftVoucher.type !== "CASH") throw new PosSaleValidationError("Class vouchers redeem class days and cannot pay for a POS sale")
         if (giftVoucher.status !== "ACTIVE" || giftVoucher.remainingAmount <= 0) throw new PosSaleValidationError("This cash gift voucher has no available balance")

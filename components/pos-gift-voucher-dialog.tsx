@@ -1,7 +1,7 @@
 "use client"
 
 import { useEffect, useRef, useState } from "react"
-import { Camera, CheckCircle2, Gift, Keyboard, Loader2, ScanLine, X } from "lucide-react"
+import { Camera, CheckCircle2, Download, ExternalLink, Gift, Keyboard, Loader2, ScanLine, X } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
@@ -197,6 +197,12 @@ export function PosGiftVoucherDialog({
                 <><p className="text-sm"><strong>{voucher.remainingClassDays}</strong> of {voucher.classDays} class days remaining for <strong>{voucher.participants}</strong> {voucher.participants === 1 ? "person" : "people"}.</p><Button type="button" className="w-full" onClick={() => void redeemClassDay()} disabled={redeeming || voucher.status !== "ACTIVE" || voucher.remainingClassDays < 1}>{redeeming && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}Redeem one class day</Button></>
               ) : (
                 <><p className="text-sm">Available balance: <strong>{formatPrice(voucher.remainingAmount)}</strong></p>{appliedCashVoucher?.code === voucher.code ? <Button type="button" variant="outline" className="w-full" onClick={onClearCash}>Remove from sale</Button> : <Button type="button" className="w-full" onClick={applyCash} disabled={voucher.status !== "ACTIVE" || voucher.remainingAmount <= 0 || payableAmount <= 0}>Apply to current sale</Button>}</>
+              )}
+              {(voucher.status === "ACTIVE" || voucher.status === "REDEEMED") && (
+                <div className="grid grid-cols-2 gap-2 border-t border-border pt-3">
+                  <Button asChild variant="outline"><a href={`/gift-cards/v/${encodeURIComponent(voucher.token)}`} target="_blank" rel="noreferrer"><ExternalLink className="mr-2 h-4 w-4" />View voucher</a></Button>
+                  <Button asChild variant="outline"><a href={`/api/gift-vouchers/${encodeURIComponent(voucher.token)}/download`}><Download className="mr-2 h-4 w-4" />Export PDF</a></Button>
+                </div>
               )}
             </div>
           )}

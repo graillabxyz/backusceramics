@@ -2,6 +2,7 @@ import assert from "node:assert/strict"
 import test from "node:test"
 import {
   calculateClassGiftVoucherPrice,
+  giftVoucherLockKey,
   giftVoucherQrPayload,
   getGiftVoucherTitle,
   isGiftVoucherClassDays,
@@ -26,6 +27,12 @@ test("normalizes printed codes and scanned voucher URLs", () => {
   assert.equal(normalizeGiftVoucherLookup(" backus-ab12 "), "BACKUS-AB12")
   assert.equal(normalizeGiftVoucherLookup("https://www.backusceramics.com/gift-cards/v/token_123"), "token_123")
   assert.equal(giftVoucherQrPayload("https://www.backusceramics.com/", "token_123"), "https://www.backusceramics.com/gift-cards/v/token_123")
+})
+
+test("uses one concurrency lock identity for every voucher lookup form", () => {
+  const voucherId = "voucher_database_id"
+  assert.equal(giftVoucherLockKey(voucherId), "gift:voucher_database_id")
+  assert.equal(giftVoucherLockKey(voucherId), giftVoucherLockKey(voucherId))
 })
 
 test("describes multi-person class vouchers clearly", () => {

@@ -3,7 +3,7 @@ import { recordAnalyticsEvent } from "@/lib/analytics-server"
 import { completePendingPosSalePayment, cancelPendingPosSalePayment, ONLINE_SHOP_NOTE } from "@/lib/pos-sale-payment"
 import { getXenditPaymentSession } from "@/lib/xendit"
 import { mapInvoiceStatusToPosSaleStatus } from "@/lib/xendit-webhook"
-import { GIFT_VOUCHER_SALE_NOTE } from "@/lib/gift-voucher-service"
+import { activateGiftVoucherForSale, GIFT_VOUCHER_SALE_NOTE } from "@/lib/gift-voucher-service"
 
 const RECONCILIATION_LOOKBACK_DAYS = 30
 
@@ -131,10 +131,15 @@ export async function reconcileXenditGiftVoucherByToken(token: string) {
   })
   if (!voucher?.purchaseSaleId || voucher.status !== "PENDING_PAYMENT") return { checked: 0, updated: 0, failed: 0, status: null }
   const sale = await prisma.posSale.findFirst({
-    where: { id: voucher.purchaseSaleId, status: "PENDING_PAYMENT", notes: { startsWith: GIFT_VOUCHER_SALE_NOTE } },
-    select: { id: true, total: true, currency: true, paymentReference: true, paymentSessionId: true },
+    where: { id: voucher.purchaseSaleId, notes: { startsWith: GIFT_VOUCHER_SALE_NOTE } },
+    select: { id: true, status: true, total: true, currency: true, paymentReference: true, paymentSessionId: true },
   })
   if (!sale) return { checked: 0, updated: 0, failed: 0, status: null }
+  if (sale.status === "PAID") {
+    await activateGiftVoucherForSale(sale.id)
+    return { checked: 0, updated: 1, failed: 0, status: "PAID" }
+  }
+  if (sale.status !== "PENDING_PAYMENT") return { checked: 0, updated: 0, failed: 0, status: sale.status }
   return reconcileSale(sale)
 }
 
