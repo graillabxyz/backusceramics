@@ -61,6 +61,16 @@ if (deployResult.status === 0) {
   process.exit(0)
 }
 
+const recoverableGiftVoucherMigration = "20260928070000_add_gift_vouchers"
+if (deployResult.output.includes("P3009") && deployResult.output.includes(recoverableGiftVoucherMigration)) {
+  console.log(`Recovering the interrupted ${recoverableGiftVoucherMigration} migration.`)
+  const resolveResult = runPrisma(["migrate", "resolve", "--rolled-back", recoverableGiftVoucherMigration])
+  if (resolveResult.status !== 0) process.exit(resolveResult.status)
+
+  const retryResult = runPrisma(["migrate", "deploy"])
+  process.exit(retryResult.status)
+}
+
 if (!deployResult.output.includes("P3005")) {
   process.exit(deployResult.status)
 }
