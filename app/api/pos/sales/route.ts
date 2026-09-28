@@ -13,6 +13,8 @@ import { getPosOperatorFromRequest } from "@/lib/pos-operator-session"
 import { getPosCustomItemMetadata, normalizePosCustomItemType, type PosCustomItemType } from "@/lib/pos-custom-items"
 import { calculateRecipeUnitCost } from "@/lib/menu-costing"
 import { normalizePromoCode, PromoCodeError, reservePromoCode } from "@/lib/promo-codes"
+import { normalizeGiftVoucherLookup } from "@/lib/gift-vouchers"
+import { findGiftVoucher } from "@/lib/gift-voucher-service"
 
 const MAX_POS_SALE_BODY_BYTES = 64 * 1024
 
@@ -115,6 +117,7 @@ export async function POST(req: NextRequest) {
   const items = Array.isArray(data.items) ? data.items : []
   const paymentMethod = data.paymentMethod || "CARD_MACHINE"
   const promoCode = normalizePromoCode(data.promoCode)
+  const giftVoucherLookup = normalizeGiftVoucherLookup(data.giftVoucherCode)
   const receiptEmail = typeof data.receiptEmail === "string" ? safeHeaderValue(data.receiptEmail, 254) : ""
   if (receiptEmail && !isValidEmailAddress(receiptEmail)) {
     return NextResponse.json({ error: "Enter a valid receipt email" }, { status: 400 })
@@ -272,16 +275,35 @@ export async function POST(req: NextRequest) {
       discountTotal += promoDiscount
       total -= promoDiscount
 
+      let giftVoucher = null
+      let giftVoucherAmount = 0
+      if (giftVoucherLookup) {
+        await tx.$queryRaw`SELECT pg_advisory_xact_lock(hashtext(${`gift:${giftVoucherLookup}`})::bigint)`
+        giftVoucher = await findGiftVoucher(tx, giftVoucherLookup)
+        if (!giftVoucher) throw new PosSaleValidationError("Gift voucher not found")
+        if (giftVoucher.type !== "CASH") throw new PosSaleValidationError("Class vouchers redeem class days and cannot pay for a POS sale")
+        if (giftVoucher.status !== "ACTIVE" || giftVoucher.remainingAmount <= 0) throw new PosSaleValidationError("This cash gift voucher has no available balance")
+        giftVoucherAmount = Math.min(giftVoucher.remainingAmount, total)
+        const remainingAmount = giftVoucher.remainingAmount - giftVoucherAmount
+        giftVoucher = await tx.giftVoucher.update({
+          where: { id: giftVoucher.id },
+          data: { remainingAmount, status: remainingAmount === 0 ? "REDEEMED" : "ACTIVE", redeemedAt: remainingAmount === 0 ? new Date() : null },
+        })
+        total -= giftVoucherAmount
+      }
+
       const sale = await tx.posSale.create({
         data: {
           operatorId: posOperator.id,
           subtotal,
           discountTotal,
           promoCodeSnapshot: promo?.promo.code || null,
+          giftVoucherCodeSnapshot: giftVoucher?.code || null,
+          giftVoucherAmount,
           taxTotal,
           total,
           status: "PAID",
-          paymentMethod,
+          paymentMethod: giftVoucherAmount > 0 && total === 0 ? "GIFT_VOUCHER" : paymentMethod,
           paymentReference: promo ? paymentReference : null,
           receiptEmail: receiptEmail || null,
           notes: data.notes ? cleanString(data.notes, 1000) : null,
@@ -295,6 +317,11 @@ export async function POST(req: NextRequest) {
         await tx.promoRedemption.update({
           where: { paymentReference },
           data: { saleId: sale.id, status: "APPLIED", appliedAt: new Date() },
+        })
+      }
+      if (giftVoucher && giftVoucherAmount > 0) {
+        await tx.giftVoucherRedemption.create({
+          data: { voucherId: giftVoucher.id, operatorId: posOperator.id, saleId: sale.id, type: "CASH", amount: giftVoucherAmount },
         })
       }
       return sale
@@ -325,6 +352,8 @@ export async function POST(req: NextRequest) {
         receiptRequested: Boolean(receiptEmail),
         promoCode: sale.promoCodeSnapshot,
         discountAmount: sale.discountTotal,
+        giftVoucherCode: sale.giftVoucherCodeSnapshot,
+        giftVoucherAmount: sale.giftVoucherAmount,
       },
     }, req)
 

@@ -3,6 +3,7 @@ import { recordAnalyticsEvent } from "@/lib/analytics-server"
 import { completePendingPosSalePayment, cancelPendingPosSalePayment, ONLINE_SHOP_NOTE } from "@/lib/pos-sale-payment"
 import { getXenditPaymentSession } from "@/lib/xendit"
 import { mapInvoiceStatusToPosSaleStatus } from "@/lib/xendit-webhook"
+import { GIFT_VOUCHER_SALE_NOTE } from "@/lib/gift-voucher-service"
 
 const RECONCILIATION_LOOKBACK_DAYS = 30
 
@@ -119,6 +120,20 @@ export async function reconcileXenditWebsiteSaleById(saleId: string) {
     },
   })
 
+  if (!sale) return { checked: 0, updated: 0, failed: 0, status: null }
+  return reconcileSale(sale)
+}
+
+export async function reconcileXenditGiftVoucherByToken(token: string) {
+  const voucher = await prisma.giftVoucher.findUnique({
+    where: { token },
+    select: { purchaseSaleId: true, status: true },
+  })
+  if (!voucher?.purchaseSaleId || voucher.status !== "PENDING_PAYMENT") return { checked: 0, updated: 0, failed: 0, status: null }
+  const sale = await prisma.posSale.findFirst({
+    where: { id: voucher.purchaseSaleId, status: "PENDING_PAYMENT", notes: { startsWith: GIFT_VOUCHER_SALE_NOTE } },
+    select: { id: true, total: true, currency: true, paymentReference: true, paymentSessionId: true },
+  })
   if (!sale) return { checked: 0, updated: 0, failed: 0, status: null }
   return reconcileSale(sale)
 }

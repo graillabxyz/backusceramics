@@ -45,6 +45,7 @@ model User {
   createdPaymentLinks         CustomPaymentLink[]         @relation("CustomPaymentLinkCreator")
   menuWasteEntries            MenuWasteEntry[]            @relation("MenuWasteCreator")
   promoRedemptions            PromoRedemption[]
+  giftVoucherRedemptions      GiftVoucherRedemption[]      @relation("GiftVoucherRedemptionOperator")
   analyticsEvents             AnalyticsEvent[]
   residencyApps               ResidencyApplication[]
   notificationPreference      UserNotificationPreference?
@@ -268,10 +269,14 @@ model PosSale {
   voidedBy      User?              @relation("PosSaleVoider", fields: [voidedById], references: [id])
   paymentLinkId String?
   paymentLink   CustomPaymentLink? @relation(fields: [paymentLinkId], references: [id], onDelete: SetNull)
+  purchasedGiftVoucher GiftVoucher? @relation("GiftVoucherPurchase")
+  giftVoucherRedemptions GiftVoucherRedemption[] @relation("GiftVoucherRedemptionSale")
 
   subtotal           Int       @default(0)
   discountTotal      Int       @default(0)
   promoCodeSnapshot  String?
+  giftVoucherCodeSnapshot String?
+  giftVoucherAmount  Int       @default(0)
   taxTotal           Int       @default(0)
   shippingAmount     Int       @default(0)
   total              Int
@@ -306,6 +311,7 @@ model PosSale {
   @@index([paymentReference])
   @@index([paymentSessionId])
   @@index([promoCodeSnapshot])
+  @@index([giftVoucherCodeSnapshot])
   @@index([paymentLinkId])
 }
 
@@ -392,6 +398,66 @@ model PromoRedemption {
   @@index([userId, promoCodeId, status])
   @@index([customerEmail, promoCodeId, status])
   @@index([paymentSessionId])
+  @@index([saleId])
+}
+
+model GiftVoucher {
+  id                 String   @id @default(cuid())
+  code               String   @unique
+  token              String   @unique
+  type               String
+  // Types: CLASS, CASH
+  status             String   @default("PENDING_PAYMENT")
+  // Status values: PENDING_PAYMENT, ACTIVE, REDEEMED, CANCELLED
+  classDays          Int?
+  participants       Int      @default(1)
+  initialAmount      Int
+  remainingAmount    Int      @default(0)
+  remainingClassDays Int      @default(0)
+  purchaserName      String
+  purchaserEmail     String
+  recipientName      String?
+  recipientEmail     String?
+  message            String?
+  paymentReference   String   @unique
+  paymentSessionId   String?
+  purchaseSaleId     String?  @unique
+  purchaseSale       PosSale? @relation("GiftVoucherPurchase", fields: [purchaseSaleId], references: [id], onDelete: SetNull)
+  activatedAt        DateTime?
+  redeemedAt         DateTime?
+  cancelledAt        DateTime?
+  emailSentAt        DateTime?
+  redemptions        GiftVoucherRedemption[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([status, type])
+  @@index([paymentSessionId])
+  @@index([purchaserEmail])
+  @@index([recipientEmail])
+}
+
+model GiftVoucherRedemption {
+  id           String      @id @default(cuid())
+  voucherId    String
+  voucher      GiftVoucher @relation(fields: [voucherId], references: [id], onDelete: Restrict)
+  operatorId   String?
+  operator     User?       @relation("GiftVoucherRedemptionOperator", fields: [operatorId], references: [id], onDelete: SetNull)
+  saleId       String?
+  sale         PosSale?    @relation("GiftVoucherRedemptionSale", fields: [saleId], references: [id], onDelete: SetNull)
+  type         String
+  // Types: CLASS_DAY, CASH
+  status       String      @default("APPLIED")
+  // Status values: APPLIED, REVERSED
+  amount       Int         @default(0)
+  classDays    Int         @default(0)
+  participants Int         @default(0)
+  createdAt    DateTime    @default(now())
+  reversedAt   DateTime?
+
+  @@index([voucherId, createdAt])
+  @@index([operatorId, createdAt])
   @@index([saleId])
 }
 

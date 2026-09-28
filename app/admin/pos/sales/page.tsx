@@ -36,6 +36,8 @@ interface PosSale {
   subtotal: number
   discountTotal: number
   promoCodeSnapshot: string | null
+  giftVoucherCodeSnapshot: string | null
+  giftVoucherAmount: number
   taxTotal: number
   shippingAmount: number
   total: number
@@ -237,6 +239,7 @@ export default function PosSalesPage() {
                         {sale.taxTotal > 0 && <span>Tax: {formatPrice(sale.taxTotal)}</span>}
                         {sale.shippingAmount > 0 && <span>Shipping: {formatPrice(sale.shippingAmount)}</span>}
                         {sale.discountTotal > 0 && <span>Discounts{sale.promoCodeSnapshot ? ` · ${sale.promoCodeSnapshot}` : ""}: {formatPrice(sale.discountTotal)}</span>}
+                        {sale.giftVoucherAmount > 0 && <span>Gift voucher{sale.giftVoucherCodeSnapshot ? ` · ${sale.giftVoucherCodeSnapshot}` : ""}: {formatPrice(sale.giftVoucherAmount)}</span>}
                       </div>
                       {sale.fulfillmentMethod === "SHIPPING" && (
                         <p className="mt-2 text-xs text-muted-foreground">

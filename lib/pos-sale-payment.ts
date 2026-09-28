@@ -5,6 +5,7 @@ import { recordAnalyticsEvent } from "@/lib/analytics-server"
 import { notifyCupSalePaid, notifyWebsiteSalePaid } from "@/lib/admin-notification-events"
 import { sendPosReceiptEmail } from "@/lib/pos-receipts"
 import { settlePromoRedemption } from "@/lib/promo-codes"
+import { activateGiftVoucherForSale, cancelGiftVoucherForSale, isGiftVoucherSale } from "@/lib/gift-voucher-service"
 
 export const ONLINE_SHOP_NOTE = "[online-shop]"
 
@@ -40,6 +41,7 @@ export async function completePendingPosSalePayment(
     paymentSessionId: sale.paymentSessionId,
     status: "APPLIED",
   })
+  if (isGiftVoucherSale(sale.notes)) await activateGiftVoucherForSale(sale.id)
 
   if (sale.receiptEmail && !sale.receiptSentAt) {
     try {
@@ -56,6 +58,7 @@ export async function completePendingPosSalePayment(
   }
 
   const onlineShopSale = isOnlineShopSale(sale.notes)
+  const giftVoucherSale = isGiftVoucherSale(sale.notes)
   const sideEffects = await Promise.allSettled([
     recordAnalyticsEvent({
       type: "pos_payment_completed",
@@ -67,7 +70,7 @@ export async function completePendingPosSalePayment(
         paymentSessionId: sale.paymentSessionId,
         paymentReference: sale.paymentReference,
         itemCount: sale.items.length,
-        checkoutChannel: onlineShopSale ? "online_shop" : "pos",
+        checkoutChannel: giftVoucherSale ? "gift_voucher" : onlineShopSale ? "online_shop" : "pos",
       },
     }, req),
     onlineShopSale
@@ -133,6 +136,9 @@ export async function cancelPendingPosSalePayment(saleId: string) {
       paymentSessionId: result.sale?.paymentSessionId,
       status: "CANCELLED",
     })
+  }
+  if (result.updated && isGiftVoucherSale(result.sale?.notes)) {
+    await cancelGiftVoucherForSale(result.sale!.id)
   }
 
   if (result.updated && isOnlineShopSale(result.sale?.notes)) {

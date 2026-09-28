@@ -74,6 +74,7 @@ import {
   type PosTaxRate,
 } from "@/lib/pos-sale-calculations"
 import { prepareImageForUpload } from "@/lib/client-image-upload"
+import { PosGiftVoucherDialog, type AppliedCashGiftVoucher } from "@/components/pos-gift-voucher-dialog"
 
 interface PosProduct {
   id: string
@@ -228,6 +229,7 @@ function PosWorkspace() {
   const [appliedPromo, setAppliedPromo] = useState<AppliedPosPromo | null>(null)
   const [applyingPromoCode, setApplyingPromoCode] = useState("")
   const [promoError, setPromoError] = useState("")
+  const [appliedCashGiftVoucher, setAppliedCashGiftVoucher] = useState<AppliedCashGiftVoucher | null>(null)
   const [loading, setLoading] = useState(true)
   const [checkingOut, setCheckingOut] = useState(false)
   const [onlineLoading, setOnlineLoading] = useState(false)
@@ -311,7 +313,9 @@ function PosWorkspace() {
     }, { subtotal: 0, discountTotal: 0, taxTotal: 0, total: 0 }),
     [cart]
   )
-  const checkoutTotal = Math.max(cartSummary.total - (appliedPromo?.discountAmount || 0), 0)
+  const totalAfterPromo = Math.max(cartSummary.total - (appliedPromo?.discountAmount || 0), 0)
+  const giftVoucherAmount = Math.min(appliedCashGiftVoucher?.remainingAmount || 0, totalAfterPromo)
+  const checkoutTotal = Math.max(totalAfterPromo - giftVoucherAmount, 0)
 
   const cartCount = useMemo(
     () => cart.reduce((sum, item) => sum + item.quantity, 0),
@@ -374,6 +378,11 @@ function PosWorkspace() {
     setAppliedPromo(null)
     setPromoError("The cart changed. Select the promotion again to recalculate it.")
   }, [appliedPromo, cartSummary.total])
+
+  useEffect(() => {
+    if (!appliedCashGiftVoucher) return
+    setAppliedCashGiftVoucher((current) => current ? { ...current, amount: Math.min(current.remainingAmount, totalAfterPromo) } : null)
+  }, [totalAfterPromo])
 
   useEffect(() => {
     if (!posPinUnlocked || typeof window === "undefined") return
@@ -548,6 +557,7 @@ function PosWorkspace() {
 
     setApplyingPromoCode(promo.code)
     setPromoError("")
+    setAppliedCashGiftVoucher(null)
     try {
       const response = await fetch("/api/pos/promos", {
         method: "POST",
@@ -1024,6 +1034,7 @@ function PosWorkspace() {
     receiptEmail: receiptEmail.trim() || undefined,
     customerName: customerName.trim() || undefined,
     promoCode: appliedPromo?.code || undefined,
+    giftVoucherCode: appliedCashGiftVoucher?.token || undefined,
   })
 
   const handleMachinePaid = async () => {
@@ -1065,6 +1076,10 @@ function PosWorkspace() {
 
   const handleOnlinePayment = async () => {
     if (cart.length === 0) return
+    if (appliedCashGiftVoucher) {
+      setError("Cash gift vouchers must be completed at the register, not through an online payment link.")
+      return
+    }
 
     setOnlineLoading(true)
     setError("")
@@ -1392,6 +1407,13 @@ function PosWorkspace() {
             </p>
           </div>
           <div className="flex shrink-0 items-center gap-1 sm:gap-2">
+            <PosGiftVoucherDialog
+              payableAmount={totalAfterPromo}
+              appliedCashVoucher={appliedCashGiftVoucher}
+              onApplyCash={setAppliedCashGiftVoucher}
+              onClearCash={() => setAppliedCashGiftVoucher(null)}
+              onPosLocked={lockPos}
+            />
             <Button type="button" variant="outline" className="h-10 px-3" onClick={openCashOut}>
               <CircleDollarSign className="h-4 w-4 sm:mr-2" />
               <span className="hidden sm:inline">Cash Out</span>
@@ -1918,6 +1940,12 @@ function PosWorkspace() {
                   <span>-{formatPrice(appliedPromo.discountAmount)}</span>
                 </div>
               )}
+              {giftVoucherAmount > 0 && appliedCashGiftVoucher && (
+                <div className="mt-1 flex items-center justify-between text-sm font-medium text-emerald-700">
+                  <span>Gift voucher · {appliedCashGiftVoucher.code}</span>
+                  <span>-{formatPrice(giftVoucherAmount)}</span>
+                </div>
+              )}
               <div className="mt-2 flex items-center justify-between text-xl font-bold text-foreground">
                 <span>Total</span>
                 <span>{formatPrice(checkoutTotal)}</span>
@@ -2001,14 +2029,14 @@ function PosWorkspace() {
                 disabled={cart.length === 0 || checkingOut || onlineLoading}
               >
                 {checkingOut ? <Loader2 className="mr-2 h-5 w-5 animate-spin" /> : <CreditCard className="mr-2 h-5 w-5" />}
-                {paymentCompletionLabel(paymentMethod)}
+                {checkoutTotal === 0 && appliedCashGiftVoucher ? "Redeem gift voucher" : paymentCompletionLabel(paymentMethod)}
               </Button>
 
               <Button
                 variant="outline"
                 className="w-full"
                 onClick={handleOnlinePayment}
-                disabled={cart.length === 0 || checkingOut || onlineLoading}
+                disabled={cart.length === 0 || checkingOut || onlineLoading || Boolean(appliedCashGiftVoucher)}
               >
                 {onlineLoading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Send className="mr-2 h-4 w-4" />}
                 Finish payment online

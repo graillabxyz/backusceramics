@@ -18,6 +18,8 @@ interface ReceiptSale {
   subtotal?: number
   discountTotal?: number
   promoCodeSnapshot?: string | null
+  giftVoucherCodeSnapshot?: string | null
+  giftVoucherAmount?: number
   taxTotal?: number
   shippingAmount?: number
   total: number
@@ -43,6 +45,7 @@ function formatPaymentMethod(value: string) {
   if (value === "CARD_MACHINE") return "Card machine"
   if (value === "ONLINE") return "Online payment"
   if (value === "QRIS") return "QRIS"
+  if (value === "GIFT_VOUCHER") return "Gift voucher"
   return value.toLowerCase().replace(/^\w/, (char) => char.toUpperCase())
 }
 
@@ -92,6 +95,7 @@ function buildReceiptHtml(sale: ReceiptSale) {
       <div style="padding:20px 0;text-align:right;">
         <div style="font-size:13px;color:#777;">Subtotal ${formatPrice(sale.subtotal ?? sale.total)}</div>
         ${(sale.discountTotal || 0) > 0 ? `<div style="font-size:13px;color:#777;">Discount${sale.promoCodeSnapshot ? ` (${escapeHtml(sale.promoCodeSnapshot)})` : ""} -${formatPrice(sale.discountTotal || 0)}</div>` : ""}
+        ${(sale.giftVoucherAmount || 0) > 0 ? `<div style="font-size:13px;color:#777;">Gift voucher${sale.giftVoucherCodeSnapshot ? ` (${escapeHtml(sale.giftVoucherCodeSnapshot)})` : ""} -${formatPrice(sale.giftVoucherAmount || 0)}</div>` : ""}
         ${(sale.taxTotal || 0) > 0 ? `<div style="font-size:13px;color:#777;">Tax ${formatPrice(sale.taxTotal || 0)}</div>` : ""}
         ${(sale.shippingAmount || 0) > 0 ? `<div style="font-size:13px;color:#777;">Packing and shipping ${formatPrice(sale.shippingAmount || 0)}</div>` : ""}
         <div style="margin-top:8px;font-size:20px;font-weight:700;">${formatPrice(sale.total)}</div>

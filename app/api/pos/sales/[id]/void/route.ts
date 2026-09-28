@@ -6,6 +6,7 @@ import { canUsePos } from "@/lib/permissions"
 import { recordAnalyticsEvent } from "@/lib/analytics-server"
 import { getPosOperatorFromRequest } from "@/lib/pos-operator-session"
 import { isRequestBodyTooLarge } from "@/lib/server-security"
+import { isGiftVoucherSale } from "@/lib/gift-voucher-service"
 
 interface RouteContext {
   params: Promise<{ id: string }>
@@ -53,6 +54,22 @@ export async function POST(req: NextRequest, context: RouteContext) {
         throw new PosVoidValidationError("Cancelled sales do not need to be voided")
       }
 
+      if (isGiftVoucherSale(existing.notes)) {
+        const purchasedVoucher = await tx.giftVoucher.findUnique({
+          where: { purchaseSaleId: existing.id },
+          include: { redemptions: { where: { status: "APPLIED" }, select: { id: true } } },
+        })
+        if (purchasedVoucher?.redemptions.length) {
+          throw new PosVoidValidationError("This gift voucher has already been used and cannot be voided")
+        }
+        if (purchasedVoucher) {
+          await tx.giftVoucher.update({
+            where: { id: purchasedVoucher.id },
+            data: { status: "CANCELLED", cancelledAt: new Date() },
+          })
+        }
+      }
+
       if (restock) {
         for (const item of existing.items) {
           if (!item.productId) continue
@@ -64,6 +81,21 @@ export async function POST(req: NextRequest, context: RouteContext) {
             },
           })
         }
+      }
+
+      const voucherRedemption = await tx.giftVoucherRedemption.findFirst({
+        where: { saleId: existing.id, type: "CASH", status: "APPLIED" },
+      })
+      if (voucherRedemption) {
+        await tx.$queryRaw`SELECT pg_advisory_xact_lock(hashtext(${`gift:${voucherRedemption.voucherId}`})::bigint)`
+        await tx.giftVoucher.update({
+          where: { id: voucherRedemption.voucherId },
+          data: { remainingAmount: { increment: voucherRedemption.amount }, status: "ACTIVE", redeemedAt: null },
+        })
+        await tx.giftVoucherRedemption.update({
+          where: { id: voucherRedemption.id },
+          data: { status: "REVERSED", reversedAt: new Date() },
+        })
       }
 
       return tx.posSale.update({
@@ -105,6 +137,7 @@ export async function POST(req: NextRequest, context: RouteContext) {
         saleId: sale.id,
         restocked: restock,
         reason: reason || undefined,
+        giftVoucherRestored: sale.giftVoucherAmount > 0,
       },
     }, req)
 

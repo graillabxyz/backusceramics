@@ -37,6 +37,11 @@ export function Footer() {
                 </Link>
               </li>
               <li>
+                <Link href="/gift-cards" className="text-sm text-muted-foreground hover:text-foreground transition-colors">
+                  Gift Cards
+                </Link>
+              </li>
+              <li>
                 <Link href="/wall-of-cups" className="text-sm text-muted-foreground hover:text-foreground transition-colors">
                   Wall of Cups
                 </Link>
