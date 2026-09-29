@@ -180,6 +180,9 @@ export default function PosSalesPage() {
         </div>
         <div className="flex flex-wrap gap-2">
           <Button asChild variant="outline">
+            <Link href="/admin/sales">All sales</Link>
+          </Button>
+          <Button asChild variant="outline">
             <Link href="/admin/pos?posFullscreen=1">
               <ArrowLeft className="mr-2 h-4 w-4" />
               Back to POS

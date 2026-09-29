@@ -49,7 +49,7 @@ const navSections = [
       { href: "/admin/orders", label: "Orders", icon: ClipboardList, access: "admin" as NavAccess },
       { href: "/admin/bookings", label: "Class Bookings", shortLabel: "Classes", icon: GraduationCap, access: "admin" as NavAccess },
       { href: "/admin/applications", label: "Residency Apps", icon: CalendarDays, access: "admin" as NavAccess },
-      { href: "/admin/sales", label: "Website Sales", icon: CircleDollarSign, access: "admin" as NavAccess },
+      { href: "/admin/sales", label: "Sales", icon: CircleDollarSign, access: "admin" as NavAccess },
       { href: "/admin/payment-links", label: "Payment Links", icon: Link2, access: "promotions" as NavAccess },
       { href: "/admin/promotions", label: "Promo Codes", icon: TicketPercent, access: "promotions" as NavAccess },
       { href: "/admin/pos", label: "Point of Sale", shortLabel: "POS", icon: Store, exact: true, access: "pos" as NavAccess },

@@ -1,4 +1,4 @@
-const ONLINE_SHOP_NOTE = "[online-shop]"
+import { getSalesChannel, salesChannelLabels } from "@/lib/sales-ledger"
 
 export interface PosSaleAttributionInput {
   id: string
@@ -7,20 +7,14 @@ export interface PosSaleAttributionInput {
   paymentMethod?: string | null
   paymentReference?: string | null
   paymentSessionId?: string | null
+  paymentLinkId?: string | null
   notes?: string | null
 }
 
-function isAutonomousOnlineSale(sale: PosSaleAttributionInput) {
-  if (sale.notes?.trimStart().startsWith(ONLINE_SHOP_NOTE)) return true
-
-  return !sale.operatorId
-    && sale.paymentMethod === "ONLINE"
-    && Boolean(sale.paymentSessionId || sale.paymentReference)
-}
-
 export function getPosSaleAttribution(sale: PosSaleAttributionInput) {
-  if (isAutonomousOnlineSale(sale)) {
-    return { key: "online-sale", label: "Online sale" }
+  const channel = getSalesChannel(sale)
+  if (channel !== "POS") {
+    return { key: `channel:${channel}`, label: salesChannelLabels[channel] }
   }
 
   const operatorName = sale.operator?.name?.trim() || sale.operator?.email?.trim()

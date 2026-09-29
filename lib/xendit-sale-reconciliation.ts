@@ -143,12 +143,12 @@ export async function reconcileXenditGiftVoucherByToken(token: string) {
   return reconcileSale(sale)
 }
 
-export async function reconcileRecentXenditWebsiteSales(maxSessions = 10) {
+export async function reconcileRecentXenditSales(maxSessions = 10) {
   const recentCutoff = new Date(Date.now() - RECONCILIATION_LOOKBACK_DAYS * 24 * 60 * 60 * 1000)
   const candidates = await prisma.posSale.findMany({
     where: {
       status: "PENDING_PAYMENT",
-      notes: { startsWith: ONLINE_SHOP_NOTE },
+      paymentMethod: "ONLINE",
       paymentSessionId: { not: null },
       paymentReference: { not: null },
       createdAt: { gte: recentCutoff },
@@ -168,7 +168,7 @@ export async function reconcileRecentXenditWebsiteSales(maxSessions = 10) {
     try {
       return await reconcileSale(sale)
     } catch (error) {
-      console.error("Could not reconcile pending website sale with Xendit", {
+      console.error("Could not reconcile pending sale with Xendit", {
         error,
         saleId: sale.id,
         paymentSessionId: sale.paymentSessionId,
@@ -186,4 +186,8 @@ export async function reconcileRecentXenditWebsiteSales(maxSessions = 10) {
     }),
     { checked: 0, updated: 0, failed: 0 }
   )
+}
+
+export async function reconcileRecentXenditWebsiteSales(maxSessions = 10) {
+  return reconcileRecentXenditSales(maxSessions)
 }

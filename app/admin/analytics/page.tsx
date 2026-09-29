@@ -1,6 +1,7 @@
 "use client"
 
 import { useEffect, useMemo, useState, type ReactNode } from "react"
+import Link from "next/link"
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -150,6 +151,8 @@ interface AnalyticsData {
     voidedAt: string | null
     operatorName: string
     receiptEmail: string | null
+    channel: "POS" | "WEBSITE" | "PAYMENT_LINK" | "GIFT_VOUCHER"
+    items: Array<{ name: string; quantity: number; lineTotal: number }>
   }>
   eventCounts: Record<string, number>
   pageViews30d: number
@@ -1365,7 +1368,7 @@ export default function AdminAnalyticsPage() {
 
         <TabsContent value="sales" className="space-y-6">
           <SectionIntro title="Sales Metrics">
-            POS and online shop sales from the recorded sale ledger, including payment mix, category mix, tax, discounts, voids, and daily revenue.
+            POS, website shop, payment-link, and gift-card sales from one ledger, including payment mix, category mix, tax, discounts, voids, and daily revenue.
           </SectionIntro>
 
           {data.salesError && (
@@ -1589,32 +1592,58 @@ export default function AdminAnalyticsPage() {
             <AccordionItem value="recent">
               <AccordionTrigger>Recent Sales</AccordionTrigger>
               <AccordionContent>
+                <div className="mb-3 flex justify-end">
+                  <Button asChild size="sm" variant="outline">
+                    <Link href="/admin/sales">Open all sales and filters</Link>
+                  </Button>
+                </div>
                 {data.recentSales.length === 0 ? (
                   <EmptyState>No recent sales recorded</EmptyState>
                 ) : (
                   <div className="space-y-2">
                     {data.recentSales.map((sale) => (
-                      <div key={sale.id} className="flex flex-col gap-3 rounded-md border border-border p-3 md:flex-row md:items-center md:justify-between">
-                        <div className="min-w-0">
+                      <details key={sale.id} className="group rounded-md border border-border p-3">
+                        <summary className="flex cursor-pointer list-none flex-col gap-3 md:flex-row md:items-center md:justify-between">
+                          <div className="min-w-0">
                           <div className="flex flex-wrap items-center gap-2">
                             <p className="truncate text-sm font-medium text-foreground">{sale.id}</p>
                             <Badge variant={sale.status === "PAID" ? "default" : sale.status === "VOIDED" ? "destructive" : "secondary"}>
                               {sale.status.replace(/_/g, " ").toLowerCase()}
                             </Badge>
                             <Badge variant="outline">{formatPaymentMethod(sale.paymentMethod)}</Badge>
+                            <Badge variant="outline">{sale.channel.replace(/_/g, " ").toLowerCase()}</Badge>
                           </div>
                           <p className="mt-1 text-xs text-muted-foreground">
                             {sale.itemCount} items · {sale.operatorName} · {new Date(sale.createdAt).toLocaleString()}
                           </p>
                           {sale.receiptEmail && <p className="text-xs text-muted-foreground">Receipt: {sale.receiptEmail}</p>}
-                        </div>
-                        <div className="text-left md:text-right">
+                          </div>
+                          <div className="text-left md:text-right">
                           <p className="text-base font-semibold text-foreground">{formatCurrency(sale.total, sale.currency)}</p>
                           <p className="text-xs text-muted-foreground">
                             Tax {formatCurrency(sale.taxTotal, sale.currency)} · Discount {formatCurrency(sale.discountTotal, sale.currency)}
                           </p>
+                          </div>
+                        </summary>
+                        <div className="mt-3 border-t border-border pt-3">
+                          <div className="space-y-1">
+                            {sale.items.map((item, index) => (
+                              <div key={`${sale.id}-${index}`} className="flex justify-between gap-3 text-sm">
+                                <span>{item.quantity} × {item.name}</span>
+                                <span>{formatCurrency(item.lineTotal, sale.currency)}</span>
+                              </div>
+                            ))}
+                          </div>
+                          <div className="mt-3 grid gap-1 text-xs text-muted-foreground sm:grid-cols-3">
+                            <span>Subtotal {formatCurrency(sale.subtotal, sale.currency)}</span>
+                            <span>Discount {formatCurrency(sale.discountTotal, sale.currency)}</span>
+                            <span>Tax {formatCurrency(sale.taxTotal, sale.currency)}</span>
+                          </div>
+                          <Button asChild size="sm" variant="link" className="mt-2 h-auto px-0">
+                            <Link href={`/admin/sales?q=${encodeURIComponent(sale.id)}`}>View full transaction</Link>
+                          </Button>
                         </div>
-                      </div>
+                      </details>
                     ))}
                   </div>
                 )}

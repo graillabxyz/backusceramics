@@ -8,6 +8,7 @@ import {
   POS_PRODUCT_CATEGORIES,
 } from "@/lib/pos-catalog"
 import { getPosSaleAttribution } from "@/lib/pos-sale-attribution"
+import { getSalesChannel } from "@/lib/sales-ledger"
 
 type EventTypeCount = { type: string; _count: { type: number } }
 type TopPageCount = { path: string | null; _count: { path: number } }
@@ -29,6 +30,7 @@ type SalesAnalyticsSale = {
   paymentMethod: string
   paymentReference: string | null
   paymentSessionId: string | null
+  paymentLinkId: string | null
   notes: string | null
   subtotal: number
   discountTotal: number
@@ -432,7 +434,6 @@ export async function GET() {
         ],
       },
       orderBy: { createdAt: "desc" },
-      take: 1000,
       select: {
         id: true,
         operatorId: true,
@@ -440,6 +441,7 @@ export async function GET() {
         paymentMethod: true,
         paymentReference: true,
         paymentSessionId: true,
+        paymentLinkId: true,
         notes: true,
         subtotal: true,
         discountTotal: true,
@@ -931,6 +933,12 @@ export async function GET() {
       voidedAt: sale.voidedAt,
       operatorName: getPosSaleAttribution(sale).label,
       receiptEmail: sale.receiptEmail,
+      channel: getSalesChannel(sale),
+      items: sale.items.map((item) => ({
+        name: item.nameSnapshot,
+        quantity: item.quantity,
+        lineTotal: item.lineTotal,
+      })),
     })),
     eventCounts,
     pageViews30d: eventCounts.page_view || 0,

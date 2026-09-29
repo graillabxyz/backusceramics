@@ -161,7 +161,7 @@ export function PosMorningBriefing({ enabled }: { enabled: boolean }) {
             <div className="flex flex-col gap-2 border-t pt-4 sm:flex-row sm:justify-between">
               <Button variant="ghost" onClick={() => void playNotificationChime()}><Volume2 className="mr-2 h-4 w-4" /> Test sound</Button>
               <div className="flex gap-2">
-                <Button variant="outline" asChild><Link href="/admin/sales">Website sales</Link></Button>
+                <Button variant="outline" asChild><Link href="/admin/sales">All sales</Link></Button>
                 <Button onClick={() => setOpen(false)}>Start selling</Button>
               </div>
             </div>

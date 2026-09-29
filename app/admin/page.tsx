@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from "react"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
-import { ArrowRight, GraduationCap, ShoppingBag, ClipboardList, Users, Calendar, Loader2, BarChart3, Store, Link2 } from "lucide-react"
+import { ArrowRight, GraduationCap, ShoppingBag, ClipboardList, Users, Calendar, Loader2, BarChart3, Store, Link2, CircleDollarSign } from "lucide-react"
 import Link from "next/link"
 import { useAuth } from "@/lib/auth-context"
 import { canManageAdmins, canUsePos, canViewAnalytics, isFullAdminRole } from "@/lib/permissions"
@@ -171,6 +171,18 @@ export default function AdminDashboard() {
                   <CardTitle className="text-base font-semibold">Products</CardTitle>
                   <CardDescription>
                     Add wares, cafe items, prices, inventory, and sales visibility
+                  </CardDescription>
+                </CardHeader>
+              </Card>
+            </Link>
+
+            <Link href="/admin/sales">
+              <Card className="h-full cursor-pointer transition-colors hover:border-primary/35 hover:bg-muted/20">
+                <CardHeader className="p-5">
+                  <div className="mb-1 flex items-center justify-between"><CircleDollarSign className="h-5 w-5 text-primary" /><ArrowRight className="h-4 w-4 text-muted-foreground" /></div>
+                  <CardTitle className="text-base font-semibold">Sales</CardTitle>
+                  <CardDescription>
+                    Search and inspect every website, POS, payment-link, and gift-card transaction
                   </CardDescription>
                 </CardHeader>
               </Card>
