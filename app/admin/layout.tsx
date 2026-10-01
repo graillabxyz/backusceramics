@@ -30,11 +30,11 @@ import {
 } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { useAuth } from "@/lib/auth-context"
-import { canAccessAdmin, canManagePromotions, canUsePos, canViewAnalytics, isFullAdminRole, roleLabels } from "@/lib/permissions"
+import { canAccessAdmin, canManageMenuPerformance, canManagePromotions, canUsePos, canViewAnalytics, isFullAdminRole, roleLabels } from "@/lib/permissions"
 import { Button } from "@/components/ui/button"
 import { AdminNotifications } from "@/components/admin-notifications"
 
-type NavAccess = "admin" | "pos" | "analytics" | "promotions"
+type NavAccess = "admin" | "pos" | "analytics" | "menu" | "promotions"
 
 const navSections = [
   {
@@ -69,7 +69,7 @@ const navSections = [
     items: [
       { href: "/admin/users", label: "Users", icon: Users, access: "admin" as NavAccess },
       { href: "/admin/analytics", label: "Analytics", icon: BarChart3, access: "analytics" as NavAccess },
-      { href: "/admin/menu-performance", label: "Menu Performance", icon: UtensilsCrossed, access: "analytics" as NavAccess },
+      { href: "/admin/menu-performance", label: "Menu Performance", icon: UtensilsCrossed, access: "menu" as NavAccess },
       { href: "/admin/settings", label: "Settings", icon: Settings, access: "admin" as NavAccess },
     ],
   },
@@ -86,6 +86,7 @@ function itemIsActive(pathname: string, item: NavItem) {
 function canSeeItem(access: NavAccess, role?: string | null) {
   if (access === "pos") return canUsePos(role)
   if (access === "analytics") return canViewAnalytics(role)
+  if (access === "menu") return canManageMenuPerformance(role)
   if (access === "promotions") return canManagePromotions(role)
   return isFullAdminRole(role)
 }

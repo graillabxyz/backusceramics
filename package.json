@@ -13,7 +13,7 @@
     "test:commerce": "tsx --test tests/commerce-payment.test.ts tests/custom-payment-links.test.ts tests/pos-custom-items.test.ts",
     "test:seats": "tsx --test tests/class-seat-accounting.test.ts",
     "test:notifications": "tsx --test tests/store-hours.test.ts",
-    "test:menu": "tsx --test tests/menu-costing.test.ts",
+    "test:menu": "tsx --test tests/menu-costing.test.ts tests/permissions.test.ts",
     "test:promos": "node --import tsx --test tests/promo-codes.test.ts",
     "test:gifts": "node --import tsx --test tests/gift-vouchers.test.ts",
     "typecheck": "tsc --noEmit --incremental false",

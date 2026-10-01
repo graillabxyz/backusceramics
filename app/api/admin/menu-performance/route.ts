@@ -4,7 +4,7 @@ import { auth } from "@/lib/auth"
 import { calculateMarginPercent, calculateRecipeUnitCost, classifyMenuEfficiency, normalizeIngredientName } from "@/lib/menu-costing"
 import { normalizeProductCategory } from "@/lib/pos-catalog"
 import { prisma } from "@/lib/prisma"
-import { canViewAnalytics } from "@/lib/permissions"
+import { canManageMenuPerformance } from "@/lib/permissions"
 import { cleanString, isRequestBodyTooLarge } from "@/lib/server-security"
 
 const MAX_BODY_BYTES = 32 * 1024
@@ -35,7 +35,7 @@ function validBusinessDate(value: string) {
 
 async function authorize() {
   const session = await auth()
-  if (!session || !canViewAnalytics(session.user.role)) return null
+  if (!session || !canManageMenuPerformance(session.user.role)) return null
   return session
 }
 
